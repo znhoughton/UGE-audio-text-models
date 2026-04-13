@@ -263,9 +263,59 @@ try:
             f"keys={list(inp3.keys())}"
         )
 
-        # Also confirm the key to use in the main script
-        print(f"\n  → CONCLUSION: Parakeet feature extractor returns key '{input_key}', not 'input_values'.")
-        print(f"    Main script must use inputs['{input_key}'] not inputs.input_values")
+        # Probe 4: verify the model actually accepts this input correctly
+        # by running a tiny forward pass (CPU only, no GPU needed)
+        print("\n  Testing forward pass with input_features key…")
+        try:
+            import torch
+            from transformers import ParakeetForCTC
+            print("  Loading Parakeet model (CPU)…")
+            tiny_model = ParakeetForCTC.from_pretrained(
+                "nvidia/parakeet-ctc-0.6b",
+                torch_dtype=torch.float32,
+            )
+            tiny_model.eval()
+
+            inp_fwd = feature_extractor(
+                audio_arrays[:1],   # just 1 sample for speed
+                sampling_rate=SAMPLE_RATE,
+                return_tensors="pt",
+                padding=True,
+            )
+            fwd_key = next(k for k in inp_fwd.keys() if "mask" not in k)
+            print(f"  Forward pass input key: '{fwd_key}', shape: {tuple(inp_fwd[fwd_key].shape)}")
+
+            with torch.no_grad():
+                out = tiny_model(inp_fwd[fwd_key], output_hidden_states=True)
+
+            check(
+                "Parakeet forward pass returns hidden_states",
+                out.hidden_states is not None and len(out.hidden_states) > 0,
+                f"n_layers={len(out.hidden_states)}"
+            )
+            last = out.hidden_states[-1]
+            check(
+                "Last hidden state shape is (batch, time, hidden_dim)",
+                last.ndim == 3,
+                f"shape={tuple(last.shape)}"
+            )
+            emb = last.mean(dim=1)
+            check(
+                "Mean pooling over time gives (batch, hidden_dim)",
+                emb.ndim == 2,
+                f"shape={tuple(emb.shape)}"
+            )
+            check(
+                "Pooled embeddings are finite",
+                torch.isfinite(emb).all().item(),
+                f"all finite: {torch.isfinite(emb).all().item()}"
+            )
+            print(f"  → Parakeet forward pass confirmed. hidden_dim={emb.shape[1]}")
+            del tiny_model
+        except Exception as e:
+            import traceback
+            print(f"  ✗ FAIL  Parakeet forward pass: {e}")
+            traceback.print_exc()
 
 except Exception as e:
     import traceback
