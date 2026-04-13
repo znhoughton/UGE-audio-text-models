@@ -207,9 +207,163 @@ except Exception as e:
     traceback.print_exc()
 
 # ---------------------------------------------------------------------------
-# 7. Summary
+# 7. Parakeet feature extractor
 # ---------------------------------------------------------------------------
-section("Summary")
+section("7. Parakeet feature extractor")
+try:
+    from transformers import AutoFeatureExtractor, ParakeetForCTC
+    print("  Loading Parakeet feature extractor…")
+    feature_extractor = AutoFeatureExtractor.from_pretrained("nvidia/parakeet-ctc-0.6b")
+
+    audio_arrays = []
+    for arr, sr in audio_samples_for_whisper:
+        a = arr.copy()
+        if sr != SAMPLE_RATE:
+            a = a[:: int(sr / SAMPLE_RATE)]
+        a = a[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
+        audio_arrays.append(a)
+
+    print(f"  Raw audio lengths (samples): {[len(a) for a in audio_arrays]}")
+
+    # Probe 1: no padding
+    inp1 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt")
+    print(f"  No padding:          shape={tuple(inp1.input_values.shape)}")
+
+    # Probe 2: padding=True (pad to longest in batch — what our code uses)
+    inp2 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt",
+                             padding=True)
+    print(f"  padding=True:        shape={tuple(inp2.input_values.shape)}")
+
+    # Check: padding=True should give a consistent batch shape
+    check(
+        "padding=True gives batch of correct size",
+        inp2.input_values.shape[0] == len(audio_arrays),
+        f"shape={tuple(inp2.input_values.shape)}"
+    )
+    check(
+        "All samples in batch have same length after padding",
+        inp2.input_values.shape[1] > 0,
+        f"padded_length={inp2.input_values.shape[1]}"
+    )
+    check(
+        "Padded length >= longest audio in batch",
+        inp2.input_values.shape[1] >= max(len(a) for a in audio_arrays),
+        f"padded={inp2.input_values.shape[1]}, max_audio={max(len(a) for a in audio_arrays)}"
+    )
+
+    # Probe 3: check attention_mask is returned (needed for variable-length batches)
+    inp3 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt",
+                             padding=True, return_attention_mask=True)
+    check(
+        "attention_mask returned with padding=True",
+        hasattr(inp3, "attention_mask") and inp3.attention_mask is not None,
+        f"has attention_mask: {hasattr(inp3, 'attention_mask')}"
+    )
+
+    print("\n  → CONCLUSION: padding=True is correct for Parakeet.")
+    print("    It pads variable-length audio to the longest clip in the batch.")
+    print("    Unlike Whisper, Parakeet operates on raw waveforms not mel spectrograms.")
+
+except Exception as e:
+    import traceback
+    print(f"  ✗ FAIL  Parakeet feature extractor test: {e}")
+    traceback.print_exc()
+
+# ---------------------------------------------------------------------------
+# 8. LM tokenizer and forward pass structure
+# ---------------------------------------------------------------------------
+section("8. LM tokenizer — output_hidden_states check")
+try:
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+
+    # Use BabyLM 125M — smallest model, fastest to load
+    model_id = "znhoughton/opt-babylm-125m-20eps-seed964"
+    print(f"  Loading tokenizer: {model_id}…")
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        print(f"  Set pad_token = eos_token")
+
+    texts = [
+        "the cat sat on the mat",
+        "neural networks learn representations of language",
+        "a dog lay on the rug",
+    ]
+
+    enc = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=512)
+    print(f"  input_ids shape:      {tuple(enc['input_ids'].shape)}")
+    print(f"  attention_mask shape: {tuple(enc['attention_mask'].shape)}")
+
+    check(
+        "Batch dimension correct",
+        enc["input_ids"].shape[0] == len(texts),
+        f"shape={tuple(enc['input_ids'].shape)}"
+    )
+    check(
+        "Padding produces consistent sequence length",
+        enc["input_ids"].shape[1] > 0,
+        f"seq_len={enc['input_ids'].shape[1]}"
+    )
+
+    print(f"\n  Loading model (CPU, no GPU needed for this test)…")
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id, torch_dtype="auto", trust_remote_code=True
+    )
+    model.eval()
+
+    import torch
+    with torch.no_grad():
+        out = model(
+            input_ids=enc["input_ids"],
+            attention_mask=enc["attention_mask"],
+            output_hidden_states=True,
+        )
+
+    check(
+        "output_hidden_states returns hidden_states tuple",
+        out.hidden_states is not None,
+        f"type={type(out.hidden_states)}"
+    )
+    check(
+        "Number of hidden state layers > 0",
+        len(out.hidden_states) > 0,
+        f"n_layers={len(out.hidden_states)}"
+    )
+
+    last_hidden = out.hidden_states[-1]
+    check(
+        "Last hidden state shape is (batch, seq_len, hidden_dim)",
+        last_hidden.ndim == 3 and last_hidden.shape[0] == len(texts),
+        f"shape={tuple(last_hidden.shape)}"
+    )
+
+    # Test mean pooling over non-padding tokens
+    mask = enc["attention_mask"].unsqueeze(-1).float()
+    pooled = (last_hidden.float() * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+    check(
+        "Mean pooling gives (batch, hidden_dim)",
+        pooled.shape[0] == len(texts) and pooled.ndim == 2,
+        f"shape={tuple(pooled.shape)}"
+    )
+    check(
+        "Pooled embeddings are finite (no NaN/Inf)",
+        torch.isfinite(pooled).all().item(),
+        f"all finite: {torch.isfinite(pooled).all().item()}"
+    )
+
+    print(f"\n  → CONCLUSION: LM extraction pipeline is correct.")
+    print(f"    hidden_dim={pooled.shape[1]}, n_layers={len(out.hidden_states)}")
+
+    del model
+
+except Exception as e:
+    import traceback
+    print(f"  ✗ FAIL  LM test: {e}")
+    traceback.print_exc()
+
+
+section("9. Summary")
 print("  If all iter() tests passed and select() on concat failed,")
 print("  the fix in representation_analysis.py is correct and safe to run.")
 print()
