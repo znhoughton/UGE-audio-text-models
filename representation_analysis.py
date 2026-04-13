@@ -39,6 +39,7 @@ import argparse
 import csv
 import json
 import logging
+import os
 import pickle
 import random
 import sys
@@ -46,6 +47,19 @@ import time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# HuggingFace memory / shard loading settings
+# Must be set before any datasets import to take effect.
+# ---------------------------------------------------------------------------
+
+# Cap how much RAM datasets will try to use for in-memory operations.
+# Each shard is ~450-500MB on disk, ~1-1.5GB in RAM after Arrow expansion.
+# 60GB gives comfortable headroom for parallel shard loading without
+# trying to hold all 63 shards (~79GB) simultaneously.
+os.environ.setdefault("HF_DATASETS_MAX_IN_MEMORY_SIZE", str(60 * 1024 ** 3))  # 60 GB
+os.environ.setdefault("HF_DATASETS_IN_MEMORY_MAX_SIZE", str(60 * 1024 ** 3))
+os.environ.setdefault("DATASETS_VERBOSITY", "warning")
 
 import numpy as np
 import torch
@@ -290,6 +304,11 @@ def load_librispeech(splits: list, max_samples: int | None):
                 split=hf_split,
                 streaming=False,
                 trust_remote_code=True,
+                # 8 parallel workers gives meaningful I/O parallelism on a
+                # network filesystem without the memory spike of loading all
+                # 63 shards simultaneously. At ~1.25GB per shard in RAM,
+                # 8 workers peaks at ~10GB — well within our 60GB budget.
+                num_proc=8,
             )
         except ValueError as e:
             logger.error(
@@ -303,6 +322,7 @@ def load_librispeech(splits: list, max_samples: int | None):
         logger.info(f"  {split}: {len(ds):,} samples")
         parts.append(ds)
 
+    logger.info(f"Concatenating {len(parts)} splits…")
     dataset = concatenate_datasets(parts) if len(parts) > 1 else parts[0]
     logger.info(f"Total before sampling: {len(dataset):,} samples")
 
@@ -312,7 +332,11 @@ def load_librispeech(splits: list, max_samples: int | None):
         dataset = dataset.select(indices)
         logger.info(f"Subsampled to {len(dataset):,} samples (seed={MINIBATCH_SEED})")
 
-    texts = [s["text"].strip() for s in dataset]
+    # Extract texts up front so we hold only the text in RAM.
+    # The audio waveforms remain on disk and are streamed per-sample
+    # during embedding extraction — we never load all audio at once.
+    logger.info("Extracting transcripts…")
+    texts = [s["text"].strip() for s in tqdm(dataset, desc="reading transcripts", unit="utt")]
     logger.info(f"Final dataset size: {len(texts):,} utterances")
     logger.debug(f"Example transcript: '{texts[0][:80]}…'")
     return dataset, texts
