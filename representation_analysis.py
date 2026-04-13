@@ -411,8 +411,11 @@ def extract_whisper_embeddings(
         batch = next(batch_iter)
         try:
             audio_arrays = []
-            for audio_array, sr in zip(batch["audio"]["array"], batch["audio"]["sampling_rate"]):
-                audio = np.array(audio_array, dtype=np.float32)
+            for audio_item in batch["audio"]:
+                # iter() returns audio as list of dicts: [{"array":..., "sampling_rate":...}, ...]
+                arr = audio_item["array"] if isinstance(audio_item, dict) else audio_item
+                sr = audio_item["sampling_rate"] if isinstance(audio_item, dict) else SAMPLE_RATE
+                audio = np.array(arr, dtype=np.float32)
                 if sr != SAMPLE_RATE:
                     audio = audio[:: int(sr / SAMPLE_RATE)]
                 audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
@@ -543,8 +546,10 @@ def extract_parakeet_embeddings(
         batch = next(batch_iter)
         try:
             audio_arrays = []
-            for audio_array, sr in zip(batch["audio"]["array"], batch["audio"]["sampling_rate"]):
-                audio = np.array(audio_array, dtype=np.float32)
+            for audio_item in batch["audio"]:
+                arr = audio_item["array"] if isinstance(audio_item, dict) else audio_item
+                sr = audio_item["sampling_rate"] if isinstance(audio_item, dict) else SAMPLE_RATE
+                audio = np.array(arr, dtype=np.float32)
                 if sr != SAMPLE_RATE:
                     audio = audio[:: int(sr / SAMPLE_RATE)]
                 audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
