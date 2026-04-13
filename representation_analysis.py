@@ -346,8 +346,20 @@ def load_librispeech(splits: list, max_samples: int | None):
 # Embedding extraction
 # ---------------------------------------------------------------------------
 
-def extract_whisper_embeddings(model_id: str, dataset, device: torch.device) -> np.ndarray:
-    """Mean-pool Whisper encoder hidden states over time frames."""
+def extract_whisper_embeddings(
+    model_id: str,
+    dataset,
+    device: torch.device,
+    batch_size: int = 64,
+) -> np.ndarray:
+    """
+    Batched extraction of Whisper encoder embeddings.
+
+    Processes audio in batches rather than one sample at a time.
+    The Whisper processor pads all audio in a batch to 30s mel spectrograms,
+    so batch size is the main lever for throughput. 64 works well on an A100
+    80GB — reduce if you see OOM errors.
+    """
     logger.info(f"Loading Whisper model: {model_id}")
     log_gpu_memory("before Whisper load")
 
@@ -360,57 +372,99 @@ def extract_whisper_embeddings(model_id: str, dataset, device: torch.device) -> 
         raise
 
     log_gpu_memory("after Whisper load")
-    logger.info(f"Extracting Whisper embeddings for {len(dataset):,} samples…")
+    n = len(dataset)
+    n_batches = (n + batch_size - 1) // batch_size
+    logger.info(
+        f"Extracting Whisper embeddings for {n:,} samples  "
+        f"(batch_size={batch_size}, n_batches={n_batches:,})…"
+    )
 
     embeddings = []
     errors = 0
-    for sample in tqdm(dataset, desc="whisper-base", unit="utt"):
-        try:
-            audio = np.array(sample["audio"]["array"], dtype=np.float32)
-            sr = sample["audio"]["sampling_rate"]
-            if sr != SAMPLE_RATE:
-                audio = audio[:: int(sr / SAMPLE_RATE)]
-            audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
+    samples = list(dataset)   # materialise once so we can slice by index
 
-            inputs = processor(audio, sampling_rate=SAMPLE_RATE, return_tensors="pt")
+    for start in tqdm(range(0, n, batch_size), desc="whisper-base", unit="batch", total=n_batches):
+        batch = samples[start : start + batch_size]
+        try:
+            # Preprocess audio for each sample in the batch
+            audio_arrays = []
+            for sample in batch:
+                audio = np.array(sample["audio"]["array"], dtype=np.float32)
+                sr = sample["audio"]["sampling_rate"]
+                if sr != SAMPLE_RATE:
+                    audio = audio[:: int(sr / SAMPLE_RATE)]
+                audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
+                audio_arrays.append(audio)
+
+            # Processor pads all clips to 30s mel spectrograms automatically
+            inputs = processor(
+                audio_arrays,
+                sampling_rate=SAMPLE_RATE,
+                return_tensors="pt",
+                padding=True,
+            )
             features = inputs.input_features.to(device, dtype=torch.float16)
+
             with torch.no_grad():
                 enc = model.encoder(features)
-                emb = enc.last_hidden_state.mean(dim=1).squeeze(0).float().cpu()
+                # (B, T, H) → mean over T → (B, H)
+                emb = enc.last_hidden_state.mean(dim=1).float().cpu()
+
             embeddings.append(emb.numpy())
+
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                logger.error(
+                    f"CUDA OOM at batch {start // batch_size}/{n_batches}. "
+                    f"Try reducing --whisper_batch_size (currently {batch_size})."
+                )
+                torch.cuda.empty_cache()
+                raise
+            errors += 1
+            logger.warning(f"Skipping batch {start // batch_size} due to error: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping sample due to error: {e}")
+            logger.warning(f"Skipping batch {start // batch_size} due to error: {e}")
 
     if errors:
-        logger.warning(f"Whisper: skipped {errors} samples due to errors")
+        logger.warning(f"Whisper: skipped {errors} batches due to errors")
 
     del model
     torch.cuda.empty_cache()
     log_gpu_memory("after Whisper unload")
 
-    result = np.stack(embeddings)
+    result = np.concatenate(embeddings, axis=0)
     logger.info(f"Whisper embeddings shape: {result.shape}")
     return result
 
 
-def extract_parakeet_embeddings(model_id: str, dataset, device: torch.device) -> np.ndarray:
+def extract_parakeet_embeddings(
+    model_id: str,
+    dataset,
+    device: torch.device,
+    batch_size: int = 32,
+) -> np.ndarray:
     """
-    Extract encoder embeddings from Parakeet CTC via the HuggingFace transformers
-    Parakeet integration (requires transformers >= 4.48).
+    Batched extraction of Parakeet CTC encoder embeddings.
 
-    Parakeet's FastConformer encoder applies 8x depthwise-separable convolutional
-    downsampling before its conformer blocks, so the output sequence is much shorter
-    than Whisper's. We mean-pool across the remaining time frames, exactly as we do
-    for Whisper, to get one fixed-size vector per utterance.
+    Unlike Whisper, Parakeet's feature extractor does NOT pad all clips to
+    a fixed length — clips have variable lengths. We therefore need
+    padding=True in the feature extractor call, which pads all clips in a
+    batch to the longest clip in that batch. This means smaller batches
+    have less wasted compute from padding. 32 is a good default for an
+    80GB A100 with the 600M model.
     """
     logger.info(f"Loading Parakeet model: {model_id}")
     log_gpu_memory("before Parakeet load")
 
     try:
         feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
-        model = ParakeetForCTC.from_pretrained(model_id, torch_dtype=torch.float16)
-        model = model.to(device).eval()
+        model = ParakeetForCTC.from_pretrained(
+            model_id,
+            torch_dtype=torch.float16,
+            device_map="auto",   # spreads across both A100s if available
+        )
+        model.eval()
     except Exception as e:
         logger.error(
             f"Failed to load Parakeet model '{model_id}': {e}\n"
@@ -419,41 +473,68 @@ def extract_parakeet_embeddings(model_id: str, dataset, device: torch.device) ->
         raise
 
     log_gpu_memory("after Parakeet load")
-    logger.info(f"Extracting Parakeet embeddings for {len(dataset):,} samples…")
+    n = len(dataset)
+    n_batches = (n + batch_size - 1) // batch_size
+    logger.info(
+        f"Extracting Parakeet embeddings for {n:,} samples  "
+        f"(batch_size={batch_size}, n_batches={n_batches:,})…"
+    )
 
     embeddings = []
     errors = 0
-    for sample in tqdm(dataset, desc="parakeet-ctc-0.6b", unit="utt"):
+    samples = list(dataset)
+
+    for start in tqdm(range(0, n, batch_size), desc="parakeet-ctc-0.6b", unit="batch", total=n_batches):
+        batch = samples[start : start + batch_size]
         try:
-            audio = np.array(sample["audio"]["array"], dtype=np.float32)
-            sr = sample["audio"]["sampling_rate"]
-            if sr != SAMPLE_RATE:
-                audio = audio[:: int(sr / SAMPLE_RATE)]
-            audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
+            audio_arrays = []
+            for sample in batch:
+                audio = np.array(sample["audio"]["array"], dtype=np.float32)
+                sr = sample["audio"]["sampling_rate"]
+                if sr != SAMPLE_RATE:
+                    audio = audio[:: int(sr / SAMPLE_RATE)]
+                audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
+                audio_arrays.append(audio)
 
             inputs = feature_extractor(
-                audio,
+                audio_arrays,
                 sampling_rate=SAMPLE_RATE,
                 return_tensors="pt",
+                padding=True,   # pad variable-length clips to longest in batch
             )
-            input_values = inputs.input_values.to(device, dtype=torch.float16)
+            # Send to the first device — device_map handles layer placement
+            input_values = inputs.input_values.to(
+                next(model.parameters()).device, dtype=torch.float16
+            )
 
             with torch.no_grad():
                 out = model(input_values, output_hidden_states=True)
-                emb = out.hidden_states[-1].mean(dim=1).squeeze(0).float().cpu()
+                # (B, T, H) → mean over T → (B, H)
+                emb = out.hidden_states[-1].mean(dim=1).float().cpu()
             embeddings.append(emb.numpy())
+
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                logger.error(
+                    f"CUDA OOM at batch {start // batch_size}/{n_batches}. "
+                    f"Try reducing --parakeet_batch_size (currently {batch_size})."
+                )
+                torch.cuda.empty_cache()
+                raise
+            errors += 1
+            logger.warning(f"Skipping batch {start // batch_size} due to error: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping sample due to error: {e}")
+            logger.warning(f"Skipping batch {start // batch_size} due to error: {e}")
 
     if errors:
-        logger.warning(f"Parakeet: skipped {errors} samples due to errors")
+        logger.warning(f"Parakeet: skipped {errors} batches due to errors")
 
     del model
     torch.cuda.empty_cache()
     log_gpu_memory("after Parakeet unload")
 
-    result = np.stack(embeddings)
+    result = np.concatenate(embeddings, axis=0)
     logger.info(f"Parakeet embeddings shape: {result.shape}")
     return result
 
@@ -462,13 +543,17 @@ def extract_lm_embeddings(
     model_id: str,
     texts: list,
     device: torch.device,
-    batch_size: int = 8,
+    batch_size: int = 32,
 ) -> np.ndarray:
     """Mean-pool last hidden layer over non-padding tokens."""
     logger.info(f"Loading LM: {model_id}")
     log_gpu_memory(f"before {model_id.split('/')[-1]} load")
 
-    load_kwargs = dict(torch_dtype=torch.float16, trust_remote_code=True)
+    load_kwargs = dict(
+        torch_dtype=torch.float16,
+        trust_remote_code=True,
+        device_map="auto",   # spreads model across both A100s automatically
+    )
     try:
         model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     except Exception:
@@ -481,7 +566,7 @@ def extract_lm_embeddings(
             )
             raise
 
-    model = model.to(device).eval()
+    model.eval()
     log_gpu_memory(f"after {model_id.split('/')[-1]} load")
 
     try:
@@ -514,8 +599,8 @@ def extract_lm_embeddings(
                 truncation=True,
                 max_length=MAX_TEXT_TOKENS,
             )
-            input_ids = enc["input_ids"].to(device)
-            attention_mask = enc["attention_mask"].to(device)
+            input_ids = enc["input_ids"].to(model.device)
+            attention_mask = enc["attention_mask"].to(model.device)
             with torch.no_grad():
                 out = model(
                     input_ids=input_ids,
@@ -1107,8 +1192,16 @@ def parse_args():
         help=f"Minibatch size for CKA (default: {MINIBATCH_SIZE})",
     )
     p.add_argument(
-        "--lm_batch_size", type=int, default=8,
-        help="Batch size for LM forward passes (default: 8)",
+        "--lm_batch_size", type=int, default=32,
+        help="Batch size for LM forward passes (default: 32, reduce if OOM)",
+    )
+    p.add_argument(
+        "--whisper_batch_size", type=int, default=64,
+        help="Batch size for Whisper audio extraction (default: 64, reduce if OOM)",
+    )
+    p.add_argument(
+        "--parakeet_batch_size", type=int, default=32,
+        help="Batch size for Parakeet audio extraction (default: 32, reduce if OOM)",
     )
     p.add_argument(
         "--pca_components", type=int, default=PCA_COMPONENTS,
@@ -1174,9 +1267,9 @@ def main():
         with timer(f"Extract {model_name}"):
             try:
                 if cfg["modality"] == "audio":
-                    emb = extract_whisper_embeddings(cfg["hf_id"], dataset, device)
+                    emb = extract_whisper_embeddings(cfg["hf_id"], dataset, device, batch_size=args.whisper_batch_size)
                 elif cfg["modality"] == "audio-parakeet":
-                    emb = extract_parakeet_embeddings(cfg["hf_id"], dataset, device)
+                    emb = extract_parakeet_embeddings(cfg["hf_id"], dataset, device, batch_size=args.parakeet_batch_size)
                 else:
                     emb = extract_lm_embeddings(
                         cfg["hf_id"], texts, device, batch_size=args.lm_batch_size
