@@ -284,10 +284,19 @@ def _apply_style():
 # Dataset loading
 # ---------------------------------------------------------------------------
 
-def load_librispeech(splits: list, max_samples: int | None):
+def load_librispeech(splits: list, max_samples: int | None, cache_dir: Path = None):
     logger.info(f"{'='*60}")
     logger.info(f"Loading LibriSpeech splits: {splits}")
     logger.info(f"{'='*60}")
+
+    # ------------------------------------------------------------------
+    # Transcript cache — reading all 292k texts takes ~15 minutes because
+    # it touches every sample. We cache just the text list to a small JSON
+    # so restarts skip that step entirely. The cache key includes the splits
+    # and max_samples so it's invalidated if you change either.
+    # ------------------------------------------------------------------
+    cache_key = "_".join(sorted(splits)) + (f"_max{max_samples}" if max_samples else "")
+    texts_cache_path = (cache_dir / f"texts_{cache_key}.json") if cache_dir else None
 
     parts = []
     for split in splits:
@@ -304,10 +313,6 @@ def load_librispeech(splits: list, max_samples: int | None):
                 split=hf_split,
                 streaming=False,
                 trust_remote_code=True,
-                # 8 parallel workers gives meaningful I/O parallelism on a
-                # network filesystem without the memory spike of loading all
-                # 63 shards simultaneously. At ~1.25GB per shard in RAM,
-                # 8 workers peaks at ~10GB — well within our 60GB budget.
                 num_proc=8,
             )
         except ValueError as e:
@@ -332,11 +337,20 @@ def load_librispeech(splits: list, max_samples: int | None):
         dataset = dataset.select(indices)
         logger.info(f"Subsampled to {len(dataset):,} samples (seed={MINIBATCH_SEED})")
 
-    # Extract texts up front so we hold only the text in RAM.
-    # The audio waveforms remain on disk and are streamed per-sample
-    # during embedding extraction — we never load all audio at once.
-    logger.info("Extracting transcripts…")
-    texts = [s["text"].strip() for s in tqdm(dataset, desc="reading transcripts", unit="utt")]
+    # Load texts from cache if available
+    if texts_cache_path and texts_cache_path.exists():
+        logger.info(f"Loading cached transcripts from {texts_cache_path}…")
+        with open(texts_cache_path) as f:
+            texts = json.load(f)
+        logger.info(f"Loaded {len(texts):,} cached transcripts (skipped 15min extraction)")
+    else:
+        logger.info("Extracting transcripts… (will be cached for future restarts)")
+        texts = [s["text"].strip() for s in tqdm(dataset, desc="reading transcripts", unit="utt")]
+        if texts_cache_path:
+            with open(texts_cache_path, "w") as f:
+                json.dump(texts, f)
+            logger.info(f"Transcripts cached → {texts_cache_path}  ({texts_cache_path.stat().st_size / 1024:.0f} KB)")
+
     logger.info(f"Final dataset size: {len(texts):,} utterances")
     logger.debug(f"Example transcript: '{texts[0][:80]}…'")
     return dataset, texts
@@ -562,10 +576,15 @@ def extract_parakeet_embeddings(
                 return_tensors="pt",
                 padding=True,
             )
-            input_values = inputs.input_values.to(first_device, dtype=torch.float16)
+            # Find the main input tensor key dynamically — Parakeet's feature
+            # extractor may return 'input_features', 'input_values', or another
+            # key depending on the transformers version. We take the first
+            # non-mask key to be robust across versions.
+            input_key = next(k for k in inputs.keys() if "mask" not in k)
+            input_tensor = inputs[input_key].to(first_device, dtype=torch.float16)
 
             with torch.no_grad():
-                out = model(input_values, output_hidden_states=True)
+                out = model(input_tensor, output_hidden_states=True)
                 emb = out.hidden_states[-1].mean(dim=1).float().cpu().numpy()
             embeddings.append(emb)
 
@@ -1350,7 +1369,7 @@ def main():
     # 1. Load dataset
     # ------------------------------------------------------------------
     with timer("Load LibriSpeech"):
-        dataset, texts = load_librispeech(args.splits, args.max_samples)
+        dataset, texts = load_librispeech(args.splits, args.max_samples, cache_dir=data_dir)
     N = len(texts)
 
     # ------------------------------------------------------------------
