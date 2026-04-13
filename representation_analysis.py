@@ -534,7 +534,7 @@ def extract_parakeet_embeddings(
             model_id,
             torch_dtype=torch.float16,
             device_map="auto",
-            max_memory={0: "55GiB", 1: "75GiB"},
+            max_memory={0: "75GiB", 1: "75GiB"},
         )
         model.eval()
     except Exception as e:
@@ -665,11 +665,9 @@ def extract_lm_embeddings(
         torch_dtype=torch.float16,
         trust_remote_code=True,
         device_map="auto",
-        # Explicitly cap per-GPU memory so device_map spreads the model
-        # across both A100s rather than cramming everything onto GPU 0.
-        # GPU 0 is capped lower to leave room for the other process (17GB)
-        # and for activation memory during forward passes.
-        max_memory={0: "55GiB", 1: "75GiB"},
+        # Cap per-GPU memory so device_map spreads across both A100s.
+        # Set slightly below physical 80GB to leave headroom for activations.
+        max_memory={0: "75GiB", 1: "75GiB"},
     )
     try:
         model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
