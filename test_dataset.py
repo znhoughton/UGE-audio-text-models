@@ -225,44 +225,47 @@ try:
 
     print(f"  Raw audio lengths (samples): {[len(a) for a in audio_arrays]}")
 
-    # Probe 1: no padding
-    inp1 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt")
-    print(f"  No padding:          shape={tuple(inp1.input_values.shape)}")
+    # Probe 0: find out what key the feature extractor actually returns
+    inp0 = feature_extractor(audio_arrays[:1], sampling_rate=SAMPLE_RATE, return_tensors="pt")
+    print(f"  Feature extractor output keys: {list(inp0.keys())}")
+    # Find the main input key (not attention_mask)
+    input_key = next((k for k in inp0.keys() if "mask" not in k), None)
+    print(f"  Main input key: {input_key!r}")
 
-    # Probe 2: padding=True (pad to longest in batch — what our code uses)
-    inp2 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt",
-                             padding=True)
-    print(f"  padding=True:        shape={tuple(inp2.input_values.shape)}")
+    if input_key is None:
+        print("  ✗ FAIL  Could not find main input key in feature extractor output")
+    else:
+        # Probe 1: no padding
+        inp1 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt")
+        print(f"  No padding:          shape={tuple(inp1[input_key].shape)}")
 
-    # Check: padding=True should give a consistent batch shape
-    check(
-        "padding=True gives batch of correct size",
-        inp2.input_values.shape[0] == len(audio_arrays),
-        f"shape={tuple(inp2.input_values.shape)}"
-    )
-    check(
-        "All samples in batch have same length after padding",
-        inp2.input_values.shape[1] > 0,
-        f"padded_length={inp2.input_values.shape[1]}"
-    )
-    check(
-        "Padded length >= longest audio in batch",
-        inp2.input_values.shape[1] >= max(len(a) for a in audio_arrays),
-        f"padded={inp2.input_values.shape[1]}, max_audio={max(len(a) for a in audio_arrays)}"
-    )
+        # Probe 2: padding=True
+        inp2 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt",
+                                 padding=True)
+        print(f"  padding=True:        shape={tuple(inp2[input_key].shape)}")
 
-    # Probe 3: check attention_mask is returned (needed for variable-length batches)
-    inp3 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt",
-                             padding=True, return_attention_mask=True)
-    check(
-        "attention_mask returned with padding=True",
-        hasattr(inp3, "attention_mask") and inp3.attention_mask is not None,
-        f"has attention_mask: {hasattr(inp3, 'attention_mask')}"
-    )
+        check(
+            "padding=True gives batch of correct size",
+            inp2[input_key].shape[0] == len(audio_arrays),
+            f"shape={tuple(inp2[input_key].shape)}"
+        )
+        check(
+            "All samples in batch have same length after padding",
+            inp2[input_key].shape[-1] > 0,
+            f"padded_length={inp2[input_key].shape[-1]}"
+        )
 
-    print("\n  → CONCLUSION: padding=True is correct for Parakeet.")
-    print("    It pads variable-length audio to the longest clip in the batch.")
-    print("    Unlike Whisper, Parakeet operates on raw waveforms not mel spectrograms.")
+        inp3 = feature_extractor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt",
+                                 padding=True, return_attention_mask=True)
+        check(
+            "attention_mask returned with padding=True",
+            "attention_mask" in inp3,
+            f"keys={list(inp3.keys())}"
+        )
+
+        # Also confirm the key to use in the main script
+        print(f"\n  → CONCLUSION: Parakeet feature extractor returns key '{input_key}', not 'input_values'.")
+        print(f"    Main script must use inputs['{input_key}'] not inputs.input_values")
 
 except Exception as e:
     import traceback
