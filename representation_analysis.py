@@ -42,8 +42,10 @@ import json
 import logging
 import os
 import pickle
+import queue
 import random
 import sys
+import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -174,6 +176,74 @@ def release_vram(label: str = ""):
         torch.cuda.empty_cache()
         torch.cuda.reset_peak_memory_stats()
         log_gpu_memory(f"after release [{label}]")
+
+
+# ---------------------------------------------------------------------------
+# Prefetch utility
+# ---------------------------------------------------------------------------
+
+def prefetch_generator(source_iter, queue_depth: int = 3):
+    """
+    Wraps any iterator and yields from a background thread.
+
+    The background thread stays `queue_depth` batches ahead of the consumer,
+    so the GPU never stalls waiting for CPU preprocessing (audio decoding,
+    feature extraction, tokenization). Natural backpressure is provided by
+    the bounded queue: the producer blocks when the queue is full, preventing
+    unbounded RAM accumulation.
+
+    The thread is daemonized so it is automatically killed if the main process
+    exits (e.g. on CUDA OOM), with no cleanup required.
+
+    Args:
+        source_iter: Any iterable — dataset.iter(), a generator, etc.
+        queue_depth: Number of pre-processed batches to buffer. 3 is a safe
+                     default; raise to 5 if CPU preprocessing is measurably
+                     slower than GPU compute.
+
+    Yields:
+        Items from source_iter in original order.
+    """
+    q = queue.Queue(maxsize=queue_depth)
+
+    def _producer():
+        try:
+            for item in source_iter:
+                q.put(item)   # blocks when queue is full — natural backpressure
+        finally:
+            q.put(None)       # sentinel: always sent, even if source_iter raises
+
+    t = threading.Thread(target=_producer, daemon=True)
+    t.start()
+
+    while True:
+        item = q.get()
+        if item is None:
+            break
+        yield item
+
+
+def _tokenized_batches(texts, tokenizer, start_batch, n_batches, batch_size, max_length):
+    """
+    Generator that tokenizes text batches on the CPU so the GPU thread only
+    has to do .to(device) + forward pass. Consumed via prefetch_generator so
+    tokenization runs concurrently with the previous batch's GPU forward pass.
+
+    Yields:
+        (batch_idx, BatchEncoding) tuples.
+    """
+    for batch_idx in range(start_batch, n_batches):
+        i = batch_idx * batch_size
+        batch = texts[i : i + batch_size]
+        enc = tokenizer(
+            batch,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=max_length,
+        )
+        yield batch_idx, enc
+
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -388,6 +458,7 @@ def extract_whisper_embeddings(
     device: torch.device,
     batch_size: int = 64,
     checkpoint_dir: Path = None,
+    prefetch_queue_depth: int = 3,
 ) -> np.ndarray:
     """
     Batched extraction of Whisper encoder embeddings with checkpointing.
@@ -395,6 +466,9 @@ def extract_whisper_embeddings(
     Saves progress every 500 batches so a restart can resume from the last
     checkpoint rather than starting over. Checkpoints are saved to
     checkpoint_dir/whisper-base_checkpoint.pkl.
+
+    Audio loading and mel-spectrogram extraction run in a background thread
+    via prefetch_generator, keeping the GPU busy between batches.
     """
     logger.info(f"Loading Whisper model: {model_id}")
     log_gpu_memory("before Whisper load")
@@ -424,23 +498,23 @@ def extract_whisper_embeddings(
 
     logger.info(
         f"Extracting Whisper embeddings for {n:,} samples  "
-        f"(batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch})…"
+        f"(batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch}, "
+        f"prefetch_queue_depth={prefetch_queue_depth})…"
     )
 
     errors = 0
     CHECKPOINT_EVERY = 500
 
-    # Use dataset.iter() rather than dataset.select() — select() on a
-    # concatenated dataset doesn't load audio arrays correctly, returning
-    # near-empty arrays. iter() is the correct way to stream batches from
-    # a concatenated HuggingFace dataset.
-    batch_iter = dataset.iter(batch_size=batch_size)
-
-    # Skip already-processed batches when resuming from checkpoint
+    # Fast-forward past already-processed batches when resuming, then wrap
+    # the remaining iterator in prefetch_generator so audio decoding and mel
+    # extraction for batch N+1 happen concurrently with the GPU forward pass
+    # for batch N.
+    raw_iter = dataset.iter(batch_size=batch_size)
     if start_batch > 0:
         logger.info(f"Fast-forwarding through {start_batch} already-processed batches…")
         for _ in range(start_batch):
-            next(batch_iter)
+            next(raw_iter)
+    batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
 
     for batch_idx in tqdm(range(start_batch, n_batches), desc="whisper-base",
                           unit="batch", total=n_batches, initial=start_batch):
@@ -521,9 +595,19 @@ def extract_parakeet_embeddings(
     device: torch.device,
     batch_size: int = 32,
     checkpoint_dir: Path = None,
+    prefetch_queue_depth: int = 3,
 ) -> np.ndarray:
     """
     Batched extraction of Parakeet CTC encoder embeddings with checkpointing.
+
+    Audio loading and feature extraction run in a background thread via
+    prefetch_generator, keeping the GPU busy between batches.
+
+    Note on batch size: Parakeet's FastConformer attention is O(T²) in
+    sequence length. If you hit tensor errors with large batches, reduce
+    --parakeet_batch_size rather than increasing it. The feature extractor
+    uses padding='longest' so each batch is padded only to its own maximum
+    sequence length, minimising wasted compute.
     """
     logger.info(f"Loading Parakeet model: {model_id}")
     log_gpu_memory("before Parakeet load")
@@ -570,18 +654,19 @@ def extract_parakeet_embeddings(
 
     logger.info(
         f"Extracting Parakeet embeddings for {n:,} samples  "
-        f"(batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch})…"
+        f"(batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch}, "
+        f"prefetch_queue_depth={prefetch_queue_depth})…"
     )
 
     errors = 0
     CHECKPOINT_EVERY = 500
 
-    batch_iter = dataset.iter(batch_size=batch_size)
-
+    raw_iter = dataset.iter(batch_size=batch_size)
     if start_batch > 0:
         logger.info(f"Fast-forwarding through {start_batch} already-processed batches…")
         for _ in range(start_batch):
-            next(batch_iter)
+            next(raw_iter)
+    batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
 
     for batch_idx in tqdm(range(start_batch, n_batches), desc="parakeet-ctc-0.6b",
                           unit="batch", total=n_batches, initial=start_batch):
@@ -601,7 +686,11 @@ def extract_parakeet_embeddings(
                 audio_arrays,
                 sampling_rate=SAMPLE_RATE,
                 return_tensors="pt",
-                padding=True,
+                # padding='longest' pads only to the longest sequence in this
+                # batch rather than a fixed maximum, minimising wasted compute
+                # for Parakeet's O(T²) attention — this is the correct fix for
+                # tensor errors at large batch sizes, not increasing batch_size.
+                padding="longest",
             )
             # Find the main input tensor key dynamically — Parakeet's feature
             # extractor may return 'input_features', 'input_values', or another
@@ -668,8 +757,14 @@ def extract_lm_embeddings(
     device: torch.device,
     batch_size: int = 32,
     checkpoint_dir: Path = None,
+    prefetch_queue_depth: int = 3,
 ) -> np.ndarray:
-    """Mean-pool last hidden layer over non-padding tokens, with checkpointing."""
+    """
+    Mean-pool last hidden layer over non-padding tokens, with checkpointing.
+
+    Tokenization runs in a background thread via prefetch_generator so the
+    GPU's forward pass for batch N overlaps with tokenizing batch N+1.
+    """
     logger.info(f"Loading LM: {model_id}")
     log_gpu_memory(f"before {model_id.split('/')[-1]} load")
 
@@ -732,24 +827,23 @@ def extract_lm_embeddings(
 
     logger.info(
         f"Extracting embeddings: {n:,} samples, "
-        f"batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch}"
+        f"batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch}, "
+        f"prefetch_queue_depth={prefetch_queue_depth}"
     )
 
     errors = 0
     CHECKPOINT_EVERY = 500
 
-    for batch_idx in tqdm(range(start_batch, n_batches), desc=label,
-                          unit="batch", total=n_batches, initial=start_batch):
-        i = batch_idx * batch_size
-        batch = texts[i : i + batch_size]
+    # Tokenization is CPU-bound and happens in a background thread so the
+    # GPU's forward pass for batch N overlaps with tokenizing batch N+1.
+    token_iter = prefetch_generator(
+        _tokenized_batches(texts, tokenizer, start_batch, n_batches, batch_size, MAX_TEXT_TOKENS),
+        queue_depth=prefetch_queue_depth,
+    )
+
+    for batch_idx, enc in tqdm(token_iter, desc=label,
+                                unit="batch", total=n_batches - start_batch):
         try:
-            enc = tokenizer(
-                batch,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=MAX_TEXT_TOKENS,
-            )
             input_ids = enc["input_ids"].to(first_device)
             attention_mask = enc["attention_mask"].to(first_device)
             with torch.no_grad():
@@ -1400,6 +1494,14 @@ def parse_args():
         help="Batch size for Parakeet audio extraction (default: 32, reduce if OOM)",
     )
     p.add_argument(
+        "--prefetch_queue_depth", type=int, default=3,
+        help=(
+            "Number of batches to prefetch in background threads (default: 3). "
+            "Increase to 5 if CPU preprocessing is measurably slower than GPU compute. "
+            "Applies to all three extractors."
+        ),
+    )
+    p.add_argument(
         "--pca_components", type=int, default=PCA_COMPONENTS,
         help=f"PCA components for eigenvalue analysis (default: {PCA_COMPONENTS})",
     )
@@ -1470,17 +1572,26 @@ def main():
         with timer(f"Extract {model_name}"):
             try:
                 if cfg["modality"] == "audio":
-                    emb = extract_whisper_embeddings(cfg["hf_id"], dataset, device,
-                                                     batch_size=args.whisper_batch_size,
-                                                     checkpoint_dir=data_dir)
+                    emb = extract_whisper_embeddings(
+                        cfg["hf_id"], dataset, device,
+                        batch_size=args.whisper_batch_size,
+                        checkpoint_dir=data_dir,
+                        prefetch_queue_depth=args.prefetch_queue_depth,
+                    )
                 elif cfg["modality"] == "audio-parakeet":
-                    emb = extract_parakeet_embeddings(cfg["hf_id"], dataset, device,
-                                                      batch_size=args.parakeet_batch_size,
-                                                      checkpoint_dir=data_dir)
+                    emb = extract_parakeet_embeddings(
+                        cfg["hf_id"], dataset, device,
+                        batch_size=args.parakeet_batch_size,
+                        checkpoint_dir=data_dir,
+                        prefetch_queue_depth=args.prefetch_queue_depth,
+                    )
                 else:
-                    emb = extract_lm_embeddings(cfg["hf_id"], texts, device,
-                                                batch_size=args.lm_batch_size,
-                                                checkpoint_dir=data_dir)
+                    emb = extract_lm_embeddings(
+                        cfg["hf_id"], texts, device,
+                        batch_size=args.lm_batch_size,
+                        checkpoint_dir=data_dir,
+                        prefetch_queue_depth=args.prefetch_queue_depth,
+                    )
             except Exception as e:
                 logger.error(
                     f"Extraction failed for {model_name}: {e}\n"
