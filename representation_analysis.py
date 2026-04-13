@@ -910,7 +910,29 @@ def cka_stability_check(
 def pca_eigenvalues(X: np.ndarray, n_components: int = PCA_COMPONENTS) -> np.ndarray:
     Xc = X - X.mean(axis=0, keepdims=True)
     n = Xc.shape[0]
-    _, s, _ = np.linalg.svd(Xc / np.sqrt(n - 1), full_matrices=False)
+
+    # Check for non-finite values which cause SVD to fail
+    if not np.isfinite(Xc).all():
+        n_bad = (~np.isfinite(Xc)).sum()
+        logger.warning(f"pca_eigenvalues: {n_bad} non-finite values found, replacing with 0")
+        Xc = np.nan_to_num(Xc, nan=0.0, posinf=0.0, neginf=0.0)
+
+    Xc_scaled = Xc / np.sqrt(n - 1)
+
+    try:
+        _, s, _ = np.linalg.svd(Xc_scaled, full_matrices=False)
+    except np.linalg.LinAlgError:
+        logger.warning("numpy SVD did not converge, falling back to scipy lapack_driver='gesdd'")
+        try:
+            from scipy.linalg import svd as scipy_svd
+            _, s, _ = scipy_svd(Xc_scaled, full_matrices=False, check_finite=False,
+                                lapack_driver="gesdd")
+        except Exception:
+            logger.warning("gesdd failed, trying gesvd (slower but more robust)")
+            from scipy.linalg import svd as scipy_svd
+            _, s, _ = scipy_svd(Xc_scaled, full_matrices=False, check_finite=False,
+                                lapack_driver="gesvd")
+
     eigs = s ** 2
     eigs /= eigs.sum()
     return eigs[:n_components]
