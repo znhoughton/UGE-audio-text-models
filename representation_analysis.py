@@ -532,7 +532,11 @@ def extract_parakeet_embeddings(
         feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
         model = ParakeetForCTC.from_pretrained(
             model_id,
-            torch_dtype=torch.float16,
+            # FastConformer is numerically sensitive in fp16 — the depthwise
+            # separable convolutions can overflow, producing NaN embeddings.
+            # fp32 is safer at the cost of ~2x VRAM for weights (~2.4GB vs 1.2GB),
+            # which is still trivial on an 80GB A100.
+            torch_dtype=torch.float32,
             device_map="auto",
             max_memory={0: "75GiB", 1: "75GiB"},
         )
@@ -604,11 +608,19 @@ def extract_parakeet_embeddings(
             # key depending on the transformers version. We take the first
             # non-mask key to be robust across versions.
             input_key = next(k for k in inputs.keys() if "mask" not in k)
-            input_tensor = inputs[input_key].to(first_device, dtype=torch.float16)
+            input_tensor = inputs[input_key].to(first_device, dtype=torch.float32)
 
             with torch.no_grad():
                 out = model(input_tensor, output_hidden_states=True)
                 emb = out.hidden_states[-1].mean(dim=1).float().cpu().numpy()
+
+            # Catch NaN embeddings immediately rather than caching bad data
+            if not np.isfinite(emb).all():
+                n_bad = (~np.isfinite(emb)).sum()
+                logger.warning(f"Batch {batch_idx}: {n_bad} non-finite values in Parakeet output, skipping")
+                errors += 1
+                continue
+
             embeddings.append(emb)
 
         except RuntimeError as e:
@@ -1033,14 +1045,24 @@ def plot_effective_rank_bar(eigenvalues: dict, plots_dir: Path):
 def plot_pca_scatter(embeddings: dict, plots_dir: Path):
     from sklearn.decomposition import PCA as skPCA
     _apply_style()
-    names = list(embeddings.keys())
+
+    # Filter out any models with non-finite embeddings
+    clean = {k: v for k, v in embeddings.items() if np.isfinite(v).all()}
+    if len(clean) < len(embeddings):
+        skipped = set(embeddings) - set(clean)
+        logger.warning(f"plot_pca_scatter: skipping models with non-finite embeddings: {skipped}")
+    if not clean:
+        logger.warning("plot_pca_scatter: no valid embeddings to plot, skipping")
+        return
+
+    names = list(clean.keys())
     n = len(names)
     fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 4.5))
     if n == 1:
         axes = [axes]
 
     for ax, name in zip(axes, names):
-        X = embeddings[name]
+        X = clean[name]
         color = MODEL_COLORS.get(name, "#555")
         pca = skPCA(n_components=2)
         Z = pca.fit_transform(X)
@@ -1467,6 +1489,18 @@ def main():
                 continue
 
         embeddings[model_name] = emb
+
+        # Validate before caching — don't save NaN embeddings to disk
+        n_bad = (~np.isfinite(emb)).sum()
+        if n_bad > 0:
+            logger.error(
+                f"{model_name}: {n_bad} non-finite values in embeddings "
+                f"({n_bad / emb.size * 100:.1f}% of values). "
+                f"NOT caching — re-extraction needed."
+            )
+            del embeddings[model_name]
+            continue
+
         with open(cache_path, "wb") as f:
             pickle.dump(emb, f)
         logger.info(f"Cached embeddings → {cache_path}  ({cache_path.stat().st_size / 1024**2:.1f} MB)")
