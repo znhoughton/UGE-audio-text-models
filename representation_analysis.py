@@ -399,12 +399,17 @@ def extract_whisper_embeddings(
                 audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
                 audio_arrays.append(audio)
 
-            # Processor pads all clips to 30s mel spectrograms automatically
+            # padding="max_length" + max_length=3000 forces all clips to
+            # exactly 3000 mel frames — Whisper's encoder requires this exactly.
+            # padding=True alone only pads to the longest clip in the batch,
+            # which is shorter than 3000 for most LibriSpeech utterances.
             inputs = processor(
                 audio_arrays,
                 sampling_rate=SAMPLE_RATE,
                 return_tensors="pt",
-                padding=True,
+                padding="max_length",
+                max_length=3000,
+                truncation=True,
             )
             features = inputs.input_features.to(device, dtype=torch.float16)
 
