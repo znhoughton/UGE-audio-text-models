@@ -21,7 +21,7 @@ Usage:
     python representation_analysis.py
 
     # Quick test run
-    python representation_analysis.py --splits test.clean --max_samples 500
+    python representation_analysis.py --splits test --max_samples 500
 
     # Re-run analysis using cached embeddings (skip re-extraction)
     python representation_analysis.py --skip_extraction
@@ -283,13 +283,23 @@ def load_librispeech(splits: list, max_samples: int | None):
             )
         hf_config, hf_split = SPLIT_CONFIG_MAP[split]
         logger.info(f"  Fetching {split} (config={hf_config}, split={hf_split})…")
-        ds = load_dataset(
-            "openslr/librispeech_asr",
-            hf_config,
-            split=hf_split,
-            streaming=False,
-            trust_remote_code=True,
-        )
+        try:
+            ds = load_dataset(
+                "openslr/librispeech_asr",
+                hf_config,
+                split=hf_split,
+                streaming=False,
+                trust_remote_code=True,
+            )
+        except ValueError as e:
+            logger.error(
+                f"Failed to load split '{split}' (config={hf_config}, split={hf_split}): {e}\n"
+                f"The HuggingFace split name may differ from what we expect. "
+                f"Try loading the dataset manually to check available splits:\n"
+                f"  from datasets import get_dataset_split_names\n"
+                f"  print(get_dataset_split_names('openslr/librispeech_asr', '{hf_config}'))"
+            )
+            raise
         logger.info(f"  {split}: {len(ds):,} samples")
         parts.append(ds)
 
@@ -1211,15 +1221,19 @@ def main():
                 if j < i:
                     cka_matrix[i, j] = cka_matrix[j, i]
                     continue
-                with timer(f"CKA {names[i]} vs {names[j]}"):
-                    score = minibatch_cka(
-                        embeddings[names[i]], embeddings[names[j]],
-                        batch_size=args.batch_size,
-                    )
+                t_pair = time.perf_counter()
+                score = minibatch_cka(
+                    embeddings[names[i]], embeddings[names[j]],
+                    batch_size=args.batch_size,
+                )
+                elapsed_pair = time.perf_counter() - t_pair
                 cka_matrix[i, j] = score
                 key = f"{names[i]} vs {names[j]}"
                 cka_results[key] = score
-                logger.info(f"  CKA({names[i]}, {names[j]}) = {score:.4f}")
+                logger.info(
+                    f"  CKA({names[i]}, {names[j]}) = {score:.4f}"
+                    f"  ({elapsed_pair:.1f}s)"
+                )
                 pair_bar.update(1)
         pair_bar.close()
 
