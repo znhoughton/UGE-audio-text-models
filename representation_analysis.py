@@ -351,14 +351,14 @@ def extract_whisper_embeddings(
     dataset,
     device: torch.device,
     batch_size: int = 64,
+    checkpoint_dir: Path = None,
 ) -> np.ndarray:
     """
-    Batched extraction of Whisper encoder embeddings.
+    Batched extraction of Whisper encoder embeddings with checkpointing.
 
-    Processes audio in batches rather than one sample at a time.
-    The Whisper processor pads all audio in a batch to 30s mel spectrograms,
-    so batch size is the main lever for throughput. 64 works well on an A100
-    80GB — reduce if you see OOM errors.
+    Saves progress every 500 batches so a restart can resume from the last
+    checkpoint rather than starting over. Checkpoints are saved to
+    checkpoint_dir/whisper-base_checkpoint.pkl.
     """
     logger.info(f"Loading Whisper model: {model_id}")
     log_gpu_memory("before Whisper load")
@@ -374,20 +374,30 @@ def extract_whisper_embeddings(
     log_gpu_memory("after Whisper load")
     n = len(dataset)
     n_batches = (n + batch_size - 1) // batch_size
+
+    # --- Resume from checkpoint if available ---
+    checkpoint_path = checkpoint_dir / "whisper-base_checkpoint.pkl" if checkpoint_dir else None
+    start_batch = 0
+    embeddings = []
+    if checkpoint_path and checkpoint_path.exists():
+        with open(checkpoint_path, "rb") as f:
+            checkpoint = pickle.load(f)
+        embeddings = checkpoint["embeddings"]
+        start_batch = checkpoint["next_batch"]
+        logger.info(f"Resuming Whisper from batch {start_batch}/{n_batches} ({len(embeddings)} batches already done)")
+
     logger.info(
         f"Extracting Whisper embeddings for {n:,} samples  "
-        f"(batch_size={batch_size}, n_batches={n_batches:,})…"
+        f"(batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch})…"
     )
 
-    embeddings = []
     errors = 0
+    CHECKPOINT_EVERY = 500
 
-    # Iterate in batches without materialising all audio into RAM at once.
-    # We use dataset.select() to slice each batch by index, which streams
-    # only the audio for that batch rather than loading all 292k waveforms.
-    indices = list(range(n))
-    for start in tqdm(range(0, n, batch_size), desc="whisper-base", unit="batch", total=n_batches):
-        batch_indices = indices[start : start + batch_size]
+    for batch_idx in tqdm(range(start_batch, n_batches), desc="whisper-base",
+                          unit="batch", total=n_batches, initial=start_batch):
+        start = batch_idx * batch_size
+        batch_indices = list(range(start, min(start + batch_size, n)))
         batch = dataset.select(batch_indices)
         try:
             audio_arrays = []
@@ -399,10 +409,6 @@ def extract_whisper_embeddings(
                 audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
                 audio_arrays.append(audio)
 
-            # padding="max_length" + max_length=3000 forces all clips to
-            # exactly 3000 mel frames — Whisper's encoder requires this exactly.
-            # padding=True alone only pads to the longest clip in the batch,
-            # which is shorter than 3000 for most LibriSpeech utterances.
             inputs = processor(
                 audio_arrays,
                 sampling_rate=SAMPLE_RATE,
@@ -415,24 +421,33 @@ def extract_whisper_embeddings(
 
             with torch.no_grad():
                 enc = model.encoder(features)
-                # (B, T, H) → mean over T → (B, H)
-                emb = enc.last_hidden_state.mean(dim=1).float().cpu()
+                emb = enc.last_hidden_state.mean(dim=1).float().cpu().numpy()
 
-            embeddings.append(emb.numpy())
+            embeddings.append(emb)
 
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
                 logger.error(
-                    f"CUDA OOM at batch {start // batch_size}/{n_batches}. "
-                    f"Try reducing --whisper_batch_size (currently {batch_size})."
+                    f"CUDA OOM at batch {batch_idx}/{n_batches}. "
+                    f"Try reducing --whisper_batch_size (currently {batch_size}). "
+                    f"Progress saved to checkpoint."
                 )
+                if checkpoint_path:
+                    with open(checkpoint_path, "wb") as f:
+                        pickle.dump({"embeddings": embeddings, "next_batch": batch_idx}, f)
                 torch.cuda.empty_cache()
                 raise
             errors += 1
-            logger.warning(f"Skipping batch {start // batch_size} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping batch {start // batch_size} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
+
+        # Periodic checkpoint
+        if checkpoint_path and (batch_idx + 1) % CHECKPOINT_EVERY == 0:
+            with open(checkpoint_path, "wb") as f:
+                pickle.dump({"embeddings": embeddings, "next_batch": batch_idx + 1}, f)
+            logger.debug(f"Checkpoint saved at batch {batch_idx + 1}/{n_batches}")
 
     if errors:
         logger.warning(f"Whisper: skipped {errors} batches due to errors")
@@ -440,6 +455,11 @@ def extract_whisper_embeddings(
     del model
     torch.cuda.empty_cache()
     log_gpu_memory("after Whisper unload")
+
+    # Clean up checkpoint on successful completion
+    if checkpoint_path and checkpoint_path.exists():
+        checkpoint_path.unlink()
+        logger.debug("Whisper checkpoint removed (run complete)")
 
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"Whisper embeddings shape: {result.shape}")
@@ -451,16 +471,10 @@ def extract_parakeet_embeddings(
     dataset,
     device: torch.device,
     batch_size: int = 32,
+    checkpoint_dir: Path = None,
 ) -> np.ndarray:
     """
-    Batched extraction of Parakeet CTC encoder embeddings.
-
-    Unlike Whisper, Parakeet's feature extractor does NOT pad all clips to
-    a fixed length — clips have variable lengths. We therefore need
-    padding=True in the feature extractor call, which pads all clips in a
-    batch to the longest clip in that batch. This means smaller batches
-    have less wasted compute from padding. 32 is a good default for an
-    80GB A100 with the 600M model.
+    Batched extraction of Parakeet CTC encoder embeddings with checkpointing.
     """
     logger.info(f"Loading Parakeet model: {model_id}")
     log_gpu_memory("before Parakeet load")
@@ -470,7 +484,7 @@ def extract_parakeet_embeddings(
         model = ParakeetForCTC.from_pretrained(
             model_id,
             torch_dtype=torch.float16,
-            device_map="auto",   # spreads across both A100s if available
+            device_map="auto",
         )
         model.eval()
     except Exception as e:
@@ -480,20 +494,38 @@ def extract_parakeet_embeddings(
         )
         raise
 
+    # With device_map="auto" the model may span multiple GPUs.
+    # Find the device of the first layer to send inputs there.
+    first_device = next(iter(model.hf_device_map.values())) if hasattr(model, "hf_device_map") else device
+    logger.info(f"Parakeet first layer device: {first_device}")
     log_gpu_memory("after Parakeet load")
+
     n = len(dataset)
     n_batches = (n + batch_size - 1) // batch_size
+
+    # --- Resume from checkpoint if available ---
+    checkpoint_path = checkpoint_dir / "parakeet-ctc-0.6b_checkpoint.pkl" if checkpoint_dir else None
+    start_batch = 0
+    embeddings = []
+    if checkpoint_path and checkpoint_path.exists():
+        with open(checkpoint_path, "rb") as f:
+            checkpoint = pickle.load(f)
+        embeddings = checkpoint["embeddings"]
+        start_batch = checkpoint["next_batch"]
+        logger.info(f"Resuming Parakeet from batch {start_batch}/{n_batches}")
+
     logger.info(
         f"Extracting Parakeet embeddings for {n:,} samples  "
-        f"(batch_size={batch_size}, n_batches={n_batches:,})…"
+        f"(batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch})…"
     )
 
-    embeddings = []
     errors = 0
-    indices = list(range(n))
+    CHECKPOINT_EVERY = 500
 
-    for start in tqdm(range(0, n, batch_size), desc="parakeet-ctc-0.6b", unit="batch", total=n_batches):
-        batch_indices = indices[start : start + batch_size]
+    for batch_idx in tqdm(range(start_batch, n_batches), desc="parakeet-ctc-0.6b",
+                          unit="batch", total=n_batches, initial=start_batch):
+        start = batch_idx * batch_size
+        batch_indices = list(range(start, min(start + batch_size, n)))
         batch = dataset.select(batch_indices)
         try:
             audio_arrays = []
@@ -509,32 +541,37 @@ def extract_parakeet_embeddings(
                 audio_arrays,
                 sampling_rate=SAMPLE_RATE,
                 return_tensors="pt",
-                padding=True,   # pad variable-length clips to longest in batch
+                padding=True,
             )
-            # Send to the first device — device_map handles layer placement
-            input_values = inputs.input_values.to(
-                next(model.parameters()).device, dtype=torch.float16
-            )
+            input_values = inputs.input_values.to(first_device, dtype=torch.float16)
 
             with torch.no_grad():
                 out = model(input_values, output_hidden_states=True)
-                # (B, T, H) → mean over T → (B, H)
-                emb = out.hidden_states[-1].mean(dim=1).float().cpu()
-            embeddings.append(emb.numpy())
+                emb = out.hidden_states[-1].mean(dim=1).float().cpu().numpy()
+            embeddings.append(emb)
 
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
                 logger.error(
-                    f"CUDA OOM at batch {start // batch_size}/{n_batches}. "
-                    f"Try reducing --parakeet_batch_size (currently {batch_size})."
+                    f"CUDA OOM at batch {batch_idx}/{n_batches}. "
+                    f"Try reducing --parakeet_batch_size (currently {batch_size}). "
+                    f"Progress saved to checkpoint."
                 )
+                if checkpoint_path:
+                    with open(checkpoint_path, "wb") as f:
+                        pickle.dump({"embeddings": embeddings, "next_batch": batch_idx}, f)
                 torch.cuda.empty_cache()
                 raise
             errors += 1
-            logger.warning(f"Skipping batch {start // batch_size} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping batch {start // batch_size} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
+
+        if checkpoint_path and (batch_idx + 1) % CHECKPOINT_EVERY == 0:
+            with open(checkpoint_path, "wb") as f:
+                pickle.dump({"embeddings": embeddings, "next_batch": batch_idx + 1}, f)
+            logger.debug(f"Checkpoint saved at batch {batch_idx + 1}/{n_batches}")
 
     if errors:
         logger.warning(f"Parakeet: skipped {errors} batches due to errors")
@@ -542,6 +579,10 @@ def extract_parakeet_embeddings(
     del model
     torch.cuda.empty_cache()
     log_gpu_memory("after Parakeet unload")
+
+    if checkpoint_path and checkpoint_path.exists():
+        checkpoint_path.unlink()
+        logger.debug("Parakeet checkpoint removed (run complete)")
 
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"Parakeet embeddings shape: {result.shape}")
@@ -553,15 +594,16 @@ def extract_lm_embeddings(
     texts: list,
     device: torch.device,
     batch_size: int = 32,
+    checkpoint_dir: Path = None,
 ) -> np.ndarray:
-    """Mean-pool last hidden layer over non-padding tokens."""
+    """Mean-pool last hidden layer over non-padding tokens, with checkpointing."""
     logger.info(f"Loading LM: {model_id}")
     log_gpu_memory(f"before {model_id.split('/')[-1]} load")
 
     load_kwargs = dict(
         torch_dtype=torch.float16,
         trust_remote_code=True,
-        device_map="auto",   # spreads model across both A100s automatically
+        device_map="auto",
     )
     try:
         model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
@@ -576,6 +618,15 @@ def extract_lm_embeddings(
             raise
 
     model.eval()
+
+    # With device_map="auto", inputs must go to the device holding the
+    # embedding layer (first layer). Use hf_device_map if available,
+    # otherwise fall back to the device of the first parameter.
+    if hasattr(model, "hf_device_map") and model.hf_device_map:
+        first_device = next(iter(model.hf_device_map.values()))
+    else:
+        first_device = next(model.parameters()).device
+    logger.info(f"{model_id.split('/')[-1]} first layer device: {first_device}")
     log_gpu_memory(f"after {model_id.split('/')[-1]} load")
 
     try:
@@ -588,17 +639,32 @@ def extract_lm_embeddings(
         tokenizer.pad_token = tokenizer.eos_token
         logger.debug(f"Set pad_token = eos_token ({tokenizer.eos_token!r})")
 
-    n_batches = (len(texts) + batch_size - 1) // batch_size
-    logger.info(
-        f"Extracting embeddings: {len(texts):,} samples, "
-        f"batch_size={batch_size}, n_batches={n_batches:,}"
-    )
-
-    embeddings = []
-    errors = 0
+    n = len(texts)
+    n_batches = (n + batch_size - 1) // batch_size
     label = model_id.split("/")[-1]
 
-    for i in tqdm(range(0, len(texts), batch_size), desc=label, unit="batch", total=n_batches):
+    # --- Resume from checkpoint if available ---
+    checkpoint_path = checkpoint_dir / f"{label}_checkpoint.pkl" if checkpoint_dir else None
+    start_batch = 0
+    embeddings = []
+    if checkpoint_path and checkpoint_path.exists():
+        with open(checkpoint_path, "rb") as f:
+            checkpoint = pickle.load(f)
+        embeddings = checkpoint["embeddings"]
+        start_batch = checkpoint["next_batch"]
+        logger.info(f"Resuming {label} from batch {start_batch}/{n_batches} ({len(embeddings)} batches done)")
+
+    logger.info(
+        f"Extracting embeddings: {n:,} samples, "
+        f"batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch}"
+    )
+
+    errors = 0
+    CHECKPOINT_EVERY = 500
+
+    for batch_idx in tqdm(range(start_batch, n_batches), desc=label,
+                          unit="batch", total=n_batches, initial=start_batch):
+        i = batch_idx * batch_size
         batch = texts[i : i + batch_size]
         try:
             enc = tokenizer(
@@ -608,8 +674,8 @@ def extract_lm_embeddings(
                 truncation=True,
                 max_length=MAX_TEXT_TOKENS,
             )
-            input_ids = enc["input_ids"].to(model.device)
-            attention_mask = enc["attention_mask"].to(model.device)
+            input_ids = enc["input_ids"].to(first_device)
+            attention_mask = enc["attention_mask"].to(first_device)
             with torch.no_grad():
                 out = model(
                     input_ids=input_ids,
@@ -620,20 +686,29 @@ def extract_lm_embeddings(
             mask = attention_mask.unsqueeze(-1).float()
             pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
             embeddings.append(pooled.cpu().numpy())
+
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
                 logger.error(
-                    f"CUDA OOM at batch {i//batch_size}/{n_batches}. "
+                    f"CUDA OOM at batch {batch_idx}/{n_batches}. "
                     f"Try reducing --lm_batch_size (currently {batch_size}). "
-                    f"Embeddings extracted so far: {len(embeddings) * batch_size:,}"
+                    f"Progress saved to checkpoint."
                 )
+                if checkpoint_path:
+                    with open(checkpoint_path, "wb") as f:
+                        pickle.dump({"embeddings": embeddings, "next_batch": batch_idx}, f)
                 torch.cuda.empty_cache()
                 raise
             errors += 1
-            logger.warning(f"Skipping batch {i//batch_size} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping batch {i//batch_size} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
+
+        if checkpoint_path and (batch_idx + 1) % CHECKPOINT_EVERY == 0:
+            with open(checkpoint_path, "wb") as f:
+                pickle.dump({"embeddings": embeddings, "next_batch": batch_idx + 1}, f)
+            logger.debug(f"Checkpoint saved at batch {batch_idx + 1}/{n_batches}")
 
     if errors:
         logger.warning(f"{label}: skipped {errors} batches due to errors")
@@ -641,6 +716,10 @@ def extract_lm_embeddings(
     del model
     torch.cuda.empty_cache()
     log_gpu_memory(f"after {label} unload")
+
+    if checkpoint_path and checkpoint_path.exists():
+        checkpoint_path.unlink()
+        logger.debug(f"{label} checkpoint removed (run complete)")
 
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"{label} embeddings shape: {result.shape}")
@@ -1262,11 +1341,18 @@ def main():
     for model_name, cfg in MODELS.items():
         cache_path = data_dir / f"embeddings_{model_name}.pkl"
 
-        if args.skip_extraction and cache_path.exists():
+        # Always load from cache if the final .pkl exists — regardless of
+        # --skip_extraction. This means a restart automatically picks up any
+        # model that already completed without any flags needed.
+        if cache_path.exists():
             logger.info(f"Loading cached embeddings: {model_name}")
             with open(cache_path, "rb") as f:
                 embeddings[model_name] = pickle.load(f)
             logger.info(f"  Shape: {embeddings[model_name].shape}")
+            continue
+
+        if args.skip_extraction:
+            logger.warning(f"--skip_extraction set but no cache found for {model_name}, skipping")
             continue
 
         logger.info("=" * 60)
@@ -1276,13 +1362,17 @@ def main():
         with timer(f"Extract {model_name}"):
             try:
                 if cfg["modality"] == "audio":
-                    emb = extract_whisper_embeddings(cfg["hf_id"], dataset, device, batch_size=args.whisper_batch_size)
+                    emb = extract_whisper_embeddings(cfg["hf_id"], dataset, device,
+                                                     batch_size=args.whisper_batch_size,
+                                                     checkpoint_dir=data_dir)
                 elif cfg["modality"] == "audio-parakeet":
-                    emb = extract_parakeet_embeddings(cfg["hf_id"], dataset, device, batch_size=args.parakeet_batch_size)
+                    emb = extract_parakeet_embeddings(cfg["hf_id"], dataset, device,
+                                                      batch_size=args.parakeet_batch_size,
+                                                      checkpoint_dir=data_dir)
                 else:
-                    emb = extract_lm_embeddings(
-                        cfg["hf_id"], texts, device, batch_size=args.lm_batch_size
-                    )
+                    emb = extract_lm_embeddings(cfg["hf_id"], texts, device,
+                                                batch_size=args.lm_batch_size,
+                                                checkpoint_dir=data_dir)
             except Exception as e:
                 logger.error(
                     f"Extraction failed for {model_name}: {e}\n"
