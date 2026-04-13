@@ -114,17 +114,45 @@ else:
 # 5. Concatenated dataset — iter() (our fix)
 # ---------------------------------------------------------------------------
 section("5. Concatenated dataset — iter() [our fix]")
-batch_iter = next(ds_concat.iter(batch_size=4))
-iter_ok = True
-for i, (arr, sr) in enumerate(zip(batch_iter["audio"]["array"], batch_iter["audio"]["sampling_rate"])):
-    a = np.array(arr, dtype=np.float32)
-    ok = len(a) > 1000
-    check(
-        f"iter() on concat sample {i} audio length > 1000",
-        ok,
-        f"length={len(a)}, sr={sr}"
-    )
-    iter_ok = iter_ok and ok
+batch_iter_raw = next(ds_concat.iter(batch_size=4))
+
+# Probe the structure so we know exactly what iter() returns
+print(f"  iter() batch keys: {list(batch_iter_raw.keys())}")
+print(f"  type of batch['audio']: {type(batch_iter_raw['audio'])}")
+if isinstance(batch_iter_raw["audio"], list):
+    print(f"  batch['audio'] is a LIST of {len(batch_iter_raw['audio'])} items")
+    print(f"  type of batch['audio'][0]: {type(batch_iter_raw['audio'][0])}")
+    if isinstance(batch_iter_raw["audio"][0], dict):
+        print(f"  batch['audio'][0] keys: {list(batch_iter_raw['audio'][0].keys())}")
+    # iter() returns list of dicts: [{"array": ..., "sampling_rate": ...}, ...]
+    iter_ok = True
+    for i, audio_dict in enumerate(batch_iter_raw["audio"]):
+        a = np.array(audio_dict["array"], dtype=np.float32)
+        sr = audio_dict["sampling_rate"]
+        ok = len(a) > 1000
+        check(f"iter() on concat sample {i} audio length > 1000", ok, f"length={len(a)}, sr={sr}")
+        iter_ok = iter_ok and ok
+elif isinstance(batch_iter_raw["audio"], dict):
+    print(f"  batch['audio'] is a DICT with keys: {list(batch_iter_raw['audio'].keys())}")
+    # iter() returns dict of lists: {"array": [...], "sampling_rate": [...]}
+    iter_ok = True
+    for i, (arr, sr) in enumerate(zip(batch_iter_raw["audio"]["array"], batch_iter_raw["audio"]["sampling_rate"])):
+        a = np.array(arr, dtype=np.float32)
+        ok = len(a) > 1000
+        check(f"iter() on concat sample {i} audio length > 1000", ok, f"length={len(a)}, sr={sr}")
+        iter_ok = iter_ok and ok
+
+# Store for use in Whisper test below — works regardless of structure
+audio_samples_for_whisper = []
+for audio_item in batch_iter_raw["audio"][:3]:
+    if isinstance(audio_item, dict):
+        arr = np.array(audio_item["array"], dtype=np.float32)
+        sr = audio_item["sampling_rate"]
+    else:
+        # fallback if it's already an array
+        arr = np.array(audio_item, dtype=np.float32)
+        sr = SAMPLE_RATE
+    audio_samples_for_whisper.append((arr, sr))
 
 # ---------------------------------------------------------------------------
 # 6. Whisper processor — mel features are exactly 3000 frames
@@ -135,10 +163,10 @@ try:
     print("  Loading WhisperProcessor…")
     processor = WhisperProcessor.from_pretrained("openai/whisper-base")
 
-    # Get a real audio array from iter()
+    # Use audio samples collected from the iter() probe above
     audio_arrays = []
-    for arr, sr in zip(batch_iter["audio"]["array"][:3], batch_iter["audio"]["sampling_rate"][:3]):
-        a = np.array(arr, dtype=np.float32)
+    for arr, sr in audio_samples_for_whisper:
+        a = arr.copy()
         if sr != SAMPLE_RATE:
             a = a[:: int(sr / SAMPLE_RATE)]
         a = a[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
