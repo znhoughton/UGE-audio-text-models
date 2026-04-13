@@ -189,14 +189,25 @@ MODELS = {
 }
 
 ALL_SPLITS = [
-    "train.clean.100",
-    "train.clean.360",
-    "train.other.500",
-    "validation.clean",
-    "validation.other",
-    "test.clean",
-    "test.other",
+    "train.100",       # clean 100hr train (HF: config=clean, split=train.100)
+    "train.360",       # clean 360hr train (HF: config=clean, split=train.360)
+    "train.500",       # other 500hr train (HF: config=other, split=train.500)
+    "validation",      # clean validation  (HF: config=clean, split=validation)
+    "validation.other",# other validation  (HF: config=other, split=validation)
+    "test",            # clean test        (HF: config=clean, split=test)
+    "test.other",      # other test        (HF: config=other, split=test)
 ]
+
+# Maps our logical split names to (hf_config, hf_split_name)
+SPLIT_CONFIG_MAP = {
+    "train.100":        ("clean", "train.100"),
+    "train.360":        ("clean", "train.360"),
+    "train.500":        ("other", "train.500"),
+    "validation":       ("clean", "validation"),
+    "validation.other": ("other", "validation"),
+    "test":             ("clean", "test"),
+    "test.other":       ("other", "test"),
+}
 
 SAMPLE_RATE = 16_000
 MAX_AUDIO_SECONDS = 30
@@ -266,12 +277,16 @@ def load_librispeech(splits: list, max_samples: int | None):
 
     parts = []
     for split in splits:
-        config = "clean" if "clean" in split else "other"
-        logger.info(f"  Fetching {split}…")
+        if split not in SPLIT_CONFIG_MAP:
+            raise ValueError(
+                f"Unknown split '{split}'. Valid options: {list(SPLIT_CONFIG_MAP.keys())}"
+            )
+        hf_config, hf_split = SPLIT_CONFIG_MAP[split]
+        logger.info(f"  Fetching {split} (config={hf_config}, split={hf_split})…")
         ds = load_dataset(
             "openslr/librispeech_asr",
-            config,
-            split=split,
+            hf_config,
+            split=hf_split,
             streaming=False,
             trust_remote_code=True,
         )
@@ -1038,7 +1053,7 @@ def parse_args():
         description="Cross-modal representation analysis with minibatch CKA"
     )
     p.add_argument(
-        "--splits", nargs="+", default=ALL_SPLITS, choices=ALL_SPLITS,
+        "--splits", nargs="+", default=ALL_SPLITS, choices=list(SPLIT_CONFIG_MAP.keys()),
         help="LibriSpeech splits to use (default: all)",
     )
     p.add_argument(
