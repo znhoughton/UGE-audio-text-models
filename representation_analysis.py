@@ -381,12 +381,15 @@ def extract_whisper_embeddings(
 
     embeddings = []
     errors = 0
-    samples = list(dataset)   # materialise once so we can slice by index
 
+    # Iterate in batches without materialising all audio into RAM at once.
+    # We use dataset.select() to slice each batch by index, which streams
+    # only the audio for that batch rather than loading all 292k waveforms.
+    indices = list(range(n))
     for start in tqdm(range(0, n, batch_size), desc="whisper-base", unit="batch", total=n_batches):
-        batch = samples[start : start + batch_size]
+        batch_indices = indices[start : start + batch_size]
+        batch = dataset.select(batch_indices)
         try:
-            # Preprocess audio for each sample in the batch
             audio_arrays = []
             for sample in batch:
                 audio = np.array(sample["audio"]["array"], dtype=np.float32)
@@ -482,10 +485,11 @@ def extract_parakeet_embeddings(
 
     embeddings = []
     errors = 0
-    samples = list(dataset)
+    indices = list(range(n))
 
     for start in tqdm(range(0, n, batch_size), desc="parakeet-ctc-0.6b", unit="batch", total=n_batches):
-        batch = samples[start : start + batch_size]
+        batch_indices = indices[start : start + batch_size]
+        batch = dataset.select(batch_indices)
         try:
             audio_arrays = []
             for sample in batch:
