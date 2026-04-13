@@ -51,6 +51,8 @@ from transformers import (
     AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
+    AutoFeatureExtractor,
+    ParakeetForCTC,
     WhisperModel,
     WhisperProcessor,
 )
@@ -95,6 +97,13 @@ MODELS = {
         "arch": "GPT-NeoX",
         "corpus": "The Pile",
     },
+    "parakeet-ctc-0.6b": {
+        "hf_id": "nvidia/parakeet-ctc-0.6b",
+        "modality": "audio-parakeet",
+        "params": "600M",
+        "arch": "FastConformer-CTC",
+        "corpus": "Granary (64k hrs English)",
+    },
 }
 
 ALL_SPLITS = [
@@ -119,11 +128,12 @@ N_STABILITY_SUBSETS = 10
 STABILITY_SUBSET_FRAC = 0.8
 
 MODEL_COLORS = {
-    "whisper-base":  "#1565C0",
-    "babylm-125m":   "#E65100",
-    "babylm-1.3b":   "#F9A825",
-    "olmo-7b":       "#2E7D32",
-    "pythia-6.9b":   "#6A1B9A",
+    "whisper-base":       "#1565C0",
+    "babylm-125m":        "#E65100",
+    "babylm-1.3b":        "#F9A825",
+    "olmo-7b":            "#2E7D32",
+    "pythia-6.9b":        "#6A1B9A",
+    "parakeet-ctc-0.6b":  "#00838F",   # teal — second audio model
 }
 
 # ---------------------------------------------------------------------------
@@ -218,6 +228,58 @@ def extract_whisper_embeddings(model_id: str, dataset, device: torch.device) -> 
         with torch.no_grad():
             enc = model.encoder(features)
             emb = enc.last_hidden_state.mean(dim=1).squeeze(0).float().cpu()
+        embeddings.append(emb.numpy())
+
+    del model
+    torch.cuda.empty_cache()
+    return np.stack(embeddings)
+
+
+def extract_parakeet_embeddings(model_id: str, dataset, device: torch.device) -> np.ndarray:
+    """
+    Extract encoder embeddings from Parakeet CTC via the HuggingFace transformers
+    Parakeet integration (requires transformers >= 4.48).
+
+    Parakeet's FastConformer encoder applies 8x depthwise-separable convolutional
+    downsampling before its conformer blocks, so the output sequence is much shorter
+    than Whisper's. We mean-pool across the remaining time frames, exactly as we do
+    for Whisper, to get one fixed-size vector per utterance.
+
+    Architecture note: FastConformer combines convolution (local pattern detection)
+    with self-attention (global context), unlike Whisper's purely attention-based
+    encoder. This makes it an architecturally distinct second audio model.
+    """
+    print(f"\nLoading Parakeet: {model_id}")
+    feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
+    # ParakeetForCTC gives us access to the encoder hidden states
+    model = ParakeetForCTC.from_pretrained(model_id, torch_dtype=torch.float16)
+    model = model.to(device).eval()
+
+    embeddings = []
+    for sample in tqdm(dataset, desc="parakeet-ctc-0.6b"):
+        audio = np.array(sample["audio"]["array"], dtype=np.float32)
+        sr = sample["audio"]["sampling_rate"]
+        if sr != SAMPLE_RATE:
+            audio = audio[:: int(sr / SAMPLE_RATE)]
+        audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
+
+        inputs = feature_extractor(
+            audio,
+            sampling_rate=SAMPLE_RATE,
+            return_tensors="pt",
+        )
+        input_values = inputs.input_values.to(device, dtype=torch.float16)
+
+        with torch.no_grad():
+            # output_hidden_states=True returns encoder states from all layers;
+            # we take the final layer (index -1), same pooling strategy as Whisper
+            out = model(
+                input_values,
+                output_hidden_states=True,
+            )
+            # hidden_states[-1]: (1, T, hidden_dim) — last encoder layer
+            emb = out.hidden_states[-1].mean(dim=1).squeeze(0).float().cpu()
+
         embeddings.append(emb.numpy())
 
     del model
@@ -543,7 +605,10 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
             ax.text(j, i, f"{val:.3f}", ha="center", va="center",
                     fontsize=10, fontweight="bold", color=text_color)
 
-    audio_indices = [i for i, name in enumerate(names) if MODELS[name]["modality"] == "audio"]
+    audio_indices = [
+        i for i, name in enumerate(names)
+        if MODELS[name]["modality"] in ("audio", "audio-parakeet")
+    ]
     if audio_indices:
         boundary = max(audio_indices) + 0.5
         ax.axhline(boundary, color="#555", linewidth=1.2, linestyle="--", alpha=0.6)
@@ -551,7 +616,7 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
 
     ax.set_title(
         "Pairwise Minibatch Linear CKA\n"
-        "Dashed line separates audio (Whisper) from text models",
+        "Dashed line separates audio models (Whisper, Parakeet) from text models",
         fontsize=12, fontweight="bold", pad=15,
     )
     plt.tight_layout()
@@ -562,32 +627,61 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
 
 
 def plot_cka_bar_cross_modal(cka_matrix: np.ndarray, names: list, plots_dir: Path):
-    """Bar chart: each LLM's CKA with Whisper."""
+    """
+    Grouped bar chart: for each LLM, show its CKA with each audio model side by side.
+    This makes it easy to see whether both audio models agree on which LLMs are most similar.
+    """
     _apply_style()
-    if "whisper-base" not in names:
+    audio_names = [
+        n for n in names
+        if MODELS[n]["modality"] in ("audio", "audio-parakeet")
+    ]
+    lm_names = [
+        n for n in names
+        if MODELS[n]["modality"] not in ("audio", "audio-parakeet")
+    ]
+    if not audio_names or not lm_names:
         return
-    w_idx = names.index("whisper-base")
-    lm_names = [n for n in names if n != "whisper-base"]
-    scores = [cka_matrix[w_idx, names.index(n)] for n in lm_names]
-    colors = [MODEL_COLORS.get(n, "#555") for n in lm_names]
 
-    fig, ax = plt.subplots(figsize=(7, 4))
-    bars = ax.bar(lm_names, scores, color=colors, width=0.55, edgecolor="white", linewidth=1.2)
-    for bar, score in zip(bars, scores):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 0.005,
-            f"{score:.3f}",
-            ha="center", va="bottom", fontsize=10, fontweight="bold",
+    x = np.arange(len(lm_names))
+    n_audio = len(audio_names)
+    width = 0.7 / n_audio   # total bar group width = 0.7, split evenly
+
+    fig, ax = plt.subplots(figsize=(max(7, len(lm_names) * 1.8), 5))
+
+    for k, audio_name in enumerate(audio_names):
+        a_idx = names.index(audio_name)
+        scores = [cka_matrix[a_idx, names.index(lm)] for lm in lm_names]
+        offsets = x + (k - (n_audio - 1) / 2) * width
+        color = MODEL_COLORS.get(audio_name, "#555")
+        bars = ax.bar(
+            offsets, scores,
+            width=width * 0.9,
+            color=color,
+            label=audio_name,
+            edgecolor="white", linewidth=0.8,
         )
-    ax.set_ylim(0, min(1.0, max(scores) * 1.35 + 0.05))
-    ax.set_ylabel("CKA with Whisper", fontsize=11)
+        for bar, score in zip(bars, scores):
+            ax.text(
+                bar.get_x() + bar.get_width() / 2,
+                bar.get_height() + 0.005,
+                f"{score:.3f}",
+                ha="center", va="bottom", fontsize=8, fontweight="bold",
+            )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(lm_names, fontsize=10)
+    ax.set_ylim(0, min(1.0, max(
+        cka_matrix[names.index(a), names.index(lm)]
+        for a in audio_names for lm in lm_names
+    ) * 1.35 + 0.05))
+    ax.set_ylabel("CKA with audio model", fontsize=11)
     ax.set_title(
-        "Cross-Modal CKA: Each LLM vs. Whisper\n"
-        "Higher = more similar representational geometry to audio encoder",
+        "Cross-Modal CKA: Audio Models vs. Each LLM\n"
+        "Higher = more similar representational geometry to that audio encoder",
         fontsize=11, fontweight="bold",
     )
-    ax.tick_params(axis="x", labelsize=10)
+    ax.legend(fontsize=9, framealpha=0.9, title="Audio model")
     plt.tight_layout()
     path = plots_dir / "cka_cross_modal_bar.png"
     plt.savefig(path, dpi=150, bbox_inches="tight")
@@ -847,6 +941,8 @@ def main():
 
         if cfg["modality"] == "audio":
             emb = extract_whisper_embeddings(cfg["hf_id"], dataset, device)
+        elif cfg["modality"] == "audio-parakeet":
+            emb = extract_parakeet_embeddings(cfg["hf_id"], dataset, device)
         else:
             emb = extract_lm_embeddings(cfg["hf_id"], texts, device, batch_size=args.lm_batch_size)
 
