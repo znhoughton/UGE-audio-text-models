@@ -37,6 +37,7 @@ Models:
 
 import argparse
 import csv
+import gc
 import json
 import logging
 import os
@@ -60,6 +61,9 @@ from pathlib import Path
 os.environ.setdefault("HF_DATASETS_MAX_IN_MEMORY_SIZE", str(60 * 1024 ** 3))  # 60 GB
 os.environ.setdefault("HF_DATASETS_IN_MEMORY_MAX_SIZE", str(60 * 1024 ** 3))
 os.environ.setdefault("DATASETS_VERBOSITY", "warning")
+# Reduces CUDA memory fragmentation — helps when loading several large models
+# sequentially, each leaving behind fragmented allocations.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import numpy as np
 import torch
@@ -152,6 +156,24 @@ def log_gpu_memory(label: str = ""):
         f"peak: {peak:.2f} GB  "
         f"total: {total:.2f} GB"
     )
+
+
+def release_vram(label: str = ""):
+    """
+    Aggressively release GPU memory between model loads.
+
+    torch.cuda.empty_cache() alone only frees PyTorch's internal cache —
+    it doesn't force the OS to reclaim pages. Running gc.collect() first
+    ensures all Python references to tensors are dropped, then synchronize()
+    waits for all CUDA ops to finish before the cache is cleared.
+    This prevents VRAM from the previous model bleeding into the next one.
+    """
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        log_gpu_memory(f"after release [{label}]")
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -480,7 +502,7 @@ def extract_whisper_embeddings(
         logger.warning(f"Whisper: skipped {errors} batches due to errors")
 
     del model
-    torch.cuda.empty_cache()
+    release_vram("whisper")
     log_gpu_memory("after Whisper unload")
 
     # Clean up checkpoint on successful completion
@@ -512,6 +534,7 @@ def extract_parakeet_embeddings(
             model_id,
             torch_dtype=torch.float16,
             device_map="auto",
+            max_memory={0: "55GiB", 1: "75GiB"},
         )
         model.eval()
     except Exception as e:
@@ -615,7 +638,7 @@ def extract_parakeet_embeddings(
         logger.warning(f"Parakeet: skipped {errors} batches due to errors")
 
     del model
-    torch.cuda.empty_cache()
+    release_vram("parakeet")
     log_gpu_memory("after Parakeet unload")
 
     if checkpoint_path and checkpoint_path.exists():
@@ -642,6 +665,11 @@ def extract_lm_embeddings(
         torch_dtype=torch.float16,
         trust_remote_code=True,
         device_map="auto",
+        # Explicitly cap per-GPU memory so device_map spreads the model
+        # across both A100s rather than cramming everything onto GPU 0.
+        # GPU 0 is capped lower to leave room for the other process (17GB)
+        # and for activation memory during forward passes.
+        max_memory={0: "55GiB", 1: "75GiB"},
     )
     try:
         model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
@@ -752,7 +780,7 @@ def extract_lm_embeddings(
         logger.warning(f"{label}: skipped {errors} batches due to errors")
 
     del model
-    torch.cuda.empty_cache()
+    release_vram(label)
     log_gpu_memory(f"after {label} unload")
 
     if checkpoint_path and checkpoint_path.exists():
