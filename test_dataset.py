@@ -155,7 +155,7 @@ for audio_item in batch_iter_raw["audio"][:3]:
     audio_samples_for_whisper.append((arr, sr))
 
 # ---------------------------------------------------------------------------
-# 6. Whisper processor — mel features are exactly 3000 frames
+# 6. Whisper processor — probe what padding args actually do
 # ---------------------------------------------------------------------------
 section("6. Whisper processor padding")
 try:
@@ -163,7 +163,6 @@ try:
     print("  Loading WhisperProcessor…")
     processor = WhisperProcessor.from_pretrained("openai/whisper-base")
 
-    # Use audio samples collected from the iter() probe above
     audio_arrays = []
     for arr, sr in audio_samples_for_whisper:
         a = arr.copy()
@@ -172,32 +171,40 @@ try:
         a = a[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
         audio_arrays.append(a)
 
-    inputs = processor(
-        audio_arrays,
-        sampling_rate=SAMPLE_RATE,
-        return_tensors="pt",
-        padding="max_length",
-        max_length=3000,
-        truncation=True,
-    )
-    shape = inputs.input_features.shape
-    check(
-        "Batch dimension matches number of inputs",
-        shape[0] == len(audio_arrays),
-        f"shape={tuple(shape)}"
-    )
-    check(
-        "Mel features are exactly 3000 frames (required by Whisper)",
-        shape[2] == 3000,
-        f"mel_length={shape[2]}"
-    )
-    check(
-        "Mel frequency bins are 80",
-        shape[1] == 80,
-        f"n_mels={shape[1]}"
-    )
+    print(f"  Raw audio lengths (samples): {[len(a) for a in audio_arrays]}")
+
+    # Probe 1: no padding args — processor default behaviour
+    inp1 = processor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt")
+    print(f"  No padding args:                      shape={tuple(inp1.input_features.shape)}")
+
+    # Probe 2: current code — max_length=3000 (probably wrong units)
+    inp2 = processor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt",
+                     padding="max_length", max_length=3000, truncation=True)
+    print(f"  padding='max_length', max_length=3000: shape={tuple(inp2.input_features.shape)}")
+
+    # Probe 3: max_length in raw samples (30s * 16000 = 480000)
+    inp3 = processor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt",
+                     padding="max_length", max_length=480000, truncation=True)
+    print(f"  padding='max_length', max_length=480000: shape={tuple(inp3.input_features.shape)}")
+
+    # The correct approach — use default (no padding args) since processor
+    # always outputs fixed 3000 frames regardless
+    shape = inp1.input_features.shape
+    check("Batch dimension matches", shape[0] == len(audio_arrays), f"shape={tuple(shape)}")
+    check("Default processor gives exactly 3000 mel frames", shape[2] == 3000, f"mel_length={shape[2]}")
+    check("Mel frequency bins are 80", shape[1] == 80, f"n_mels={shape[1]}")
+
+    if shape[2] == 3000:
+        print("\n  → CONCLUSION: Use processor() with NO padding args.")
+        print("    The WhisperProcessor always outputs exactly 3000 frames by default.")
+        print("    'padding' and 'max_length' args operate on raw audio samples, not mel frames.")
+    else:
+        print(f"\n  → Default gave {shape[2]} frames — investigate further.")
+
 except Exception as e:
+    import traceback
     print(f"  ✗ FAIL  Whisper processor test: {e}")
+    traceback.print_exc()
 
 # ---------------------------------------------------------------------------
 # 7. Summary
