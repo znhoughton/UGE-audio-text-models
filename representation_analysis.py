@@ -425,9 +425,10 @@ def extract_whisper_embeddings(
                 audio_arrays,
                 sampling_rate=SAMPLE_RATE,
                 return_tensors="pt",
-                padding="max_length",
-                max_length=3000,
-                truncation=True,
+                # No padding/max_length/truncation args — WhisperProcessor
+                # always outputs exactly (B, 80, 3000) mel spectrograms by
+                # default. Those args operate on raw audio samples not mel
+                # frames, causing the "found N frames" error when set to 3000.
             )
             features = inputs.input_features.to(device, dtype=torch.float16)
 
