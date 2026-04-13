@@ -1,0 +1,188 @@
+#!/usr/bin/env python3
+"""
+Quick sanity checks before running the full representation analysis.
+
+Tests:
+  1. Single split audio loading via ds[i]
+  2. select() on single split
+  3. select() on concatenated dataset (known to fail — confirms the bug)
+  4. iter() on concatenated dataset (our fix)
+  5. Whisper processor with a real audio array
+  6. That mel features are exactly 3000 frames after padding
+
+Usage:
+    python test_dataset.py
+"""
+
+import sys
+import numpy as np
+
+SAMPLE_RATE = 16_000
+MAX_AUDIO_SECONDS = 30
+
+def section(title):
+    print(f"\n{'='*60}")
+    print(f"  {title}")
+    print(f"{'='*60}")
+
+def check(label, condition, detail=""):
+    status = "✓ PASS" if condition else "✗ FAIL"
+    print(f"  {status}  {label}")
+    if detail:
+        print(f"         {detail}")
+    return condition
+
+# ---------------------------------------------------------------------------
+# 1. Load two small splits to test concatenation
+# ---------------------------------------------------------------------------
+section("1. Loading dataset splits")
+from datasets import load_dataset, concatenate_datasets
+
+print("  Loading test split (clean)…")
+ds_test = load_dataset(
+    "openslr/librispeech_asr", "clean",
+    split="test", trust_remote_code=True
+)
+print(f"  test split: {len(ds_test):,} samples")
+
+print("  Loading validation split (clean)…")
+ds_val = load_dataset(
+    "openslr/librispeech_asr", "clean",
+    split="validation", trust_remote_code=True
+)
+print(f"  validation split: {len(ds_val):,} samples")
+
+# ---------------------------------------------------------------------------
+# 2. Single split — direct indexing
+# ---------------------------------------------------------------------------
+section("2. Single split — direct indexing")
+sample = ds_test[0]
+audio = np.array(sample["audio"]["array"], dtype=np.float32)
+check(
+    "Audio array is a numpy-compatible float array",
+    len(audio) > 1000,
+    f"length={len(audio)}, dtype={audio.dtype}"
+)
+check(
+    "Sample rate is 16000",
+    sample["audio"]["sampling_rate"] == SAMPLE_RATE,
+    f"sr={sample['audio']['sampling_rate']}"
+)
+check(
+    "Text field is a non-empty string",
+    isinstance(sample["text"], str) and len(sample["text"]) > 0,
+    f"text='{sample['text'][:50]}'"
+)
+
+# ---------------------------------------------------------------------------
+# 3. Single split — select()
+# ---------------------------------------------------------------------------
+section("3. Single split — select()")
+batch = ds_test.select([0, 1, 2])
+all_ok = True
+for i, s in enumerate(batch):
+    a = np.array(s["audio"]["array"], dtype=np.float32)
+    ok = len(a) > 1000
+    check(f"select() sample {i} audio length > 1000", ok, f"length={len(a)}")
+    all_ok = all_ok and ok
+
+# ---------------------------------------------------------------------------
+# 4. Concatenated dataset — select() (expected to fail)
+# ---------------------------------------------------------------------------
+section("4. Concatenated dataset — select() [expect FAIL]")
+ds_concat = concatenate_datasets([ds_test, ds_val])
+print(f"  Concatenated size: {len(ds_concat):,}")
+
+batch_select = ds_concat.select([0, 1, 2])
+select_ok = True
+for i, s in enumerate(batch_select):
+    a = np.array(s["audio"]["array"], dtype=np.float32)
+    ok = len(a) > 1000
+    check(
+        f"select() on concat sample {i} audio length > 1000",
+        ok,
+        f"length={len(a)} {'← BAD (raw bytes)' if not ok else ''}"
+    )
+    select_ok = select_ok and ok
+
+if not select_ok:
+    print("  → Confirmed: select() on concatenated dataset returns raw bytes, not decoded audio.")
+else:
+    print("  → select() worked fine on concat — behaviour may have changed in this datasets version.")
+
+# ---------------------------------------------------------------------------
+# 5. Concatenated dataset — iter() (our fix)
+# ---------------------------------------------------------------------------
+section("5. Concatenated dataset — iter() [our fix]")
+batch_iter = next(ds_concat.iter(batch_size=4))
+iter_ok = True
+for i, (arr, sr) in enumerate(zip(batch_iter["audio"]["array"], batch_iter["audio"]["sampling_rate"])):
+    a = np.array(arr, dtype=np.float32)
+    ok = len(a) > 1000
+    check(
+        f"iter() on concat sample {i} audio length > 1000",
+        ok,
+        f"length={len(a)}, sr={sr}"
+    )
+    iter_ok = iter_ok and ok
+
+# ---------------------------------------------------------------------------
+# 6. Whisper processor — mel features are exactly 3000 frames
+# ---------------------------------------------------------------------------
+section("6. Whisper processor padding")
+try:
+    from transformers import WhisperProcessor
+    print("  Loading WhisperProcessor…")
+    processor = WhisperProcessor.from_pretrained("openai/whisper-base")
+
+    # Get a real audio array from iter()
+    audio_arrays = []
+    for arr, sr in zip(batch_iter["audio"]["array"][:3], batch_iter["audio"]["sampling_rate"][:3]):
+        a = np.array(arr, dtype=np.float32)
+        if sr != SAMPLE_RATE:
+            a = a[:: int(sr / SAMPLE_RATE)]
+        a = a[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
+        audio_arrays.append(a)
+
+    inputs = processor(
+        audio_arrays,
+        sampling_rate=SAMPLE_RATE,
+        return_tensors="pt",
+        padding="max_length",
+        max_length=3000,
+        truncation=True,
+    )
+    shape = inputs.input_features.shape
+    check(
+        "Batch dimension matches number of inputs",
+        shape[0] == len(audio_arrays),
+        f"shape={tuple(shape)}"
+    )
+    check(
+        "Mel features are exactly 3000 frames (required by Whisper)",
+        shape[2] == 3000,
+        f"mel_length={shape[2]}"
+    )
+    check(
+        "Mel frequency bins are 80",
+        shape[1] == 80,
+        f"n_mels={shape[1]}"
+    )
+except Exception as e:
+    print(f"  ✗ FAIL  Whisper processor test: {e}")
+
+# ---------------------------------------------------------------------------
+# 7. Summary
+# ---------------------------------------------------------------------------
+section("Summary")
+print("  If all iter() tests passed and select() on concat failed,")
+print("  the fix in representation_analysis.py is correct and safe to run.")
+print()
+print("  Key finding:")
+if iter_ok and not select_ok:
+    print("  ✓ iter() works correctly, select() on concat is broken — fix is validated.")
+elif iter_ok and select_ok:
+    print("  Both iter() and select() work — may be a datasets version difference.")
+    print("  iter() is still the safer choice.")
+else:
+    print("  ✗ iter() also failing — deeper issue, investigate before running main script.")
