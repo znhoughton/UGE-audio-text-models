@@ -394,16 +394,25 @@ def extract_whisper_embeddings(
     errors = 0
     CHECKPOINT_EVERY = 500
 
+    # Use dataset.iter() rather than dataset.select() — select() on a
+    # concatenated dataset doesn't load audio arrays correctly, returning
+    # near-empty arrays. iter() is the correct way to stream batches from
+    # a concatenated HuggingFace dataset.
+    batch_iter = dataset.iter(batch_size=batch_size)
+
+    # Skip already-processed batches when resuming from checkpoint
+    if start_batch > 0:
+        logger.info(f"Fast-forwarding through {start_batch} already-processed batches…")
+        for _ in range(start_batch):
+            next(batch_iter)
+
     for batch_idx in tqdm(range(start_batch, n_batches), desc="whisper-base",
                           unit="batch", total=n_batches, initial=start_batch):
-        start = batch_idx * batch_size
-        batch_indices = list(range(start, min(start + batch_size, n)))
-        batch = dataset.select(batch_indices)
+        batch = next(batch_iter)
         try:
             audio_arrays = []
-            for sample in batch:
-                audio = np.array(sample["audio"]["array"], dtype=np.float32)
-                sr = sample["audio"]["sampling_rate"]
+            for audio_array, sr in zip(batch["audio"]["array"], batch["audio"]["sampling_rate"]):
+                audio = np.array(audio_array, dtype=np.float32)
                 if sr != SAMPLE_RATE:
                     audio = audio[:: int(sr / SAMPLE_RATE)]
                 audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
@@ -522,16 +531,20 @@ def extract_parakeet_embeddings(
     errors = 0
     CHECKPOINT_EVERY = 500
 
+    batch_iter = dataset.iter(batch_size=batch_size)
+
+    if start_batch > 0:
+        logger.info(f"Fast-forwarding through {start_batch} already-processed batches…")
+        for _ in range(start_batch):
+            next(batch_iter)
+
     for batch_idx in tqdm(range(start_batch, n_batches), desc="parakeet-ctc-0.6b",
                           unit="batch", total=n_batches, initial=start_batch):
-        start = batch_idx * batch_size
-        batch_indices = list(range(start, min(start + batch_size, n)))
-        batch = dataset.select(batch_indices)
+        batch = next(batch_iter)
         try:
             audio_arrays = []
-            for sample in batch:
-                audio = np.array(sample["audio"]["array"], dtype=np.float32)
-                sr = sample["audio"]["sampling_rate"]
+            for audio_array, sr in zip(batch["audio"]["array"], batch["audio"]["sampling_rate"]):
+                audio = np.array(audio_array, dtype=np.float32)
                 if sr != SAMPLE_RATE:
                     audio = audio[:: int(sr / SAMPLE_RATE)]
                 audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
