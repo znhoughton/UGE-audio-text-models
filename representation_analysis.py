@@ -179,11 +179,15 @@ def prefetch_generator(source_iter, queue_depth: int = 3):
     Keeps GPU busy by prefetching CPU-side preprocessing `queue_depth` batches ahead.
     """
     q = queue.Queue(maxsize=queue_depth)
+    exc_holder = [None]
 
     def _producer():
         try:
             for item in source_iter:
                 q.put(item)
+        except Exception as e:
+            exc_holder[0] = e
+            logger.error(f"Prefetch producer thread crashed: {e}", exc_info=True)
         finally:
             q.put(None)
 
@@ -192,6 +196,8 @@ def prefetch_generator(source_iter, queue_depth: int = 3):
     while True:
         item = q.get()
         if item is None:
+            if exc_holder[0] is not None:
+                raise RuntimeError(f"Prefetch producer failed: {exc_holder[0]}") from exc_holder[0]
             break
         yield item
 
@@ -716,15 +722,13 @@ def extract_parakeet_embeddings(
     log_gpu_memory("before Parakeet load")
 
     feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
-    model = ParakeetForCTC.from_pretrained(
-        model_id,
-        torch_dtype=torch.float32,
-        device_map="auto",
-        max_memory={0: "75GiB", 1: "75GiB"},
-    )
-    model.eval()
+    # Parakeet uses the NeMo framework internally. Loading with device_map="auto"
+    # triggers "Invalid device argument: did you call init?" because NeMo's CUDA
+    # init hasn't run. Load to CPU first, then move to device explicitly.
+    model = ParakeetForCTC.from_pretrained(model_id, torch_dtype=torch.float32)
+    model = model.to(device).eval()
 
-    first_device = next(iter(model.hf_device_map.values())) if hasattr(model, "hf_device_map") else device
+    first_device = device
     log_gpu_memory("after Parakeet load")
 
     n = len(dataset)
@@ -1310,7 +1314,9 @@ def extract_qwen3_tts_embeddings(
         device_map="auto",
         dtype=torch.bfloat16,
     )
-    model.eval()
+    # Qwen3TTSModel is not a standard nn.Module in all versions — eval() may not exist.
+    if hasattr(model, "eval"):
+        model.eval()
 
     # Qwen3-TTS wraps a Qwen3 transformer. The LM backbone is accessible via
     # .language_model (most versions) or .model. We need it for hidden states.
