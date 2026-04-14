@@ -1,0 +1,7 @@
+model,params,arch,corpus,embedding_dim,effective_rank,var_pc1,var_top5,var_top10
+whisper-base,74M,Whisper encoder,680k hrs audio,512,4.10,0.6685,0.8161,0.8554
+babylm-125m,125M,OPT,BabyLM,768,2.70,0.6890,0.9807,0.9954
+babylm-1.3b,1.3B,OPT,BabyLM,2048,3.42,0.6198,0.9556,0.9872
+olmo-7b,7B,OLMo-2,Dolma,4096,22.94,0.1136,0.3109,0.3962
+pythia-6.9b,6.9B,GPT-NeoX,The Pile,4096,26.96,0.0831,0.2752,0.3656
+parakeet-ctc-0.6b,600M,FastConformer-CTC,Granary (64k hrs English),1024,12.17,0.3768,0.5565,0.6551

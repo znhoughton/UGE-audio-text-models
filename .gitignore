@@ -1,0 +1,18 @@
+# Large embedding caches
+Data/*.pkl
+
+# Logs
+logs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# HuggingFace cache if it ended up here
+huggingface_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+Data/texts_*.json
