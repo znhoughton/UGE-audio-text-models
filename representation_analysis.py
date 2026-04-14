@@ -502,15 +502,12 @@ def load_librispeech(splits: list, max_samples: int | None,
         with open(texts_cache_path) as f:
             texts = json.load(f)
     else:
-        logger.info(f"Extracting transcripts (num_proc={num_proc})…")
-        # Use dataset.map for parallel transcript extraction — much faster than
-        # iterating row-by-row when num_proc > 1.
-        texts_ds = dataset.map(
-            lambda x: {"_text": x["text"].strip()},
-            num_proc=num_proc,
-            desc="reading transcripts",
-        )
-        texts = texts_ds["_text"]
+        logger.info("Extracting transcripts (direct column access)…")
+        # Use direct column access rather than dataset.map() — map() with
+        # num_proc>1 forks worker processes that each serialize the full
+        # dataset (audio arrays included), which OOMs on large splits.
+        # String stripping is fast enough single-threaded.
+        texts = [t.strip() for t in dataset["text"]]
         if texts_cache_path:
             with open(texts_cache_path, "w") as f:
                 json.dump(texts, f)
