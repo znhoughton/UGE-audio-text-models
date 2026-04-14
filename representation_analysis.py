@@ -50,6 +50,7 @@ Models:
 import argparse
 import csv
 import gc
+import io
 import json
 import logging
 import os
@@ -82,7 +83,7 @@ import torch
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from matplotlib.colors import LinearSegmentedColormap
-from datasets import load_dataset, concatenate_datasets
+from datasets import load_dataset, concatenate_datasets, Audio
 from tqdm import tqdm
 from transformers import (
     AutoModel,
@@ -519,6 +520,11 @@ def load_librispeech(splits: list, max_samples: int | None,
                 json.dump(texts, f)
             logger.info(f"Transcripts cached → {texts_cache_path}")
 
+    # Disable automatic audio decoding so datasets does not invoke torchcodec
+    # (which requires FFmpeg shared libs that may not be present). Audio bytes
+    # are decoded manually in _decode_audio_batch / the Mimi loop using
+    # soundfile / torchaudio instead.
+    dataset = dataset.cast_column("audio", Audio(decode=False))
     logger.info(f"Final dataset size: {len(texts):,} utterances")
     return dataset, texts
 
@@ -898,12 +904,29 @@ def extract_mimi_embeddings(
                           unit="batch", total=n_batches, initial=start_batch):
         batch = next(batch_iter)
         try:
-            # Decode audio and resample 16kHz → 24kHz using torchaudio
+            # Decode audio and resample 16kHz → 24kHz using torchaudio.
+            # Handles both decoded {"array":...} and undecoded {"bytes":...}
+            # formats (the latter when dataset uses Audio(decode=False)).
             audio_arrays_24k = []
             for audio_item in batch["audio"]:
-                arr = audio_item["array"] if isinstance(audio_item, dict) else audio_item
-                sr  = audio_item["sampling_rate"] if isinstance(audio_item, dict) else SAMPLE_RATE
-                audio = torch.from_numpy(np.array(arr, dtype=np.float32)).unsqueeze(0)  # (1, T)
+                if isinstance(audio_item, dict) and "array" in audio_item:
+                    arr = np.array(audio_item["array"], dtype=np.float32)
+                    sr  = audio_item.get("sampling_rate", SAMPLE_RATE)
+                    audio = torch.from_numpy(arr).unsqueeze(0)  # (1, T)
+                elif isinstance(audio_item, dict):
+                    raw_bytes = audio_item.get("bytes")
+                    path      = audio_item.get("path")
+                    if raw_bytes:
+                        audio, sr = torchaudio.load(io.BytesIO(raw_bytes))
+                    elif path:
+                        audio, sr = torchaudio.load(path)
+                    else:
+                        raise ValueError(f"Audio item has neither bytes nor path: {list(audio_item.keys())}")
+                    if audio.shape[0] > 1:
+                        audio = audio.mean(dim=0, keepdim=True)  # stereo → mono
+                else:
+                    audio = torch.from_numpy(np.array(audio_item, dtype=np.float32)).unsqueeze(0)
+                    sr = SAMPLE_RATE
                 if sr != target_sr:
                     audio = torchaudio.functional.resample(audio, orig_freq=sr, new_freq=target_sr)
                 # Truncate to MAX_AUDIO_SECONDS
@@ -1541,17 +1564,41 @@ def _remove_checkpoint(path):
 def _decode_audio_batch(batch) -> list:
     """Decode a HuggingFace audio batch dict into a list of float32 numpy arrays.
 
+    Handles both the decoded format {"array": ..., "sampling_rate": ...} and the
+    undecoded format {"bytes": ..., "path": ...} produced by Audio(decode=False).
+    We use decode=False on the dataset to avoid torchcodec (which requires FFmpeg
+    shared libs). soundfile decodes FLAC/WAV directly from bytes or path.
+
     Resampling note: the integer decimation `audio[::ratio]` is only exact when
-    the source sample rate is an integer multiple of TARGET_SAMPLE_RATE (16kHz).
-    LibriSpeech is always 16kHz so this is fine in practice. If you add other
-    datasets with e.g. 44100 Hz audio, replace with torchaudio.functional.resample
-    or librosa.resample for correct anti-aliased resampling.
+    the source sample rate is an integer multiple of SAMPLE_RATE (16kHz).
+    LibriSpeech is always 16kHz so this is fine in practice.
     """
+    import soundfile as sf
+
     audio_arrays = []
     for audio_item in batch["audio"]:
-        arr = audio_item["array"] if isinstance(audio_item, dict) else audio_item
-        sr  = audio_item["sampling_rate"] if isinstance(audio_item, dict) else SAMPLE_RATE
-        audio = np.array(arr, dtype=np.float32)
+        if isinstance(audio_item, dict) and "array" in audio_item:
+            # Already-decoded path (legacy / if cast_column wasn't applied)
+            arr = np.array(audio_item["array"], dtype=np.float32)
+            sr  = audio_item.get("sampling_rate", SAMPLE_RATE)
+        elif isinstance(audio_item, dict):
+            # decode=False path: {"bytes": b"...", "path": "..."}
+            raw_bytes = audio_item.get("bytes")
+            path      = audio_item.get("path")
+            if raw_bytes:
+                arr, sr = sf.read(io.BytesIO(raw_bytes), dtype="float32", always_2d=False)
+            elif path:
+                arr, sr = sf.read(path, dtype="float32", always_2d=False)
+            else:
+                raise ValueError(f"Audio item has neither bytes nor path: {list(audio_item.keys())}")
+            arr = arr.astype(np.float32)
+            if arr.ndim > 1:
+                arr = arr.mean(axis=1)  # stereo → mono
+        else:
+            arr = np.array(audio_item, dtype=np.float32)
+            sr  = SAMPLE_RATE
+
+        audio = arr
         if sr != SAMPLE_RATE:
             audio = audio[:: int(sr / SAMPLE_RATE)]
         audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
