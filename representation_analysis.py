@@ -282,7 +282,7 @@ MODELS = {
         "arch": "Mistral+WhisperEnc",
         "corpus": "Mistral mix + speech",
         # Voxtral is Mistral's speech-understanding model. It consists of a
-        # Whisper-based audio encoder + Mistral 7B LLM backbone. We extract the
+        # Whisper-based audio encoder + Mistral 3B LLM backbone. We extract the
         # LLM backbone's last hidden state after audio token projection.
     },
     "higgs-audio-v2-3b": {
@@ -581,6 +581,8 @@ def extract_whisper_encoder_embeddings(
     del model
     release_vram("whisper-enc")
     _remove_checkpoint(checkpoint_path)
+    if not embeddings:
+        raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"Whisper-enc embeddings shape: {result.shape}")
     return result
@@ -684,6 +686,8 @@ def extract_whisper_decoder_embeddings(
     del model
     release_vram("whisper-dec")
     _remove_checkpoint(checkpoint_path)
+    if not embeddings:
+        raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"Whisper-dec embeddings shape: {result.shape}")
     return result
@@ -801,6 +805,8 @@ def extract_parakeet_embeddings(
     del model
     release_vram("parakeet")
     _remove_checkpoint(checkpoint_path)
+    if not embeddings:
+        raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"Parakeet embeddings shape: {result.shape}")
     return result
@@ -960,6 +966,8 @@ def extract_mimi_embeddings(
     del model
     release_vram("mimi")
     _remove_checkpoint(checkpoint_path)
+    if not embeddings:
+        raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"Mimi embeddings shape: {result.shape}")
     return result
@@ -984,13 +992,13 @@ def extract_voxtral_embeddings(
     Voxtral's architecture:
       1. A Whisper-style audio encoder encodes audio frames → audio tokens
       2. A projection layer maps audio tokens into the LLM's embedding space
-      3. The Mistral 7B LLM backbone processes the audio token sequence
+      3. The Mistral 3B LLM backbone processes the audio token sequence
 
     We pool the LLM backbone's last hidden layer over all token positions.
     This captures how the language backbone organises audio-derived representations.
 
-    Batching note: batch_size defaults to 8 because Voxtral is ~8B params and
-    audio sequences are long. Reduce with --voxtral_batch_size if you hit OOM.
+    Batching note: batch_size defaults to 8 because Voxtral audio sequences are
+    long. Reduce with --voxtral_batch_size if you hit OOM.
     """
     logger.info(f"Loading Voxtral model: {model_id}  (label={model_name})")
     log_gpu_memory(f"before {model_name} load")
@@ -1107,6 +1115,8 @@ def extract_voxtral_embeddings(
     del model
     release_vram(model_name)
     _remove_checkpoint(checkpoint_path)
+    if not embeddings:
+        raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"{model_name} embeddings shape: {result.shape}")
     return result
@@ -1245,6 +1255,8 @@ def extract_higgs_audio_embeddings(
     del model
     release_vram(label)
     _remove_checkpoint(checkpoint_path)
+    if not embeddings:
+        raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"{label} embeddings shape: {result.shape}")
     return result
@@ -1388,6 +1400,8 @@ def extract_qwen3_tts_embeddings(
         del lm
     release_vram(label)
     _remove_checkpoint(checkpoint_path)
+    if not embeddings:
+        raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"{label} embeddings shape: {result.shape}")
     return result
@@ -1474,6 +1488,8 @@ def extract_lm_embeddings(
     del model
     release_vram(label)
     _remove_checkpoint(checkpoint_path)
+    if not embeddings:
+        raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"{label} embeddings shape: {result.shape}")
     return result
@@ -2078,7 +2094,7 @@ def parse_args():
     p.add_argument("--higgs_batch_size", type=int, default=8,
                    help="Batch size for Higgs Audio V2 extraction (default: 8, reduce if OOM)")
     p.add_argument("--num_proc", type=int, default=8,
-                   help="CPU workers for dataset loading and transcript extraction (default: 8, set to ~24 on 28-core machines)")
+                   help="CPU workers for dataset shard loading (default: 8, set to ~24 on 28-core machines)")
     p.add_argument("--prefetch_queue_depth", type=int, default=8,
                    help="Background prefetch depth (default: 8; higher keeps GPU busier on fast CPUs)")
     p.add_argument("--pca_components", type=int, default=PCA_COMPONENTS,
