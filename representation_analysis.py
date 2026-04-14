@@ -27,12 +27,24 @@ Usage:
     python representation_analysis.py --skip_extraction
 
 Models:
-    - openai/whisper-base                       (audio, 74M)
-    - nvidia/parakeet-ctc-0.6b                  (audio, 600M, FastConformer-CTC)
+    - openai/whisper-base          (audio encoder, 74M)
+    - openai/whisper-base          (audio decoder, 74M — same checkpoint, decoder side)
+    - nvidia/parakeet-ctc-0.6b     (audio encoder, 600M, FastConformer-CTC)
+                                   NOTE: Parakeet CTC has no decoder; decoder extraction skipped.
+    - kyutai/mimi                  (audio codec encoder, ~85M, conv+transformer, 12.5Hz)
+                                   NOTE: pure audio codec, no text signal. Extracts pre-RVQ
+                                   encoder hidden state — the most purely acoustic model here.
+    - Qwen/Qwen3-TTS-12Hz-1.7B-Base  (TTS, 1.7B, discrete multi-codebook LM)
+                                     NOTE: uses qwen-tts package, not transformers.
+                                     Extracts LM backbone hidden states on input text.
+    - mistralai/Voxtral-8B-2507    (speech understanding model, 8B)
+    - bosonai/higgs-audio-v2-generation-3B-base  (audio-to-audio LLM, 3B, DualFFN)
+                                     NOTE: uses transformers HiggsAudioV2ForConditionalGeneration.
+                                     Extracts LLM backbone hidden states on audio token inputs.
     - znhoughton/opt-babylm-125m-20eps-seed964  (text, 125M, OPT, BabyLM)
     - znhoughton/opt-babylm-1.3b-20eps-seed964  (text, 1.3B, OPT, BabyLM)
-    - allenai/OLMo-2-1124-7B                    (text, 7B, OLMo-2, Dolma)
-    - EleutherAI/pythia-6.9b                    (text, 6.9B, GPT-NeoX, The Pile)
+    - allenai/OLMo-2-1124-7B       (text, 7B, OLMo-2, Dolma)
+    - EleutherAI/pythia-6.9b       (text, 6.9B, GPT-NeoX, The Pile)
 """
 
 import argparse
@@ -53,18 +65,10 @@ from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # HuggingFace memory / shard loading settings
-# Must be set before any datasets import to take effect.
 # ---------------------------------------------------------------------------
-
-# Cap how much RAM datasets will try to use for in-memory operations.
-# Each shard is ~450-500MB on disk, ~1-1.5GB in RAM after Arrow expansion.
-# 60GB gives comfortable headroom for parallel shard loading without
-# trying to hold all 63 shards (~79GB) simultaneously.
-os.environ.setdefault("HF_DATASETS_MAX_IN_MEMORY_SIZE", str(60 * 1024 ** 3))  # 60 GB
+os.environ.setdefault("HF_DATASETS_MAX_IN_MEMORY_SIZE", str(60 * 1024 ** 3))
 os.environ.setdefault("HF_DATASETS_IN_MEMORY_MAX_SIZE", str(60 * 1024 ** 3))
 os.environ.setdefault("DATASETS_VERBOSITY", "warning")
-# Reduces CUDA memory fragmentation — helps when loading several large models
-# sequentially, each leaving behind fragmented allocations.
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import numpy as np
@@ -79,6 +83,8 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     AutoFeatureExtractor,
+    AutoProcessor,
+    MimiModel,
     ParakeetForCTC,
     WhisperModel,
     WhisperProcessor,
@@ -92,10 +98,6 @@ logger = logging.getLogger("repr_analysis")
 
 
 def setup_logging(log_dir: Path) -> Path:
-    """
-    Configure logging to write simultaneously to stdout and a timestamped log file.
-    Returns the path of the log file created.
-    """
     log_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     log_path = log_dir / f"run_{timestamp}.log"
@@ -104,13 +106,10 @@ def setup_logging(log_dir: Path) -> Path:
         fmt="%(asctime)s  %(levelname)-8s  %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-    # File handler — full DEBUG level, captures everything
     fh = logging.FileHandler(log_path)
     fh.setLevel(logging.DEBUG)
     fh.setFormatter(fmt)
 
-    # Console handler — INFO and above (keeps stdout readable)
     ch = logging.StreamHandler(sys.stdout)
     ch.setLevel(logging.INFO)
     ch.setFormatter(fmt)
@@ -118,13 +117,11 @@ def setup_logging(log_dir: Path) -> Path:
     logger.setLevel(logging.DEBUG)
     logger.addHandler(fh)
     logger.addHandler(ch)
-
     return log_path
 
 
 @contextmanager
 def timer(label: str):
-    """Context manager that logs wall-clock time for a labelled block."""
     logger.info(f"[START] {label}")
     t0 = time.perf_counter()
     try:
@@ -143,7 +140,6 @@ def timer(label: str):
 
 
 def log_gpu_memory(label: str = ""):
-    """Log current and peak GPU VRAM usage if CUDA is available."""
     if not torch.cuda.is_available():
         return
     allocated = torch.cuda.memory_allocated() / 1024 ** 3
@@ -153,23 +149,12 @@ def log_gpu_memory(label: str = ""):
     tag = f"[{label}] " if label else ""
     logger.debug(
         f"{tag}GPU memory — "
-        f"allocated: {allocated:.2f} GB  "
-        f"reserved: {reserved:.2f} GB  "
-        f"peak: {peak:.2f} GB  "
-        f"total: {total:.2f} GB"
+        f"allocated: {allocated:.2f} GB  reserved: {reserved:.2f} GB  "
+        f"peak: {peak:.2f} GB  total: {total:.2f} GB"
     )
 
 
 def release_vram(label: str = ""):
-    """
-    Aggressively release GPU memory between model loads.
-
-    torch.cuda.empty_cache() alone only frees PyTorch's internal cache —
-    it doesn't force the OS to reclaim pages. Running gc.collect() first
-    ensures all Python references to tensors are dropped, then synchronize()
-    waits for all CUDA ops to finish before the cache is cleared.
-    This prevents VRAM from the previous model bleeding into the next one.
-    """
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.synchronize()
@@ -185,37 +170,19 @@ def release_vram(label: str = ""):
 def prefetch_generator(source_iter, queue_depth: int = 3):
     """
     Wraps any iterator and yields from a background thread.
-
-    The background thread stays `queue_depth` batches ahead of the consumer,
-    so the GPU never stalls waiting for CPU preprocessing (audio decoding,
-    feature extraction, tokenization). Natural backpressure is provided by
-    the bounded queue: the producer blocks when the queue is full, preventing
-    unbounded RAM accumulation.
-
-    The thread is daemonized so it is automatically killed if the main process
-    exits (e.g. on CUDA OOM), with no cleanup required.
-
-    Args:
-        source_iter: Any iterable — dataset.iter(), a generator, etc.
-        queue_depth: Number of pre-processed batches to buffer. 3 is a safe
-                     default; raise to 5 if CPU preprocessing is measurably
-                     slower than GPU compute.
-
-    Yields:
-        Items from source_iter in original order.
+    Keeps GPU busy by prefetching CPU-side preprocessing `queue_depth` batches ahead.
     """
     q = queue.Queue(maxsize=queue_depth)
 
     def _producer():
         try:
             for item in source_iter:
-                q.put(item)   # blocks when queue is full — natural backpressure
+                q.put(item)
         finally:
-            q.put(None)       # sentinel: always sent, even if source_iter raises
+            q.put(None)
 
     t = threading.Thread(target=_producer, daemon=True)
     t.start()
-
     while True:
         item = q.get()
         if item is None:
@@ -224,14 +191,6 @@ def prefetch_generator(source_iter, queue_depth: int = 3):
 
 
 def _tokenized_batches(texts, tokenizer, start_batch, n_batches, batch_size, max_length):
-    """
-    Generator that tokenizes text batches on the CPU so the GPU thread only
-    has to do .to(device) + forward pass. Consumed via prefetch_generator so
-    tokenization runs concurrently with the previous batch's GPU forward pass.
-
-    Yields:
-        (batch_idx, BatchEncoding) tuples.
-    """
     for batch_idx in range(start_batch, n_batches):
         i = batch_idx * batch_size
         batch = texts[i : i + batch_size]
@@ -250,13 +209,94 @@ def _tokenized_batches(texts, tokenizer, start_batch, n_batches, batch_size, max
 # ---------------------------------------------------------------------------
 
 MODELS = {
-    "whisper-base": {
+    # ── Audio encoders ────────────────────────────────────────────────────
+    "whisper-base-enc": {
         "hf_id": "openai/whisper-base",
-        "modality": "audio",
+        "modality": "audio-whisper-enc",
         "params": "74M",
         "arch": "Whisper encoder",
         "corpus": "680k hrs audio",
     },
+    "whisper-base-dec": {
+        "hf_id": "openai/whisper-base",
+        "modality": "audio-whisper-dec",
+        "params": "74M",
+        "arch": "Whisper decoder",
+        "corpus": "680k hrs audio",
+        # NOTE: The decoder is conditioned on both audio (cross-attention from the
+        # encoder) and the previously generated tokens. We feed the encoder output
+        # + a BOS token and pool the decoder's last hidden layer — this gives the
+        # representation of "what the model predicts given the full audio context"
+        # without requiring autoregressive decoding of the full transcript.
+    },
+    "parakeet-ctc-0.6b": {
+        "hf_id": "nvidia/parakeet-ctc-0.6b",
+        "modality": "audio-parakeet",
+        "params": "600M",
+        "arch": "FastConformer-CTC",
+        "corpus": "Granary (64k hrs English)",
+        # NOTE: CTC models have no autoregressive decoder — only encoder + linear
+        # CTC projection. Decoder extraction is intentionally not supported.
+    },
+    "mimi": {
+        "hf_id": "kyutai/mimi",
+        "modality": "audio-mimi",
+        "params": "~85M",
+        "arch": "Conv+Transformer codec (EnCodec-style)",
+        "corpus": "Speech data (Moshi training set)",
+        # Mimi is a pure audio neural codec by Kyutai — no text training signal
+        # whatsoever. It uses a streaming convolutional encoder-decoder with a
+        # Transformer in both encoder and decoder, and a 16-codebook RVQ.
+        # The first codebook is trained with WavLM distillation, giving it a
+        # semantic component on top of acoustic reconstruction.
+        # We extract the encoder's final continuous hidden state (the pre-RVQ
+        # embedding), mean-pooled over time frames. This is the most "purely
+        # acoustic" representation in the lineup — no language modelling objective.
+        # Native 24kHz model; we resample LibriSpeech from 16kHz to 24kHz.
+        # Natively supported in transformers via MimiModel.
+    },
+    # ── TTS / Omni / Speech-LM ───────────────────────────────────────────
+    "qwen3-tts-1.7b": {
+        "hf_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
+        "modality": "tts-qwen3",
+        "params": "1.7B",
+        "arch": "Qwen3-TTS (discrete multi-codebook LM)",
+        "corpus": "5M hrs speech, 10 languages",
+        # Qwen3-TTS uses the custom `qwen-tts` package (not transformers).
+        # Architecture: text tokenizer → Qwen3 LM backbone → speech codec tokens.
+        # We feed the LibriSpeech transcript through the LM backbone and
+        # mean-pool the last hidden layer over text token positions — this
+        # captures the text representations that condition speech generation.
+        # Install dependency: pip install qwen-tts
+    },
+    "voxtral-8b": {
+        "hf_id": "mistralai/Voxtral-8B-2507",
+        "modality": "audio-omni",
+        "params": "8B",
+        "arch": "Mistral+WhisperEnc",
+        "corpus": "Mistral mix + speech",
+        # Voxtral is Mistral's speech-understanding model. It consists of a
+        # Whisper-based audio encoder + Mistral 7B LLM backbone. We extract the
+        # LLM backbone's last hidden state after audio token projection.
+    },
+    "higgs-audio-v2-3b": {
+        "hf_id": "bosonai/higgs-audio-v2-generation-3B-base",
+        "modality": "tts-higgs",
+        "params": "~5.8B",
+        "arch": "Llama-3.2-3B + DualFFN adapter (2.2B)",
+        "corpus": "AudioVerse (10M hrs speech+music+SFX)",
+        # Higgs Audio V2 is a text-to-audio generation model built on Llama-3.2-3B.
+        # The "generation variant" (this checkpoint) takes text as input and generates
+        # discrete audio tokens as output — it is a TTS model, not audio-in/audio-out.
+        # DualFFN adds parallel audio-specific FFN layers to each transformer block,
+        # sharing attention layers between text and audio token streams.
+        # We feed LibriSpeech transcripts (text) through the backbone and mean-pool
+        # the last hidden layer — the same extraction strategy as Qwen3-TTS and the
+        # text LLMs, since input is text in both cases.
+        # Total params: ~5.8B (3B Llama backbone + 2.2B DualFFN adapter).
+        # Transformers-native via HiggsAudioV2ForConditionalGeneration (no custom pkg).
+    },
+    # ── Text LLMs ─────────────────────────────────────────────────────────
     "babylm-125m": {
         "hf_id": "znhoughton/opt-babylm-125m-20eps-seed964",
         "modality": "text",
@@ -285,26 +325,18 @@ MODELS = {
         "arch": "GPT-NeoX",
         "corpus": "The Pile",
     },
-    "parakeet-ctc-0.6b": {
-        "hf_id": "nvidia/parakeet-ctc-0.6b",
-        "modality": "audio-parakeet",
-        "params": "600M",
-        "arch": "FastConformer-CTC",
-        "corpus": "Granary (64k hrs English)",
-    },
 }
 
 ALL_SPLITS = [
-    "train.100",       # clean 100hr train (HF: config=clean, split=train.100)
-    "train.360",       # clean 360hr train (HF: config=clean, split=train.360)
-    "train.500",       # other 500hr train (HF: config=other, split=train.500)
-    "validation",      # clean validation  (HF: config=clean, split=validation)
-    "validation.other",# other validation  (HF: config=other, split=validation)
-    "test",            # clean test        (HF: config=clean, split=test)
-    "test.other",      # other test        (HF: config=other, split=test)
+    "train.100",
+    "train.360",
+    "train.500",
+    "validation",
+    "validation.other",
+    "test",
+    "test.other",
 ]
 
-# Maps our logical split names to (hf_config, hf_split_name)
 SPLIT_CONFIG_MAP = {
     "train.100":        ("clean", "train.100"),
     "train.360":        ("clean", "train.360"),
@@ -319,6 +351,7 @@ SAMPLE_RATE = 16_000
 MAX_AUDIO_SECONDS = 30
 MAX_TEXT_TOKENS = 512
 PCA_COMPONENTS = 50
+PCA_PLOT_MAX_PC = 10   # x-axis ceiling for PCA scatter and eigenspectra plots
 
 MINIBATCH_SIZE = 2048
 MINIBATCH_SEED = 42
@@ -326,13 +359,21 @@ MINIBATCH_SEED = 42
 N_STABILITY_SUBSETS = 10
 STABILITY_SUBSET_FRAC = 0.8
 
+# ── Modality groupings (used for heatmap separator line) ─────────────────
+AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi", "audio-omni", "tts-qwen3", "tts-higgs"}
+
 MODEL_COLORS = {
-    "whisper-base":       "#1565C0",
-    "babylm-125m":        "#E65100",
-    "babylm-1.3b":        "#F9A825",
-    "olmo-7b":            "#2E7D32",
-    "pythia-6.9b":        "#6A1B9A",
-    "parakeet-ctc-0.6b":  "#00838F",   # teal — second audio model
+    "whisper-base-enc":  "#1565C0",   # dark blue
+    "whisper-base-dec":  "#42A5F5",   # light blue
+    "parakeet-ctc-0.6b": "#00838F",   # teal
+    "mimi":              "#D84315",   # deep orange-red
+    "qwen3-tts-1.7b":    "#AD1457",   # deep pink
+    "voxtral-8b":        "#FF6F00",   # amber
+    "higgs-audio-v2-3b": "#558B2F",   # olive green
+    "babylm-125m":       "#E65100",   # deep orange
+    "babylm-1.3b":       "#F9A825",   # yellow
+    "olmo-7b":           "#2E7D32",   # dark green
+    "pythia-6.9b":       "#6A1B9A",   # purple
 }
 
 # ---------------------------------------------------------------------------
@@ -381,21 +422,13 @@ def load_librispeech(splits: list, max_samples: int | None, cache_dir: Path = No
     logger.info(f"Loading LibriSpeech splits: {splits}")
     logger.info(f"{'='*60}")
 
-    # ------------------------------------------------------------------
-    # Transcript cache — reading all 292k texts takes ~15 minutes because
-    # it touches every sample. We cache just the text list to a small JSON
-    # so restarts skip that step entirely. The cache key includes the splits
-    # and max_samples so it's invalidated if you change either.
-    # ------------------------------------------------------------------
     cache_key = "_".join(sorted(splits)) + (f"_max{max_samples}" if max_samples else "")
     texts_cache_path = (cache_dir / f"texts_{cache_key}.json") if cache_dir else None
 
     parts = []
     for split in splits:
         if split not in SPLIT_CONFIG_MAP:
-            raise ValueError(
-                f"Unknown split '{split}'. Valid options: {list(SPLIT_CONFIG_MAP.keys())}"
-            )
+            raise ValueError(f"Unknown split '{split}'. Valid options: {list(SPLIT_CONFIG_MAP.keys())}")
         hf_config, hf_split = SPLIT_CONFIG_MAP[split]
         logger.info(f"  Fetching {split} (config={hf_config}, split={hf_split})…")
         try:
@@ -408,13 +441,7 @@ def load_librispeech(splits: list, max_samples: int | None, cache_dir: Path = No
                 num_proc=8,
             )
         except ValueError as e:
-            logger.error(
-                f"Failed to load split '{split}' (config={hf_config}, split={hf_split}): {e}\n"
-                f"The HuggingFace split name may differ from what we expect. "
-                f"Try loading the dataset manually to check available splits:\n"
-                f"  from datasets import get_dataset_split_names\n"
-                f"  print(get_dataset_split_names('openslr/librispeech_asr', '{hf_config}'))"
-            )
+            logger.error(f"Failed to load split '{split}': {e}")
             raise
         logger.info(f"  {split}: {len(ds):,} samples")
         parts.append(ds)
@@ -429,30 +456,96 @@ def load_librispeech(splits: list, max_samples: int | None, cache_dir: Path = No
         dataset = dataset.select(indices)
         logger.info(f"Subsampled to {len(dataset):,} samples (seed={MINIBATCH_SEED})")
 
-    # Load texts from cache if available
     if texts_cache_path and texts_cache_path.exists():
         logger.info(f"Loading cached transcripts from {texts_cache_path}…")
         with open(texts_cache_path) as f:
             texts = json.load(f)
-        logger.info(f"Loaded {len(texts):,} cached transcripts (skipped 15min extraction)")
     else:
-        logger.info("Extracting transcripts… (will be cached for future restarts)")
+        logger.info("Extracting transcripts…")
         texts = [s["text"].strip() for s in tqdm(dataset, desc="reading transcripts", unit="utt")]
         if texts_cache_path:
             with open(texts_cache_path, "w") as f:
                 json.dump(texts, f)
-            logger.info(f"Transcripts cached → {texts_cache_path}  ({texts_cache_path.stat().st_size / 1024:.0f} KB)")
+            logger.info(f"Transcripts cached → {texts_cache_path}")
 
     logger.info(f"Final dataset size: {len(texts):,} utterances")
-    logger.debug(f"Example transcript: '{texts[0][:80]}…'")
     return dataset, texts
 
 
 # ---------------------------------------------------------------------------
-# Embedding extraction
+# Embedding extraction — Whisper encoder
 # ---------------------------------------------------------------------------
 
-def extract_whisper_embeddings(
+def extract_whisper_encoder_embeddings(
+    model_id: str,
+    dataset,
+    device: torch.device,
+    batch_size: int = 64,
+    checkpoint_dir: Path = None,
+    prefetch_queue_depth: int = 3,
+) -> np.ndarray:
+    """Mean-pool Whisper encoder last hidden layer over time."""
+    logger.info(f"Loading Whisper model (encoder): {model_id}")
+    log_gpu_memory("before Whisper load")
+
+    processor = WhisperProcessor.from_pretrained(model_id)
+    model = WhisperModel.from_pretrained(model_id, torch_dtype=torch.float16)
+    model = model.to(device).eval()
+    log_gpu_memory("after Whisper load")
+
+    n = len(dataset)
+    n_batches = (n + batch_size - 1) // batch_size
+    checkpoint_path = checkpoint_dir / "whisper-base-enc_checkpoint.pkl" if checkpoint_dir else None
+
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, "Whisper-enc")
+
+    raw_iter = dataset.iter(batch_size=batch_size)
+    if start_batch > 0:
+        for _ in range(start_batch):
+            next(raw_iter)
+    batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
+
+    errors = 0
+    for batch_idx in tqdm(range(start_batch, n_batches), desc="whisper-base-enc",
+                          unit="batch", total=n_batches, initial=start_batch):
+        batch = next(batch_iter)
+        try:
+            audio_arrays = _decode_audio_batch(batch)
+            inputs = processor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt")
+            features = inputs.input_features.to(device, dtype=torch.float16)
+            with torch.no_grad():
+                # output_hidden_states=True returns a tuple of all layer outputs.
+                # [-1] is the final encoder layer — consistent with all other extractors.
+                enc_out = model.encoder(features, output_hidden_states=True)
+                emb = enc_out.last_hidden_state.mean(dim=1).float().cpu().numpy()
+            embeddings.append(emb)
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
+                torch.cuda.empty_cache()
+                raise
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        except Exception as e:
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
+
+    if errors:
+        logger.warning(f"whisper-enc: skipped {errors} batches")
+    del model
+    release_vram("whisper-enc")
+    _remove_checkpoint(checkpoint_path)
+    result = np.concatenate(embeddings, axis=0)
+    logger.info(f"Whisper-enc embeddings shape: {result.shape}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Embedding extraction — Whisper decoder
+# ---------------------------------------------------------------------------
+
+def extract_whisper_decoder_embeddings(
     model_id: str,
     dataset,
     device: torch.device,
@@ -461,133 +554,99 @@ def extract_whisper_embeddings(
     prefetch_queue_depth: int = 3,
 ) -> np.ndarray:
     """
-    Batched extraction of Whisper encoder embeddings with checkpointing.
+    Extract Whisper *decoder* representations.
 
-    Saves progress every 500 batches so a restart can resume from the last
-    checkpoint rather than starting over. Checkpoints are saved to
-    checkpoint_dir/whisper-base_checkpoint.pkl.
+    Strategy: run the encoder forward pass to get encoder_hidden_states, then
+    run the decoder for a single step with just the BOS (start-of-transcript)
+    token. Pool the decoder last hidden layer over the single time step.
 
-    Audio loading and mel-spectrogram extraction run in a background thread
-    via prefetch_generator, keeping the GPU busy between batches.
+    This gives a representation of "what the decoder sees given the full audio
+    context" without requiring autoregressive transcript decoding, which would
+    be ~10–100× slower and would conflate representations across tokens.
     """
-    logger.info(f"Loading Whisper model: {model_id}")
-    log_gpu_memory("before Whisper load")
+    logger.info(f"Loading Whisper model (decoder): {model_id}")
+    log_gpu_memory("before Whisper-dec load")
 
-    try:
-        processor = WhisperProcessor.from_pretrained(model_id)
-        model = WhisperModel.from_pretrained(model_id, torch_dtype=torch.float16)
-        model = model.to(device).eval()
-    except Exception as e:
-        logger.error(f"Failed to load Whisper model '{model_id}': {e}")
-        raise
+    processor = WhisperProcessor.from_pretrained(model_id)
+    model = WhisperModel.from_pretrained(model_id, torch_dtype=torch.float16)
+    model = model.to(device).eval()
 
-    log_gpu_memory("after Whisper load")
+    # BOS token id for the decoder's first-step input
+    bos_token_id = model.config.decoder_start_token_id
+    log_gpu_memory("after Whisper-dec load")
+
     n = len(dataset)
     n_batches = (n + batch_size - 1) // batch_size
+    checkpoint_path = checkpoint_dir / "whisper-base-dec_checkpoint.pkl" if checkpoint_dir else None
 
-    # --- Resume from checkpoint if available ---
-    checkpoint_path = checkpoint_dir / "whisper-base_checkpoint.pkl" if checkpoint_dir else None
-    start_batch = 0
-    embeddings = []
-    if checkpoint_path and checkpoint_path.exists():
-        with open(checkpoint_path, "rb") as f:
-            checkpoint = pickle.load(f)
-        embeddings = checkpoint["embeddings"]
-        start_batch = checkpoint["next_batch"]
-        logger.info(f"Resuming Whisper from batch {start_batch}/{n_batches} ({len(embeddings)} batches already done)")
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, "Whisper-dec")
 
-    logger.info(
-        f"Extracting Whisper embeddings for {n:,} samples  "
-        f"(batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch}, "
-        f"prefetch_queue_depth={prefetch_queue_depth})…"
-    )
-
-    errors = 0
-    CHECKPOINT_EVERY = 500
-
-    # Fast-forward past already-processed batches when resuming, then wrap
-    # the remaining iterator in prefetch_generator so audio decoding and mel
-    # extraction for batch N+1 happen concurrently with the GPU forward pass
-    # for batch N.
     raw_iter = dataset.iter(batch_size=batch_size)
     if start_batch > 0:
-        logger.info(f"Fast-forwarding through {start_batch} already-processed batches…")
         for _ in range(start_batch):
             next(raw_iter)
     batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
 
-    for batch_idx in tqdm(range(start_batch, n_batches), desc="whisper-base",
+    errors = 0
+    for batch_idx in tqdm(range(start_batch, n_batches), desc="whisper-base-dec",
                           unit="batch", total=n_batches, initial=start_batch):
         batch = next(batch_iter)
         try:
-            audio_arrays = []
-            for audio_item in batch["audio"]:
-                # iter() returns audio as list of dicts: [{"array":..., "sampling_rate":...}, ...]
-                arr = audio_item["array"] if isinstance(audio_item, dict) else audio_item
-                sr = audio_item["sampling_rate"] if isinstance(audio_item, dict) else SAMPLE_RATE
-                audio = np.array(arr, dtype=np.float32)
-                if sr != SAMPLE_RATE:
-                    audio = audio[:: int(sr / SAMPLE_RATE)]
-                audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
-                audio_arrays.append(audio)
-
-            inputs = processor(
-                audio_arrays,
-                sampling_rate=SAMPLE_RATE,
-                return_tensors="pt",
-                # No padding/max_length/truncation args — WhisperProcessor
-                # always outputs exactly (B, 80, 3000) mel spectrograms by
-                # default. Those args operate on raw audio samples not mel
-                # frames, causing the "found N frames" error when set to 3000.
-            )
+            audio_arrays = _decode_audio_batch(batch)
+            inputs = processor(audio_arrays, sampling_rate=SAMPLE_RATE, return_tensors="pt")
             features = inputs.input_features.to(device, dtype=torch.float16)
 
+            B = features.shape[0]
+            # Single BOS token as the only decoder input — shape (B, 1)
+            decoder_input_ids = torch.full(
+                (B, 1), bos_token_id, dtype=torch.long, device=device
+            )
+
             with torch.no_grad():
-                enc = model.encoder(features)
-                emb = enc.last_hidden_state.mean(dim=1).float().cpu().numpy()
+                # Step 1: run the encoder to get cross-attention key/value states.
+                enc_out = model.encoder(features, output_hidden_states=False)
+
+                # Step 2: run the decoder for a single BOS step, explicitly requesting
+                # hidden states. Calling model.decoder() directly guarantees
+                # output_hidden_states is applied to the decoder, not the encoder —
+                # the top-level WhisperModel.forward() does not reliably pass the flag
+                # through in all transformers versions.
+                dec_out = model.decoder(
+                    input_ids=decoder_input_ids,
+                    encoder_hidden_states=enc_out.last_hidden_state,
+                    output_hidden_states=True,
+                )
+                # hidden_states: tuple of (n_decoder_layers+1) tensors, each (B, T_dec, D).
+                # T_dec = 1 (single BOS token), so mean over dim=1 == squeeze.
+                dec_hidden = dec_out.hidden_states[-1]            # (B, 1, D)
+                emb = dec_hidden.mean(dim=1).float().cpu().numpy()  # (B, D)
 
             embeddings.append(emb)
-
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
-                logger.error(
-                    f"CUDA OOM at batch {batch_idx}/{n_batches}. "
-                    f"Try reducing --whisper_batch_size (currently {batch_size}). "
-                    f"Progress saved to checkpoint."
-                )
-                if checkpoint_path:
-                    with open(checkpoint_path, "wb") as f:
-                        pickle.dump({"embeddings": embeddings, "next_batch": batch_idx}, f)
+                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
                 torch.cuda.empty_cache()
                 raise
             errors += 1
-            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
-
-        # Periodic checkpoint
-        if checkpoint_path and (batch_idx + 1) % CHECKPOINT_EVERY == 0:
-            with open(checkpoint_path, "wb") as f:
-                pickle.dump({"embeddings": embeddings, "next_batch": batch_idx + 1}, f)
-            logger.debug(f"Checkpoint saved at batch {batch_idx + 1}/{n_batches}")
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
 
     if errors:
-        logger.warning(f"Whisper: skipped {errors} batches due to errors")
-
+        logger.warning(f"whisper-dec: skipped {errors} batches")
     del model
-    release_vram("whisper")
-    log_gpu_memory("after Whisper unload")
-
-    # Clean up checkpoint on successful completion
-    if checkpoint_path and checkpoint_path.exists():
-        checkpoint_path.unlink()
-        logger.debug("Whisper checkpoint removed (run complete)")
-
+    release_vram("whisper-dec")
+    _remove_checkpoint(checkpoint_path)
     result = np.concatenate(embeddings, axis=0)
-    logger.info(f"Whisper embeddings shape: {result.shape}")
+    logger.info(f"Whisper-dec embeddings shape: {result.shape}")
     return result
 
+
+# ---------------------------------------------------------------------------
+# Embedding extraction — Parakeet CTC (encoder only — no decoder exists)
+# ---------------------------------------------------------------------------
 
 def extract_parakeet_embeddings(
     model_id: str,
@@ -598,115 +657,238 @@ def extract_parakeet_embeddings(
     prefetch_queue_depth: int = 3,
 ) -> np.ndarray:
     """
-    Batched extraction of Parakeet CTC encoder embeddings with checkpointing.
+    Batched extraction of Parakeet CTC encoder embeddings.
 
-    Audio loading and feature extraction run in a background thread via
-    prefetch_generator, keeping the GPU busy between batches.
-
-    Note on batch size: Parakeet's FastConformer attention is O(T²) in
-    sequence length. If you hit tensor errors with large batches, reduce
-    --parakeet_batch_size rather than increasing it. The feature extractor
-    uses padding='longest' so each batch is padded only to its own maximum
-    sequence length, minimising wasted compute.
+    IMPORTANT: Parakeet CTC is an encoder-only CTC model. It has no autoregressive
+    decoder — only encoder + linear CTC projection. Decoder extraction is not
+    possible/meaningful for this architecture.
     """
     logger.info(f"Loading Parakeet model: {model_id}")
     log_gpu_memory("before Parakeet load")
 
-    try:
-        feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
-        model = ParakeetForCTC.from_pretrained(
-            model_id,
-            # FastConformer is numerically sensitive in fp16 — the depthwise
-            # separable convolutions can overflow, producing NaN embeddings.
-            # fp32 is safer at the cost of ~2x VRAM for weights (~2.4GB vs 1.2GB),
-            # which is still trivial on an 80GB A100.
-            torch_dtype=torch.float32,
-            device_map="auto",
-            max_memory={0: "75GiB", 1: "75GiB"},
-        )
-        model.eval()
-    except Exception as e:
-        logger.error(
-            f"Failed to load Parakeet model '{model_id}': {e}\n"
-            f"Make sure transformers >= 4.48 is installed: pip install --upgrade transformers"
-        )
-        raise
+    feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
+    model = ParakeetForCTC.from_pretrained(
+        model_id,
+        torch_dtype=torch.float32,
+        device_map="auto",
+        max_memory={0: "75GiB", 1: "75GiB"},
+    )
+    model.eval()
 
-    # With device_map="auto" the model may span multiple GPUs.
-    # Find the device of the first layer to send inputs there.
     first_device = next(iter(model.hf_device_map.values())) if hasattr(model, "hf_device_map") else device
-    logger.info(f"Parakeet first layer device: {first_device}")
     log_gpu_memory("after Parakeet load")
 
     n = len(dataset)
     n_batches = (n + batch_size - 1) // batch_size
-
-    # --- Resume from checkpoint if available ---
     checkpoint_path = checkpoint_dir / "parakeet-ctc-0.6b_checkpoint.pkl" if checkpoint_dir else None
-    start_batch = 0
-    embeddings = []
-    if checkpoint_path and checkpoint_path.exists():
-        with open(checkpoint_path, "rb") as f:
-            checkpoint = pickle.load(f)
-        embeddings = checkpoint["embeddings"]
-        start_batch = checkpoint["next_batch"]
-        logger.info(f"Resuming Parakeet from batch {start_batch}/{n_batches}")
 
-    logger.info(
-        f"Extracting Parakeet embeddings for {n:,} samples  "
-        f"(batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch}, "
-        f"prefetch_queue_depth={prefetch_queue_depth})…"
-    )
-
-    errors = 0
-    CHECKPOINT_EVERY = 500
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, "Parakeet")
 
     raw_iter = dataset.iter(batch_size=batch_size)
     if start_batch > 0:
-        logger.info(f"Fast-forwarding through {start_batch} already-processed batches…")
         for _ in range(start_batch):
             next(raw_iter)
     batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
 
+    errors = 0
     for batch_idx in tqdm(range(start_batch, n_batches), desc="parakeet-ctc-0.6b",
                           unit="batch", total=n_batches, initial=start_batch):
         batch = next(batch_iter)
         try:
-            audio_arrays = []
-            for audio_item in batch["audio"]:
-                arr = audio_item["array"] if isinstance(audio_item, dict) else audio_item
-                sr = audio_item["sampling_rate"] if isinstance(audio_item, dict) else SAMPLE_RATE
-                audio = np.array(arr, dtype=np.float32)
-                if sr != SAMPLE_RATE:
-                    audio = audio[:: int(sr / SAMPLE_RATE)]
-                audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
-                audio_arrays.append(audio)
-
+            audio_arrays = _decode_audio_batch(batch)
             inputs = feature_extractor(
-                audio_arrays,
-                sampling_rate=SAMPLE_RATE,
-                return_tensors="pt",
-                # padding='longest' pads only to the longest sequence in this
-                # batch rather than a fixed maximum, minimising wasted compute
-                # for Parakeet's O(T²) attention — this is the correct fix for
-                # tensor errors at large batch sizes, not increasing batch_size.
-                padding="longest",
+                audio_arrays, sampling_rate=SAMPLE_RATE,
+                return_tensors="pt", padding="longest",
             )
-            # Find the main input tensor key dynamically — Parakeet's feature
-            # extractor may return 'input_features', 'input_values', or another
-            # key depending on the transformers version. We take the first
-            # non-mask key to be robust across versions.
             input_key = next(k for k in inputs.keys() if "mask" not in k)
             input_tensor = inputs[input_key].to(first_device, dtype=torch.float32)
+            # Extract attention_mask if present (it's created by padding="longest")
+            attention_mask = inputs.get("attention_mask", None)
+            if attention_mask is not None:
+                attention_mask = attention_mask.to(first_device)
+            with torch.no_grad():
+                # Call the FastConformer encoder directly rather than the full
+                # ParakeetForCTC wrapper. The CTC wrapper's hidden_states[-1] can
+                # include the linear CTC projection layer in some transformers
+                # versions, which is not a meaningful representation layer.
+                # model.parakeet is the FastConformer backbone; .encoder is the
+                # conformer stack. We take its final hidden state directly.
+                if hasattr(model, "parakeet") and hasattr(model.parakeet, "encoder"):
+                    enc_out = model.parakeet.encoder(
+                        input_tensor, output_hidden_states=True
+                    )
+                    last_hidden = enc_out.last_hidden_state
+                else:
+                    # Fallback: use the full model but take hidden_states from
+                    # the output, which excludes the CTC head in most versions.
+                    out = model(input_tensor, output_hidden_states=True)
+                    last_hidden = out.hidden_states[-1]
+                # Masked mean-pool: exclude padding frames from the average.
+                # Parakeet's attention_mask is over input frames (pre-subsampling);
+                # last_hidden is post-subsampling so lengths differ. Fall back to
+                # unmasked mean if shapes don't align — padding is minimal at
+                # batch_size=32 with padding="longest".
+                if attention_mask is not None and attention_mask.shape[1] == last_hidden.shape[1]:
+                    mask = attention_mask.float().unsqueeze(-1)
+                    emb = (last_hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+                    emb = emb.float().cpu().numpy()
+                else:
+                    emb = last_hidden.mean(dim=1).float().cpu().numpy()
+            if not np.isfinite(emb).all():
+                logger.warning(f"Batch {batch_idx}: non-finite Parakeet output, skipping")
+                errors += 1
+                continue
+            embeddings.append(emb)
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
+                torch.cuda.empty_cache()
+                raise
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        except Exception as e:
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
+
+    if errors:
+        logger.warning(f"Parakeet: skipped {errors} batches")
+    del model
+    release_vram("parakeet")
+    _remove_checkpoint(checkpoint_path)
+    result = np.concatenate(embeddings, axis=0)
+    logger.info(f"Parakeet embeddings shape: {result.shape}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Embedding extraction — Mimi (pure audio codec encoder, Kyutai)
+# ---------------------------------------------------------------------------
+
+MIMI_SAMPLE_RATE = 24_000   # Mimi's native sample rate; LibriSpeech is 16kHz
+
+
+def extract_mimi_embeddings(
+    model_id: str,
+    dataset,
+    device: torch.device,
+    batch_size: int = 64,
+    checkpoint_dir: Path = None,
+    prefetch_queue_depth: int = 3,
+) -> np.ndarray:
+    """
+    Extract Mimi codec encoder pre-RVQ continuous hidden states.
+
+    Architecture:
+        raw 24kHz audio
+          → causal convolutional encoder (downsamples to 12.5 Hz frames)
+          → Transformer encoder (adds context across frames)
+          → pre-RVQ continuous embedding  ← we extract this
+          → residual vector quantizer (16 codebooks → discrete tokens)
+          → Transformer decoder + convolutional decoder → reconstructed audio
+
+    The pre-RVQ embedding is Mimi's continuous latent — the richest
+    representation before information is discarded by quantization.
+    It carries both semantic (via WavLM distillation on codebook 1) and
+    acoustic content, making it the ideal single representation to compare.
+
+    We call model.encode() which returns audio_codes (discrete) but also
+    exposes encoder_last_hidden_state via output_hidden_states on the
+    encoder submodule. Alternatively we call model.encoder directly to
+    get the continuous pre-RVQ hidden state unambiguously.
+
+    Resampling: LibriSpeech is 16kHz; Mimi expects 24kHz. We use
+    torchaudio.functional.resample for correct anti-aliased resampling
+    (unlike the naive integer-decimation used for same-rate models).
+
+    Input:  raw 16kHz audio waveforms from LibriSpeech
+    Output: mean-pooled pre-RVQ encoder hidden state (B, D=512)
+    """
+    logger.info(f"Loading Mimi model: {model_id}")
+    log_gpu_memory("before Mimi load")
+
+    try:
+        import torchaudio
+    except ImportError:
+        raise ImportError("torchaudio required for Mimi resampling: pip install torchaudio")
+
+    feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
+    model = MimiModel.from_pretrained(model_id, torch_dtype=torch.float32)
+    model = model.to(device).eval()
+    log_gpu_memory("after Mimi load")
+
+    # Verify the feature extractor's expected sample rate matches MIMI_SAMPLE_RATE
+    fe_sr = getattr(feature_extractor, "sampling_rate", MIMI_SAMPLE_RATE)
+    if fe_sr != MIMI_SAMPLE_RATE:
+        logger.warning(
+            f"Mimi feature extractor sampling_rate={fe_sr} differs from "
+            f"expected {MIMI_SAMPLE_RATE}. Using feature extractor's value."
+        )
+    target_sr = fe_sr
+
+    n = len(dataset)
+    n_batches = (n + batch_size - 1) // batch_size
+    checkpoint_path = checkpoint_dir / "mimi_checkpoint.pkl" if checkpoint_dir else None
+
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, "Mimi")
+
+    raw_iter = dataset.iter(batch_size=batch_size)
+    if start_batch > 0:
+        for _ in range(start_batch):
+            next(raw_iter)
+    batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
+
+    errors = 0
+    for batch_idx in tqdm(range(start_batch, n_batches), desc="mimi",
+                          unit="batch", total=n_batches, initial=start_batch):
+        batch = next(batch_iter)
+        try:
+            # Decode audio and resample 16kHz → 24kHz using torchaudio
+            audio_arrays_24k = []
+            for audio_item in batch["audio"]:
+                arr = audio_item["array"] if isinstance(audio_item, dict) else audio_item
+                sr  = audio_item["sampling_rate"] if isinstance(audio_item, dict) else SAMPLE_RATE
+                audio = torch.from_numpy(np.array(arr, dtype=np.float32)).unsqueeze(0)  # (1, T)
+                if sr != target_sr:
+                    audio = torchaudio.functional.resample(audio, orig_freq=sr, new_freq=target_sr)
+                # Truncate to MAX_AUDIO_SECONDS
+                max_samples = MAX_AUDIO_SECONDS * target_sr
+                audio = audio[:, :max_samples]
+                audio_arrays_24k.append(audio.squeeze(0).numpy())
+
+            # feature_extractor pads to longest in batch and returns padding_mask
+            inputs = feature_extractor(
+                raw_audio=audio_arrays_24k,
+                sampling_rate=target_sr,
+                return_tensors="pt",
+                padding=True,
+            )
+            input_values = inputs["input_values"].to(device)
+            # padding_mask: 1 = real frame, 0 = padding (Mimi convention)
+            padding_mask = inputs.get("padding_mask", None)
+            if padding_mask is not None:
+                padding_mask = padding_mask.to(device)
 
             with torch.no_grad():
-                out = model(input_tensor, output_hidden_states=True)
-                emb = out.hidden_states[-1].mean(dim=1).float().cpu().numpy()
+                # Run the encoder submodule directly to get continuous pre-RVQ
+                # hidden states. MimiModel.encoder returns a BaseModelOutput
+                # whose last_hidden_state is the pre-quantization embedding.
+                enc_out = model.encoder(
+                    input_values,
+                    padding_mask=padding_mask,
+                )
+                last_hidden = enc_out.last_hidden_state   # (B, T_frames, D)
 
-            # Catch NaN embeddings immediately rather than caching bad data
+            # Mean-pool over time frames, excluding padding.
+            # padding_mask is at the *input* sample level, not the frame level —
+            # the encoder downsamples by ~1920x (24000/12.5), so we can't apply
+            # it directly. Use unmasked mean; padding is a tiny fraction at
+            # batch_size=64 with variable-length audio.
+            emb = last_hidden.float().mean(dim=1).cpu().numpy()   # (B, D)
+
             if not np.isfinite(emb).all():
                 n_bad = (~np.isfinite(emb)).sum()
-                logger.warning(f"Batch {batch_idx}: {n_bad} non-finite values in Parakeet output, skipping")
+                logger.warning(f"Batch {batch_idx}: {n_bad} non-finite Mimi values, skipping")
                 errors += 1
                 continue
 
@@ -715,41 +897,464 @@ def extract_parakeet_embeddings(
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
                 logger.error(
-                    f"CUDA OOM at batch {batch_idx}/{n_batches}. "
-                    f"Try reducing --parakeet_batch_size (currently {batch_size}). "
-                    f"Progress saved to checkpoint."
+                    f"CUDA OOM at mimi batch {batch_idx}. "
+                    f"Try --mimi_batch_size < {batch_size}."
                 )
-                if checkpoint_path:
-                    with open(checkpoint_path, "wb") as f:
-                        pickle.dump({"embeddings": embeddings, "next_batch": batch_idx}, f)
+                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
                 torch.cuda.empty_cache()
                 raise
             errors += 1
-            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
-
-        if checkpoint_path and (batch_idx + 1) % CHECKPOINT_EVERY == 0:
-            with open(checkpoint_path, "wb") as f:
-                pickle.dump({"embeddings": embeddings, "next_batch": batch_idx + 1}, f)
-            logger.debug(f"Checkpoint saved at batch {batch_idx + 1}/{n_batches}")
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
 
     if errors:
-        logger.warning(f"Parakeet: skipped {errors} batches due to errors")
-
+        logger.warning(f"Mimi: skipped {errors} batches")
     del model
-    release_vram("parakeet")
-    log_gpu_memory("after Parakeet unload")
-
-    if checkpoint_path and checkpoint_path.exists():
-        checkpoint_path.unlink()
-        logger.debug("Parakeet checkpoint removed (run complete)")
-
+    release_vram("mimi")
+    _remove_checkpoint(checkpoint_path)
     result = np.concatenate(embeddings, axis=0)
-    logger.info(f"Parakeet embeddings shape: {result.shape}")
+    logger.info(f"Mimi embeddings shape: {result.shape}")
     return result
 
+
+# ---------------------------------------------------------------------------
+# Embedding extraction — Omni / multimodal audio-LLM (Qwen2.5-Omni, Voxtral)
+# ---------------------------------------------------------------------------
+
+def extract_omni_audio_embeddings(
+    model_name: str,
+    model_id: str,
+    dataset,
+    device: torch.device,
+    batch_size: int = 8,
+    checkpoint_dir: Path = None,
+    prefetch_queue_depth: int = 3,
+) -> np.ndarray:
+    """
+    Extract the LLM backbone's last hidden state for multimodal audio-LLM models
+    (Qwen2.5-Omni, Voxtral).
+
+    Both models share the same high-level architecture pattern:
+      1. An audio encoder (Whisper-style or conformer) encodes audio frames → audio tokens
+      2. A projection layer maps audio tokens into the LLM's embedding space
+      3. The LLM backbone processes the audio token sequence
+
+    We pool the LLM backbone's last hidden layer over the audio token positions.
+    This captures how the language backbone organises audio-derived representations.
+
+    Batching note: batch_size defaults to 8 because these models are large (7–8B)
+    and audio sequences are long. Reduce with --omni_batch_size if you hit OOM.
+    """
+    logger.info(f"Loading omni/audio-LLM model: {model_id}  (label={model_name})")
+    log_gpu_memory(f"before {model_name} load")
+
+    load_kwargs = dict(
+        torch_dtype=torch.float16,
+        trust_remote_code=True,
+        device_map="auto",
+        max_memory={0: "75GiB", 1: "75GiB"},
+    )
+    try:
+        processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+    except Exception:
+        processor = AutoFeatureExtractor.from_pretrained(model_id, trust_remote_code=True)
+
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
+    except Exception:
+        try:
+            model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id, **load_kwargs)
+        except Exception:
+            model = AutoModel.from_pretrained(model_id, **load_kwargs)
+
+    model.eval()
+    first_device = (
+        next(iter(model.hf_device_map.values()))
+        if hasattr(model, "hf_device_map") and model.hf_device_map
+        else next(model.parameters()).device
+    )
+    log_gpu_memory(f"after {model_name} load")
+
+    n = len(dataset)
+    n_batches = (n + batch_size - 1) // batch_size
+    checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
+
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, model_name)
+
+    raw_iter = dataset.iter(batch_size=batch_size)
+    if start_batch > 0:
+        for _ in range(start_batch):
+            next(raw_iter)
+    batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
+
+    errors = 0
+    for batch_idx in tqdm(range(start_batch, n_batches), desc=model_name,
+                          unit="batch", total=n_batches, initial=start_batch):
+        batch = next(batch_iter)
+        try:
+            audio_arrays = _decode_audio_batch(batch)
+
+            # Build processor inputs. Different omni models use different
+            # call signatures; we try the most common patterns in order.
+            try:
+                inputs = processor(
+                    audios=audio_arrays,
+                    sampling_rate=SAMPLE_RATE,
+                    return_tensors="pt",
+                    padding=True,
+                )
+            except TypeError:
+                inputs = processor(
+                    audio=audio_arrays,
+                    sampling_rate=SAMPLE_RATE,
+                    return_tensors="pt",
+                    padding=True,
+                )
+
+            # Move all tensor inputs to the first-layer device
+            inputs = {
+                k: v.to(first_device) if isinstance(v, torch.Tensor) else v
+                for k, v in inputs.items()
+            }
+
+            with torch.no_grad():
+                out = model(**inputs, output_hidden_states=True)
+
+                # Extract last hidden state inside no_grad.
+                # For CausalLM outputs, hidden_states is the only valid attribute.
+                # encoder_last_hidden_state and last_hidden_state don't exist on
+                # CausalLMOutputWithPast — accessing them raises AttributeError.
+                if hasattr(out, "hidden_states") and out.hidden_states is not None:
+                    last_hidden = out.hidden_states[-1]   # (B, T, D)
+                else:
+                    raise ValueError(
+                        f"{model_name}: output_hidden_states=True was set but "
+                        f"out.hidden_states is None. Check that the model class "
+                        f"supports output_hidden_states."
+                    )
+
+            emb = last_hidden.float().mean(dim=1).cpu().numpy()  # (B, D)
+
+            if not np.isfinite(emb).all():
+                logger.warning(f"Batch {batch_idx}: non-finite {model_name} output, skipping")
+                errors += 1
+                continue
+
+            embeddings.append(emb)
+
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                logger.error(
+                    f"CUDA OOM at {model_name} batch {batch_idx}. "
+                    f"Try --omni_batch_size < {batch_size}."
+                )
+                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
+                torch.cuda.empty_cache()
+                raise
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        except Exception as e:
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
+
+    if errors:
+        logger.warning(f"{model_name}: skipped {errors} batches")
+    del model
+    release_vram(model_name)
+    _remove_checkpoint(checkpoint_path)
+    result = np.concatenate(embeddings, axis=0)
+    logger.info(f"{model_name} embeddings shape: {result.shape}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Embedding extraction — Higgs Audio V2 (TTS: text → audio tokens)
+# ---------------------------------------------------------------------------
+
+def extract_higgs_audio_embeddings(
+    model_id: str,
+    texts: list,
+    device: torch.device,
+    batch_size: int = 16,
+    checkpoint_dir: Path = None,
+    prefetch_queue_depth: int = 3,
+) -> np.ndarray:
+    """
+    Extract Higgs Audio V2 LLM backbone hidden states on text input.
+
+    Architecture clarification:
+        Higgs Audio V2 (generation variant) is a TEXT-TO-AUDIO model:
+            text tokens → Llama-3.2-3B backbone + DualFFN audio adapter
+                        → discrete audio codec tokens (25fps)
+
+        The "3B" checkpoint is the generation variant and takes TEXT as input.
+        The understanding variant (audio input) exists but is not open-sourced.
+
+        Total parameters: ~5.8B (3B Llama backbone + 2.2B DualFFN adapter).
+
+    Extraction strategy:
+        Feed LibriSpeech transcripts through the backbone via the standard
+        HiggsAudioV2ForConditionalGeneration forward pass with text-only input
+        and mean-pool the last hidden layer over non-padding token positions.
+        This is directly comparable to Qwen3-TTS and the text LLMs — all three
+        process text, letting us ask: does TTS training (on audio generation)
+        change how the LM backbone represents text?
+
+    Requires: pip install --upgrade transformers  (added 2026-02-19, needs >=4.50)
+    """
+    try:
+        from transformers import HiggsAudioV2ForConditionalGeneration
+    except ImportError:
+        raise ImportError(
+            "HiggsAudioV2ForConditionalGeneration not found. "
+            "Upgrade: pip install --upgrade transformers  (needs >=4.50, added 2026-02-19)."
+        )
+
+    logger.info(f"Loading Higgs Audio V2 model: {model_id}")
+    log_gpu_memory("before Higgs Audio V2 load")
+
+    processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
+    model = HiggsAudioV2ForConditionalGeneration.from_pretrained(
+        model_id,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
+        max_memory={0: "75GiB", 1: "75GiB"},
+    )
+    model.eval()
+
+    # The LLM backbone sits at model.model (Llama-3.2-3B with DualFFN layers).
+    # Tokenizer is accessible via processor.tokenizer.
+    tokenizer = processor.tokenizer
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    first_device = (
+        next(iter(model.hf_device_map.values()))
+        if hasattr(model, "hf_device_map") and model.hf_device_map
+        else next(model.parameters()).device
+    )
+    logger.info(f"Higgs Audio V2 first layer device: {first_device}")
+    log_gpu_memory("after Higgs Audio V2 load")
+
+    label = "higgs-audio-v2-3b"
+    n = len(texts)
+    n_batches = (n + batch_size - 1) // batch_size
+    checkpoint_path = checkpoint_dir / f"{label}_checkpoint.pkl" if checkpoint_dir else None
+
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, label)
+
+    # Tokenise in background thread (same pattern as text LLMs)
+    token_iter = prefetch_generator(
+        _tokenized_batches(texts, tokenizer, start_batch, n_batches, batch_size, MAX_TEXT_TOKENS),
+        queue_depth=prefetch_queue_depth,
+    )
+
+    errors = 0
+    for batch_idx, enc in tqdm(token_iter, desc=label,
+                                unit="batch", total=n_batches - start_batch):
+        try:
+            input_ids = enc["input_ids"].to(first_device)
+            attention_mask = enc["attention_mask"].to(first_device)
+
+            with torch.no_grad():
+                out = model(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    output_hidden_states=True,
+                )
+                # hidden_states: tuple of (n_layers+1) tensors, each (B, T, D).
+                # [-1] is the final transformer block output.
+                hidden = out.hidden_states[-1].float()   # (B, T, D)
+
+            # Masked mean-pool over non-padding tokens (consistent with text LLMs)
+            mask = attention_mask.unsqueeze(-1).float()
+            pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+            emb = pooled.cpu().numpy()
+
+            if not np.isfinite(emb).all():
+                n_bad = (~np.isfinite(emb)).sum()
+                logger.warning(f"Batch {batch_idx}: {n_bad} non-finite Higgs values, skipping")
+                errors += 1
+                continue
+
+            embeddings.append(emb)
+
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                logger.error(
+                    f"CUDA OOM at {label} batch {batch_idx}. "
+                    f"Try --higgs_batch_size < {batch_size}."
+                )
+                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
+                torch.cuda.empty_cache()
+                raise
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        except Exception as e:
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
+
+    if errors:
+        logger.warning(f"{label}: skipped {errors} batches")
+    del model
+    release_vram(label)
+    _remove_checkpoint(checkpoint_path)
+    result = np.concatenate(embeddings, axis=0)
+    logger.info(f"{label} embeddings shape: {result.shape}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Embedding extraction — Qwen3-TTS
+# ---------------------------------------------------------------------------
+
+def extract_qwen3_tts_embeddings(
+    model_id: str,
+    texts: list,
+    device: torch.device,
+    batch_size: int = 32,
+    checkpoint_dir: Path = None,
+    prefetch_queue_depth: int = 3,
+) -> np.ndarray:
+    """
+    Extract Qwen3-TTS LM backbone hidden states on input text.
+
+    Qwen3-TTS is a text-to-speech model with architecture:
+        text tokens → Qwen3 LM backbone → speech codec token predictions
+
+    Since LibriSpeech gives us transcripts (text), not target audio, the
+    natural extraction point is the LM backbone processing the input text —
+    identical in spirit to how we extract from text LLMs. This lets us ask:
+    "how similar are the text representations a TTS LM forms to those of
+    a pure text LLM?" — a direct Platonic Representation Hypothesis test
+    across TTS vs. pure-language training objectives.
+
+    The qwen-tts package wraps a Qwen3 transformer. We access its underlying
+    language model via model.language_model (or model.model, depending on
+    version), then tokenize with its bundled tokenizer and extract the last
+    hidden layer with mean pooling over non-padding tokens.
+
+    Requires: pip install qwen-tts
+    """
+    try:
+        from qwen_tts import Qwen3TTSModel
+    except ImportError:
+        raise ImportError(
+            "qwen-tts package not found. Install with: pip install qwen-tts\n"
+            "Then re-run without --skip_extraction to extract Qwen3-TTS embeddings."
+        )
+
+    logger.info(f"Loading Qwen3-TTS model: {model_id}")
+    log_gpu_memory("before Qwen3-TTS load")
+
+    model = Qwen3TTSModel.from_pretrained(
+        model_id,
+        device_map="auto",
+        dtype=torch.bfloat16,
+    )
+    model.eval()
+
+    # Qwen3-TTS wraps a Qwen3 transformer. The LM backbone is accessible via
+    # .language_model (most versions) or .model. We need it for hidden states.
+    if hasattr(model, "language_model"):
+        lm = model.language_model
+    elif hasattr(model, "model"):
+        lm = model.model
+    else:
+        raise AttributeError(
+            f"Cannot find LM backbone in Qwen3TTSModel. "
+            f"Available attributes: {[a for a in dir(model) if not a.startswith('_')]}\n"
+            f"Please open an issue or check the qwen-tts version."
+        )
+
+    # The tokenizer is bundled with the model. Try common attribute names.
+    if hasattr(model, "tokenizer"):
+        tokenizer = model.tokenizer
+    elif hasattr(model, "text_tokenizer"):
+        tokenizer = model.text_tokenizer
+    else:
+        # Fall back to loading from HF hub with the same repo
+        logger.warning("Tokenizer not found on model object — loading via AutoTokenizer")
+        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    # Determine the device of the LM backbone's first layer
+    if hasattr(lm, "hf_device_map") and lm.hf_device_map:
+        first_device = next(iter(lm.hf_device_map.values()))
+    else:
+        first_device = next(lm.parameters()).device
+
+    logger.info(f"Qwen3-TTS LM backbone first device: {first_device}")
+    log_gpu_memory("after Qwen3-TTS load")
+
+    n = len(texts)
+    n_batches = (n + batch_size - 1) // batch_size
+    label = "qwen3-tts-1.7b"
+    checkpoint_path = checkpoint_dir / f"{label}_checkpoint.pkl" if checkpoint_dir else None
+
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, label)
+
+    token_iter = prefetch_generator(
+        _tokenized_batches(texts, tokenizer, start_batch, n_batches, batch_size, MAX_TEXT_TOKENS),
+        queue_depth=prefetch_queue_depth,
+    )
+
+    errors = 0
+    for batch_idx, enc in tqdm(token_iter, desc=label,
+                                unit="batch", total=n_batches - start_batch):
+        try:
+            input_ids = enc["input_ids"].to(first_device)
+            attention_mask = enc["attention_mask"].to(first_device)
+            with torch.no_grad():
+                out = lm(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    output_hidden_states=True,
+                )
+                hidden = out.hidden_states[-1].float()   # (B, T, D)
+            mask = attention_mask.unsqueeze(-1).float()
+            pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+            embeddings.append(pooled.cpu().numpy())
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                logger.error(
+                    f"CUDA OOM at {label} batch {batch_idx}. "
+                    f"Try reducing --lm_batch_size (currently {batch_size})."
+                )
+                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
+                torch.cuda.empty_cache()
+                raise
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        except Exception as e:
+            errors += 1
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
+
+    if errors:
+        logger.warning(f"{label}: skipped {errors} batches")
+    # Guard: lm may be unbound if the AttributeError branch was hit before
+    # assignment. Always delete model; delete lm only if it was assigned.
+    del model
+    if "lm" in locals():
+        del lm
+    release_vram(label)
+    _remove_checkpoint(checkpoint_path)
+    result = np.concatenate(embeddings, axis=0)
+    logger.info(f"{label} embeddings shape: {result.shape}")
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Embedding extraction — text LLMs
+# ---------------------------------------------------------------------------
 
 def extract_lm_embeddings(
     model_id: str,
@@ -759,12 +1364,7 @@ def extract_lm_embeddings(
     checkpoint_dir: Path = None,
     prefetch_queue_depth: int = 3,
 ) -> np.ndarray:
-    """
-    Mean-pool last hidden layer over non-padding tokens, with checkpointing.
-
-    Tokenization runs in a background thread via prefetch_generator so the
-    GPU's forward pass for batch N overlaps with tokenizing batch N+1.
-    """
+    """Mean-pool last hidden layer over non-padding tokens."""
     logger.info(f"Loading LM: {model_id}")
     log_gpu_memory(f"before {model_id.split('/')[-1]} load")
 
@@ -772,128 +1372,128 @@ def extract_lm_embeddings(
         torch_dtype=torch.float16,
         trust_remote_code=True,
         device_map="auto",
-        # Cap per-GPU memory so device_map spreads across both A100s.
-        # Set slightly below physical 80GB to leave headroom for activations.
         max_memory={0: "75GiB", 1: "75GiB"},
     )
     try:
         model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     except Exception:
-        try:
-            model = AutoModel.from_pretrained(model_id, **load_kwargs)
-        except Exception as e:
-            logger.error(
-                f"Failed to load model '{model_id}': {e}\n"
-                f"If this is an OOM error, try reducing --lm_batch_size (currently {batch_size})"
-            )
-            raise
-
+        model = AutoModel.from_pretrained(model_id, **load_kwargs)
     model.eval()
 
-    # With device_map="auto", inputs must go to the device holding the
-    # embedding layer (first layer). Use hf_device_map if available,
-    # otherwise fall back to the device of the first parameter.
-    if hasattr(model, "hf_device_map") and model.hf_device_map:
-        first_device = next(iter(model.hf_device_map.values()))
-    else:
-        first_device = next(model.parameters()).device
-    logger.info(f"{model_id.split('/')[-1]} first layer device: {first_device}")
-    log_gpu_memory(f"after {model_id.split('/')[-1]} load")
+    first_device = (
+        next(iter(model.hf_device_map.values()))
+        if hasattr(model, "hf_device_map") and model.hf_device_map
+        else next(model.parameters()).device
+    )
 
-    try:
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    except Exception as e:
-        logger.error(f"Failed to load tokenizer for '{model_id}': {e}")
-        raise
-
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-        logger.debug(f"Set pad_token = eos_token ({tokenizer.eos_token!r})")
 
     n = len(texts)
     n_batches = (n + batch_size - 1) // batch_size
     label = model_id.split("/")[-1]
-
-    # --- Resume from checkpoint if available ---
     checkpoint_path = checkpoint_dir / f"{label}_checkpoint.pkl" if checkpoint_dir else None
-    start_batch = 0
-    embeddings = []
-    if checkpoint_path and checkpoint_path.exists():
-        with open(checkpoint_path, "rb") as f:
-            checkpoint = pickle.load(f)
-        embeddings = checkpoint["embeddings"]
-        start_batch = checkpoint["next_batch"]
-        logger.info(f"Resuming {label} from batch {start_batch}/{n_batches} ({len(embeddings)} batches done)")
 
-    logger.info(
-        f"Extracting embeddings: {n:,} samples, "
-        f"batch_size={batch_size}, n_batches={n_batches:,}, starting at batch {start_batch}, "
-        f"prefetch_queue_depth={prefetch_queue_depth}"
-    )
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, label)
+    log_gpu_memory(f"after {label} load")
 
-    errors = 0
-    CHECKPOINT_EVERY = 500
-
-    # Tokenization is CPU-bound and happens in a background thread so the
-    # GPU's forward pass for batch N overlaps with tokenizing batch N+1.
     token_iter = prefetch_generator(
         _tokenized_batches(texts, tokenizer, start_batch, n_batches, batch_size, MAX_TEXT_TOKENS),
         queue_depth=prefetch_queue_depth,
     )
 
+    errors = 0
     for batch_idx, enc in tqdm(token_iter, desc=label,
                                 unit="batch", total=n_batches - start_batch):
         try:
             input_ids = enc["input_ids"].to(first_device)
             attention_mask = enc["attention_mask"].to(first_device)
             with torch.no_grad():
-                out = model(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    output_hidden_states=True,
-                )
+                out = model(input_ids=input_ids, attention_mask=attention_mask,
+                            output_hidden_states=True)
                 hidden = out.hidden_states[-1].float()
             mask = attention_mask.unsqueeze(-1).float()
             pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
             embeddings.append(pooled.cpu().numpy())
-
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
-                logger.error(
-                    f"CUDA OOM at batch {batch_idx}/{n_batches}. "
-                    f"Try reducing --lm_batch_size (currently {batch_size}). "
-                    f"Progress saved to checkpoint."
-                )
-                if checkpoint_path:
-                    with open(checkpoint_path, "wb") as f:
-                        pickle.dump({"embeddings": embeddings, "next_batch": batch_idx}, f)
+                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
                 torch.cuda.empty_cache()
                 raise
             errors += 1
-            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping batch {batch_idx} due to error: {e}")
-
-        if checkpoint_path and (batch_idx + 1) % CHECKPOINT_EVERY == 0:
-            with open(checkpoint_path, "wb") as f:
-                pickle.dump({"embeddings": embeddings, "next_batch": batch_idx + 1}, f)
-            logger.debug(f"Checkpoint saved at batch {batch_idx + 1}/{n_batches}")
+            logger.warning(f"Skipping batch {batch_idx}: {e}")
+        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
 
     if errors:
-        logger.warning(f"{label}: skipped {errors} batches due to errors")
-
+        logger.warning(f"{label}: skipped {errors} batches")
     del model
     release_vram(label)
-    log_gpu_memory(f"after {label} unload")
-
-    if checkpoint_path and checkpoint_path.exists():
-        checkpoint_path.unlink()
-        logger.debug(f"{label} checkpoint removed (run complete)")
-
+    _remove_checkpoint(checkpoint_path)
     result = np.concatenate(embeddings, axis=0)
     logger.info(f"{label} embeddings shape: {result.shape}")
     return result
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint helpers (DRY)
+# ---------------------------------------------------------------------------
+
+CHECKPOINT_EVERY = 500
+
+
+def _load_checkpoint(path, n_batches, label):
+    """Return (start_batch, partial_embeddings_list). Loads .pkl if it exists."""
+    if path and path.exists():
+        with open(path, "rb") as f:
+            ckpt = pickle.load(f)
+        embeddings = ckpt["embeddings"]
+        start_batch = ckpt["next_batch"]
+        logger.info(f"Resuming {label} from batch {start_batch}/{n_batches}")
+        return start_batch, embeddings
+    return 0, []
+
+
+def _save_checkpoint(path, embeddings, next_batch):
+    if path:
+        with open(path, "wb") as f:
+            pickle.dump({"embeddings": embeddings, "next_batch": next_batch}, f)
+
+
+def _maybe_save_checkpoint(path, embeddings, batch_idx, n_batches):
+    if path and (batch_idx + 1) % CHECKPOINT_EVERY == 0:
+        _save_checkpoint(path, embeddings, batch_idx + 1)
+        logger.debug(f"Checkpoint at {batch_idx+1}/{n_batches}")
+
+
+def _remove_checkpoint(path):
+    if path and path.exists():
+        path.unlink()
+        logger.debug(f"Checkpoint removed: {path.name}")
+
+
+def _decode_audio_batch(batch) -> list:
+    """Decode a HuggingFace audio batch dict into a list of float32 numpy arrays.
+
+    Resampling note: the integer decimation `audio[::ratio]` is only exact when
+    the source sample rate is an integer multiple of TARGET_SAMPLE_RATE (16kHz).
+    LibriSpeech is always 16kHz so this is fine in practice. If you add other
+    datasets with e.g. 44100 Hz audio, replace with torchaudio.functional.resample
+    or librosa.resample for correct anti-aliased resampling.
+    """
+    audio_arrays = []
+    for audio_item in batch["audio"]:
+        arr = audio_item["array"] if isinstance(audio_item, dict) else audio_item
+        sr  = audio_item["sampling_rate"] if isinstance(audio_item, dict) else SAMPLE_RATE
+        audio = np.array(arr, dtype=np.float32)
+        if sr != SAMPLE_RATE:
+            audio = audio[:: int(sr / SAMPLE_RATE)]
+        audio = audio[: MAX_AUDIO_SECONDS * SAMPLE_RATE]
+        audio_arrays.append(audio)
+    return audio_arrays
 
 
 # ---------------------------------------------------------------------------
@@ -901,34 +1501,18 @@ def extract_lm_embeddings(
 # ---------------------------------------------------------------------------
 
 def _hsic1_batch(X: np.ndarray, Y: np.ndarray) -> float:
-    """
-    Unbiased HSIC_1 estimator for a single minibatch (Song et al. 2007 U-statistic).
-
-    HSIC_1(K, L) = 1/(n(n-3)) * [
-        tr(K~ L~)
-        + (1^T K~ 1)(1^T L~ 1) / ((n-1)(n-2))
-        - 2/(n-2) * 1^T K~ L~ 1
-    ]
-    where K~, L~ have diagonal entries set to zero.
-
-    This estimator is unbiased and independent of batch size, making it valid
-    for averaging across minibatches (Nguyen et al. 2021, eq. 2).
-    """
+    """Unbiased HSIC_1 estimator (Song et al. 2007 U-statistic)."""
     n = X.shape[0]
     assert n >= 4, f"Minibatch size must be >= 4 for HSIC_1; got {n}"
-
     K = X @ X.T
     L = Y @ Y.T
     np.fill_diagonal(K, 0.0)
     np.fill_diagonal(L, 0.0)
-
     KL = K @ L
     ones = np.ones(n)
-
     term1 = np.trace(KL)
     term2 = (ones @ K @ ones) * (ones @ L @ ones) / ((n - 1) * (n - 2))
     term3 = 2.0 / (n - 2) * (ones @ KL @ ones)
-
     return float((term1 + term2 - term3) / (n * (n - 3)))
 
 
@@ -938,39 +1522,22 @@ def minibatch_cka(
     batch_size: int = MINIBATCH_SIZE,
     seed: int = MINIBATCH_SEED,
 ) -> float:
-    """
-    Minibatch linear CKA (Nguyen, Raghu & Kornblith 2021).
-
-    CKA_mb = mean_i[HSIC_1(K_i, L_i)]
-            / sqrt(mean_i[HSIC_1(K_i, K_i)] * mean_i[HSIC_1(L_i, L_i)])
-
-    Samples are shuffled once and consumed in non-overlapping minibatches.
-    The score is invariant to rotation and isotropic scaling of the embedding
-    spaces, and is unbiased w.r.t. batch size.
-
-    Note: per Murphy et al. (2024), this estimator has a slight downward bias
-    relative to the true population CKA, but this affects all pairs equally
-    so relative comparisons remain valid.
-    """
+    """Minibatch linear CKA (Nguyen, Raghu & Kornblith 2021)."""
     N = X.shape[0]
     rng = np.random.default_rng(seed)
     indices = rng.permutation(N)
-
     hsic_xy, hsic_xx, hsic_yy = [], [], []
 
     for start in range(0, N - batch_size + 1, batch_size):
         idx = indices[start : start + batch_size]
         Xb = X[idx].astype(np.float64)
         Yb = Y[idx].astype(np.float64)
-        # L2-normalise within batch for numerical stability
         Xb /= np.linalg.norm(Xb, axis=1, keepdims=True) + 1e-10
         Yb /= np.linalg.norm(Yb, axis=1, keepdims=True) + 1e-10
-
         hsic_xy.append(_hsic1_batch(Xb, Yb))
         hsic_xx.append(_hsic1_batch(Xb, Xb))
         hsic_yy.append(_hsic1_batch(Yb, Yb))
 
-    # Edge case: fewer samples than one batch
     if not hsic_xy:
         Xb = X.astype(np.float64)
         Yb = Y.astype(np.float64)
@@ -991,10 +1558,6 @@ def cka_stability_check(
     subset_frac: float = STABILITY_SUBSET_FRAC,
     batch_size: int = MINIBATCH_SIZE,
 ) -> dict:
-    """
-    Assess outlier sensitivity (Horoi et al.) by computing CKA on random subsets.
-    High std across subsets flags potential outlier influence.
-    """
     N = X.shape[0]
     k = int(N * subset_frac)
     scores = []
@@ -1016,36 +1579,21 @@ def cka_stability_check(
 def pca_eigenvalues(X: np.ndarray, n_components: int = PCA_COMPONENTS) -> np.ndarray:
     Xc = X - X.mean(axis=0, keepdims=True)
     n = Xc.shape[0]
-
-    # Check for non-finite values which cause SVD to fail
     if not np.isfinite(Xc).all():
-        n_bad = (~np.isfinite(Xc)).sum()
-        logger.warning(f"pca_eigenvalues: {n_bad} non-finite values found, replacing with 0")
         Xc = np.nan_to_num(Xc, nan=0.0, posinf=0.0, neginf=0.0)
-
     Xc_scaled = Xc / np.sqrt(n - 1)
-
     try:
         _, s, _ = np.linalg.svd(Xc_scaled, full_matrices=False)
     except np.linalg.LinAlgError:
-        logger.warning("numpy SVD did not converge, falling back to scipy lapack_driver='gesdd'")
-        try:
-            from scipy.linalg import svd as scipy_svd
-            _, s, _ = scipy_svd(Xc_scaled, full_matrices=False, check_finite=False,
-                                lapack_driver="gesdd")
-        except Exception:
-            logger.warning("gesdd failed, trying gesvd (slower but more robust)")
-            from scipy.linalg import svd as scipy_svd
-            _, s, _ = scipy_svd(Xc_scaled, full_matrices=False, check_finite=False,
-                                lapack_driver="gesvd")
-
+        from scipy.linalg import svd as scipy_svd
+        _, s, _ = scipy_svd(Xc_scaled, full_matrices=False, check_finite=False,
+                            lapack_driver="gesdd")
     eigs = s ** 2
     eigs /= eigs.sum()
     return eigs[:n_components]
 
 
 def effective_rank(eigenvalues: np.ndarray) -> float:
-    """Effective rank = exp(entropy of normalised eigenvalue distribution)."""
     p = eigenvalues / eigenvalues.sum()
     p = p[p > 1e-10]
     return float(np.exp(-np.sum(p * np.log(p))))
@@ -1055,7 +1603,12 @@ def effective_rank(eigenvalues: np.ndarray) -> float:
 # Plots
 # ---------------------------------------------------------------------------
 
-def plot_eigenspectra(eigenvalues: dict, plots_dir: Path):
+def plot_eigenspectra(eigenvalues: dict, plots_dir: Path,
+                      max_pc: int = PCA_PLOT_MAX_PC):
+    """
+    Individual eigenspectra panels, x-axis limited to the first `max_pc`
+    principal components (default = 10).
+    """
     _apply_style()
     names = list(eigenvalues.keys())
     n = len(names)
@@ -1064,20 +1617,21 @@ def plot_eigenspectra(eigenvalues: dict, plots_dir: Path):
         axes = [axes]
 
     for ax, name in zip(axes, names):
-        eigs = eigenvalues[name]
+        eigs = eigenvalues[name][:max_pc]   # ← truncate to max_pc
         color = MODEL_COLORS.get(name, "#555555")
         k = np.arange(1, len(eigs) + 1)
         ax.fill_between(k, eigs, alpha=0.18, color=color)
         ax.plot(k, eigs, color=color, linewidth=2.2)
-        er = effective_rank(eigs)
+        er = effective_rank(eigenvalues[name])   # still computed on all components
         ax.set_title(f"{name}\n(eff. rank = {er:.1f})", fontsize=10, fontweight="bold")
-        ax.set_xlabel("Principal Component", fontsize=9)
+        ax.set_xlabel(f"Principal Component (1–{max_pc})", fontsize=9)
         ax.set_ylabel("Fraction of Variance", fontsize=9)
+        ax.set_xlim(1, max_pc)
         ax.set_yscale("log")
         ax.yaxis.set_major_formatter(mticker.LogFormatterSciNotation())
 
     fig.suptitle(
-        "PCA Eigenvalue Spectra  ·  similar decay → similar intrinsic dimensionality",
+        f"PCA Eigenvalue Spectra  ·  first {max_pc} PCs  ·  similar decay → similar intrinsic dimensionality",
         fontsize=12, y=1.01,
     )
     plt.tight_layout()
@@ -1087,18 +1641,25 @@ def plot_eigenspectra(eigenvalues: dict, plots_dir: Path):
     logger.info(f"  Saved → {path}")
 
 
-def plot_eigenspectra_overlay(eigenvalues: dict, plots_dir: Path):
+def plot_eigenspectra_overlay(eigenvalues: dict, plots_dir: Path,
+                               max_pc: int = PCA_PLOT_MAX_PC):
+    """
+    All eigenspectra overlaid on one axes, x-axis limited to `max_pc`.
+    """
     _apply_style()
     fig, ax = plt.subplots(figsize=(7, 5))
-    for name, eigs in eigenvalues.items():
+    for name, eigs_full in eigenvalues.items():
+        eigs = eigs_full[:max_pc]           # ← truncate to max_pc
         color = MODEL_COLORS.get(name, "#555555")
         k = np.arange(1, len(eigs) + 1)
         ax.plot(k, eigs, color=color, linewidth=2, label=name, alpha=0.85)
 
     ax.set_yscale("log")
-    ax.set_xlabel("Principal Component", fontsize=11)
+    ax.set_xlim(1, max_pc)
+    ax.set_xlabel(f"Principal Component (1–{max_pc})", fontsize=11)
     ax.set_ylabel("Fraction of Variance (log)", fontsize=11)
-    ax.set_title("Eigenvalue Spectra — All Models Overlaid", fontsize=13, fontweight="bold")
+    ax.set_title(f"Eigenvalue Spectra — All Models Overlaid  (first {max_pc} PCs)",
+                 fontsize=13, fontweight="bold")
     ax.legend(fontsize=9, framealpha=0.9)
     ax.yaxis.set_major_formatter(mticker.LogFormatterSciNotation())
     plt.tight_layout()
@@ -1114,21 +1675,16 @@ def plot_effective_rank_bar(eigenvalues: dict, plots_dir: Path):
     ranks = [effective_rank(eigenvalues[n]) for n in names]
     colors = [MODEL_COLORS.get(n, "#555") for n in names]
 
-    fig, ax = plt.subplots(figsize=(7, 4))
+    fig, ax = plt.subplots(figsize=(max(7, len(names) * 1.2), 4))
     bars = ax.bar(names, ranks, color=colors, width=0.55, edgecolor="white", linewidth=1.2)
     for bar, rank in zip(bars, ranks):
-        ax.text(
-            bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 0.3,
-            f"{rank:.1f}",
-            ha="center", va="bottom", fontsize=10, fontweight="bold",
-        )
+        ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                f"{rank:.1f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
     ax.set_ylabel("Effective Rank", fontsize=11)
-    ax.set_title(
-        "Effective Rank of Representation Spaces\nHigher = variance spread across more dimensions",
-        fontsize=11, fontweight="bold",
-    )
-    ax.tick_params(axis="x", labelsize=10)
+    ax.set_title("Effective Rank of Representation Spaces\n"
+                 "Higher = variance spread across more dimensions",
+                 fontsize=11, fontweight="bold")
+    ax.tick_params(axis="x", labelsize=9, rotation=20)
     plt.tight_layout()
     path = plots_dir / "effective_rank.png"
     plt.savefig(path, dpi=150, bbox_inches="tight")
@@ -1137,16 +1693,19 @@ def plot_effective_rank_bar(eigenvalues: dict, plots_dir: Path):
 
 
 def plot_pca_scatter(embeddings: dict, plots_dir: Path):
+    """
+    2D PCA scatter plots. The x-axis (PC1) and y-axis (PC2) labels already
+    show only two components, which are naturally ≤ 10.
+    """
     from sklearn.decomposition import PCA as skPCA
     _apply_style()
 
-    # Filter out any models with non-finite embeddings
     clean = {k: v for k, v in embeddings.items() if np.isfinite(v).all()}
     if len(clean) < len(embeddings):
         skipped = set(embeddings) - set(clean)
-        logger.warning(f"plot_pca_scatter: skipping models with non-finite embeddings: {skipped}")
+        logger.warning(f"plot_pca_scatter: skipping non-finite models: {skipped}")
     if not clean:
-        logger.warning("plot_pca_scatter: no valid embeddings to plot, skipping")
+        logger.warning("plot_pca_scatter: no valid embeddings, skipping")
         return
 
     names = list(clean.keys())
@@ -1176,7 +1735,7 @@ def plot_pca_scatter(embeddings: dict, plots_dir: Path):
 
 def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
     _apply_style()
-    fig, ax = plt.subplots(figsize=(8, 6.5))
+    fig, ax = plt.subplots(figsize=(max(8, len(names) * 1.0), max(6.5, len(names) * 0.9)))
 
     cmap = LinearSegmentedColormap.from_list(
         "cka", ["#FFFFFF", "#A5D6A7", "#2E7D32"], N=256
@@ -1188,19 +1747,20 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
     n = len(names)
     ax.set_xticks(range(n))
     ax.set_yticks(range(n))
-    ax.set_xticklabels(names, rotation=35, ha="right", fontsize=10)
-    ax.set_yticklabels(names, fontsize=10)
+    ax.set_xticklabels(names, rotation=35, ha="right", fontsize=9)
+    ax.set_yticklabels(names, fontsize=9)
 
     for i in range(n):
         for j in range(n):
             val = cka_matrix[i, j]
             text_color = "black" if val < 0.7 else "white"
             ax.text(j, i, f"{val:.3f}", ha="center", va="center",
-                    fontsize=10, fontweight="bold", color=text_color)
+                    fontsize=9, fontweight="bold", color=text_color)
 
+    # Draw separator between audio and text model groups
     audio_indices = [
         i for i, name in enumerate(names)
-        if MODELS[name]["modality"] in ("audio", "audio-parakeet")
+        if MODELS[name]["modality"] in AUDIO_MODALITIES
     ]
     if audio_indices:
         boundary = max(audio_indices) + 0.5
@@ -1209,7 +1769,7 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
 
     ax.set_title(
         "Pairwise Minibatch Linear CKA\n"
-        "Dashed line separates audio models (Whisper, Parakeet) from text models",
+        "Dashed line separates audio/omni models from text-only LLMs",
         fontsize=12, fontweight="bold", pad=15,
     )
     plt.tight_layout()
@@ -1221,60 +1781,45 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
 
 def plot_cka_bar_cross_modal(cka_matrix: np.ndarray, names: list, plots_dir: Path):
     """
-    Grouped bar chart: for each LLM, show its CKA with each audio model side by side.
-    This makes it easy to see whether both audio models agree on which LLMs are most similar.
+    Grouped bar chart: for each text LLM, show its CKA with each audio/omni model.
     """
     _apply_style()
-    audio_names = [
-        n for n in names
-        if MODELS[n]["modality"] in ("audio", "audio-parakeet")
-    ]
-    lm_names = [
-        n for n in names
-        if MODELS[n]["modality"] not in ("audio", "audio-parakeet")
-    ]
+    audio_names = [n for n in names if MODELS[n]["modality"] in AUDIO_MODALITIES]
+    lm_names    = [n for n in names if MODELS[n]["modality"] not in AUDIO_MODALITIES]
     if not audio_names or not lm_names:
         return
 
     x = np.arange(len(lm_names))
     n_audio = len(audio_names)
-    width = 0.7 / n_audio   # total bar group width = 0.7, split evenly
+    width = 0.7 / n_audio
 
-    fig, ax = plt.subplots(figsize=(max(7, len(lm_names) * 1.8), 5))
+    fig, ax = plt.subplots(figsize=(max(8, len(lm_names) * 1.8 + n_audio * 0.4), 5))
 
     for k, audio_name in enumerate(audio_names):
         a_idx = names.index(audio_name)
         scores = [cka_matrix[a_idx, names.index(lm)] for lm in lm_names]
         offsets = x + (k - (n_audio - 1) / 2) * width
         color = MODEL_COLORS.get(audio_name, "#555")
-        bars = ax.bar(
-            offsets, scores,
-            width=width * 0.9,
-            color=color,
-            label=audio_name,
-            edgecolor="white", linewidth=0.8,
-        )
+        bars = ax.bar(offsets, scores, width=width * 0.9, color=color,
+                      label=audio_name, edgecolor="white", linewidth=0.8)
         for bar, score in zip(bars, scores):
-            ax.text(
-                bar.get_x() + bar.get_width() / 2,
-                bar.get_height() + 0.005,
-                f"{score:.3f}",
-                ha="center", va="bottom", fontsize=8, fontweight="bold",
-            )
+            ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.005,
+                    f"{score:.3f}", ha="center", va="bottom", fontsize=7, fontweight="bold")
 
     ax.set_xticks(x)
     ax.set_xticklabels(lm_names, fontsize=10)
-    ax.set_ylim(0, min(1.0, max(
+    max_val = max(
         cka_matrix[names.index(a), names.index(lm)]
         for a in audio_names for lm in lm_names
-    ) * 1.35 + 0.05))
-    ax.set_ylabel("CKA with audio model", fontsize=11)
+    )
+    ax.set_ylim(0, min(1.0, max_val * 1.35 + 0.05))
+    ax.set_ylabel("CKA with audio/omni model", fontsize=11)
     ax.set_title(
-        "Cross-Modal CKA: Audio Models vs. Each LLM\n"
-        "Higher = more similar representational geometry to that audio encoder",
+        "Cross-Modal CKA: Audio/Omni Models vs. Each Text LLM\n"
+        "Higher = more similar representational geometry",
         fontsize=11, fontweight="bold",
     )
-    ax.legend(fontsize=9, framealpha=0.9, title="Audio model")
+    ax.legend(fontsize=8, framealpha=0.9, title="Audio/Omni model")
     plt.tight_layout()
     path = plots_dir / "cka_cross_modal_bar.png"
     plt.savefig(path, dpi=150, bbox_inches="tight")
@@ -1283,7 +1828,6 @@ def plot_cka_bar_cross_modal(cka_matrix: np.ndarray, names: list, plots_dir: Pat
 
 
 def plot_stability(stability_results: dict, plots_dir: Path):
-    """Box plot of CKA variance across random subsets per pair."""
     _apply_style()
     pairs = list(stability_results.keys())
     data = [stability_results[p]["scores"] for p in pairs]
@@ -1296,21 +1840,16 @@ def plot_stability(stability_results: dict, plots_dir: Path):
     stds_sorted = [stds[i] for i in order]
 
     fig, ax = plt.subplots(figsize=(max(8, len(pairs) * 1.5), 5))
-    bp = ax.boxplot(
-        data, patch_artist=True, vert=True,
-        medianprops=dict(color="black", linewidth=2),
-        whiskerprops=dict(linewidth=1.2),
-        capprops=dict(linewidth=1.2),
-    )
+    bp = ax.boxplot(data, patch_artist=True, vert=True,
+                    medianprops=dict(color="black", linewidth=2),
+                    whiskerprops=dict(linewidth=1.2),
+                    capprops=dict(linewidth=1.2))
     for patch, std in zip(bp["boxes"], stds_sorted):
         intensity = min(std / 0.05, 1.0)
-        patch.set_facecolor((0.2 + 0.6 * intensity, 0.6 - 0.4 * intensity, 0.8 - 0.6 * intensity, 0.5))
-
+        patch.set_facecolor((0.2 + 0.6 * intensity, 0.6 - 0.4 * intensity,
+                             0.8 - 0.6 * intensity, 0.5))
     ax.set_xticks(range(1, len(pairs) + 1))
-    ax.set_xticklabels(
-        [p.replace(" vs ", "\nvs\n") for p in pairs],
-        fontsize=8,
-    )
+    ax.set_xticklabels([p.replace(" vs ", "\nvs\n") for p in pairs], fontsize=7)
     ax.set_ylabel("CKA Score", fontsize=11)
     ax.set_title(
         f"CKA Stability: {N_STABILITY_SUBSETS} random {int(STABILITY_SUBSET_FRAC*100)}% subsets per pair\n"
@@ -1336,7 +1875,6 @@ def save_summary_tables(
     stability_results: dict,
     data_dir: Path,
 ):
-    # Table 1: full pairwise CKA matrix
     path1 = data_dir / "cka_matrix.csv"
     with open(path1, "w", newline="") as f:
         w = csv.writer(f)
@@ -1345,51 +1883,37 @@ def save_summary_tables(
             w.writerow([row_name] + [f"{cka_matrix[i, j]:.6f}" for j in range(len(names))])
     logger.info(f"  Saved → {path1}")
 
-    # Table 2: cross-modal (Whisper vs LLMs)
-    if "whisper-base" in names:
-        w_idx = names.index("whisper-base")
+    # Cross-modal table: all audio/omni models vs all text LLMs
+    audio_names = [n for n in names if MODELS[n]["modality"] in AUDIO_MODALITIES]
+    lm_names    = [n for n in names if MODELS[n]["modality"] not in AUDIO_MODALITIES]
+    if audio_names and lm_names:
         path2 = data_dir / "cka_cross_modal.csv"
         with open(path2, "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["model", "params", "arch", "corpus", "cka_with_whisper"])
-            for name in names:
-                if name == "whisper-base":
-                    continue
-                idx = names.index(name)
-                w.writerow([
-                    name,
-                    MODELS[name]["params"],
-                    MODELS[name]["arch"],
-                    MODELS[name]["corpus"],
-                    f"{cka_matrix[w_idx, idx]:.6f}",
-                ])
+            header = ["lm_model", "params", "arch", "corpus"] + audio_names
+            w.writerow(header)
+            for lm in lm_names:
+                lm_idx = names.index(lm)
+                row = [lm, MODELS[lm]["params"], MODELS[lm]["arch"], MODELS[lm]["corpus"]]
+                row += [f"{cka_matrix[names.index(a), lm_idx]:.6f}" for a in audio_names]
+                w.writerow(row)
         logger.info(f"  Saved → {path2}")
 
-    # Table 3: PCA / effective rank
     path3 = data_dir / "pca_summary.csv"
     with open(path3, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow([
-            "model", "params", "arch", "corpus",
-            "embedding_dim", "effective_rank",
-            "var_pc1", "var_top5", "var_top10",
-        ])
+        w.writerow(["model", "params", "arch", "corpus",
+                    "embedding_dim", "effective_rank",
+                    "var_pc1", "var_top5", "var_top10"])
         for name, eigs in eigenvalues.items():
             dim = embeddings[name].shape[1] if name in embeddings else "—"
             w.writerow([
-                name,
-                MODELS[name]["params"],
-                MODELS[name]["arch"],
-                MODELS[name]["corpus"],
-                dim,
-                f"{effective_rank(eigs):.2f}",
-                f"{eigs[0]:.4f}",
-                f"{eigs[:5].sum():.4f}",
-                f"{eigs[:10].sum():.4f}",
+                name, MODELS[name]["params"], MODELS[name]["arch"], MODELS[name]["corpus"],
+                dim, f"{effective_rank(eigs):.2f}",
+                f"{eigs[0]:.4f}", f"{eigs[:5].sum():.4f}", f"{eigs[:10].sum():.4f}",
             ])
     logger.info(f"  Saved → {path3}")
 
-    # Table 4: stability
     if stability_results:
         path4 = data_dir / "cka_stability.csv"
         with open(path4, "w", newline="") as f:
@@ -1398,11 +1922,8 @@ def save_summary_tables(
             for pair, stats in stability_results.items():
                 scores = stats["scores"]
                 w.writerow([
-                    pair,
-                    f"{stats['mean']:.6f}",
-                    f"{stats['std']:.6f}",
-                    f"{min(scores):.6f}",
-                    f"{max(scores):.6f}",
+                    pair, f"{stats['mean']:.6f}", f"{stats['std']:.6f}",
+                    f"{min(scores):.6f}", f"{max(scores):.6f}",
                     "yes" if stats["std"] > 0.03 else "no",
                 ])
         logger.info(f"  Saved → {path4}")
@@ -1425,17 +1946,18 @@ def print_summary(cka_matrix: np.ndarray, names: list, stability_results: dict):
             print(f"  {pair_key:<42} {score:>7.4f}  {std:>7.4f}{flag}")
 
     print(f"\n{'='*70}")
-    print("CROSS-MODAL CKA  (Whisper ↔ LLMs)")
+    print("CROSS-MODAL CKA  (audio/omni ↔ text LLMs)")
     print(f"{'='*70}")
-    if "whisper-base" in names:
-        w_idx = names.index("whisper-base")
-        for name in names:
-            if name == "whisper-base":
-                continue
-            score = cka_matrix[w_idx, names.index(name)]
-            meta = MODELS[name]
+    audio_names = [n for n in names if MODELS[n]["modality"] in AUDIO_MODALITIES]
+    lm_names    = [n for n in names if MODELS[n]["modality"] not in AUDIO_MODALITIES]
+    for a in audio_names:
+        a_idx = names.index(a)
+        print(f"\n  {a}:")
+        for lm in lm_names:
+            score = cka_matrix[a_idx, names.index(lm)]
+            meta = MODELS[lm]
             print(
-                f"  whisper-base ↔ {name:<18} "
+                f"    ↔ {lm:<22} "
                 f"[{meta['params']:>5} | {meta['arch']:<12} | {meta['corpus']}]"
                 f"  CKA = {score:.4f}"
             )
@@ -1447,8 +1969,9 @@ def print_summary(cka_matrix: np.ndarray, names: list, stability_results: dict):
     print("  CKA ~0.5  moderate similarity")
     print("  CKA ~0.0  no shared structure")
     print()
-    print("  Cross-modal CKA (Whisper ↔ LLM) > ~0.3 supports the Platonic")
-    print("  Representation Hypothesis (convergence across modalities).")
+    print("  Cross-modal CKA > ~0.3 supports the Platonic Representation Hypothesis")
+    print("  (convergence across modalities, Huh et al. 2024).")
+    print("  Whisper-enc vs Whisper-dec CKA reveals enc/dec representational divergence.")
     print("  ⚠  std > 0.03 across subsets → possible outlier sensitivity")
     print("     (see Horoi et al. 'Deceiving the CKA Similarity Measure')")
 
@@ -1461,54 +1984,37 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Cross-modal representation analysis with minibatch CKA"
     )
-    p.add_argument(
-        "--splits", nargs="+", default=ALL_SPLITS, choices=list(SPLIT_CONFIG_MAP.keys()),
-        help="LibriSpeech splits to use (default: all)",
-    )
-    p.add_argument(
-        "--max_samples", type=int, default=None,
-        help="Cap total samples after concatenation (default: no cap)",
-    )
-    p.add_argument(
-        "--root_dir", type=str, default=".",
-        help="Root directory; Data/ and Plots/ subdirs created here (default: .)",
-    )
-    p.add_argument(
-        "--skip_extraction", action="store_true",
-        help="Load cached embeddings from Data/ instead of re-extracting",
-    )
-    p.add_argument(
-        "--batch_size", type=int, default=MINIBATCH_SIZE,
-        help=f"Minibatch size for CKA (default: {MINIBATCH_SIZE})",
-    )
-    p.add_argument(
-        "--lm_batch_size", type=int, default=32,
-        help="Batch size for LM forward passes (default: 32, reduce if OOM)",
-    )
-    p.add_argument(
-        "--whisper_batch_size", type=int, default=64,
-        help="Batch size for Whisper audio extraction (default: 64, reduce if OOM)",
-    )
-    p.add_argument(
-        "--parakeet_batch_size", type=int, default=32,
-        help="Batch size for Parakeet audio extraction (default: 32, reduce if OOM)",
-    )
-    p.add_argument(
-        "--prefetch_queue_depth", type=int, default=3,
-        help=(
-            "Number of batches to prefetch in background threads (default: 3). "
-            "Increase to 5 if CPU preprocessing is measurably slower than GPU compute. "
-            "Applies to all three extractors."
-        ),
-    )
-    p.add_argument(
-        "--pca_components", type=int, default=PCA_COMPONENTS,
-        help=f"PCA components for eigenvalue analysis (default: {PCA_COMPONENTS})",
-    )
-    p.add_argument(
-        "--skip_stability", action="store_true",
-        help="Skip outlier stability check (faster)",
-    )
+    p.add_argument("--splits", nargs="+", default=ALL_SPLITS,
+                   choices=list(SPLIT_CONFIG_MAP.keys()),
+                   help="LibriSpeech splits (default: all)")
+    p.add_argument("--max_samples", type=int, default=None,
+                   help="Cap total samples (default: no cap)")
+    p.add_argument("--root_dir", type=str, default=".",
+                   help="Root dir; Data/ and Plots/ created here")
+    p.add_argument("--skip_extraction", action="store_true",
+                   help="Load cached embeddings instead of re-extracting")
+    p.add_argument("--batch_size", type=int, default=MINIBATCH_SIZE,
+                   help=f"CKA minibatch size (default: {MINIBATCH_SIZE})")
+    p.add_argument("--lm_batch_size", type=int, default=32,
+                   help="Batch size for text LM forward passes (default: 32)")
+    p.add_argument("--whisper_batch_size", type=int, default=64,
+                   help="Batch size for Whisper extraction (default: 64)")
+    p.add_argument("--parakeet_batch_size", type=int, default=32,
+                   help="Batch size for Parakeet extraction (default: 32)")
+    p.add_argument("--mimi_batch_size", type=int, default=64,
+                   help="Batch size for Mimi codec extraction (default: 64, reduce if OOM)")
+    p.add_argument("--omni_batch_size", type=int, default=8,
+                   help="Batch size for Voxtral extraction (default: 8, reduce if OOM)")
+    p.add_argument("--higgs_batch_size", type=int, default=8,
+                   help="Batch size for Higgs Audio V2 extraction (default: 8, reduce if OOM)")
+    p.add_argument("--prefetch_queue_depth", type=int, default=3,
+                   help="Background prefetch depth (default: 3)")
+    p.add_argument("--pca_components", type=int, default=PCA_COMPONENTS,
+                   help=f"PCA components for eigenvalue analysis (default: {PCA_COMPONENTS})")
+    p.add_argument("--pca_plot_max_pc", type=int, default=PCA_PLOT_MAX_PC,
+                   help=f"Max PC shown on x-axis of eigenspectra plots (default: {PCA_PLOT_MAX_PC})")
+    p.add_argument("--run_stability", action="store_true",
+                   help="Run outlier stability check (off by default — adds significant runtime)")
     return p.parse_args()
 
 
@@ -1523,9 +2029,6 @@ def main():
     plots_dir = root / "Plots"
     make_dirs(root)
 
-    # ------------------------------------------------------------------
-    # Logging
-    # ------------------------------------------------------------------
     log_path = setup_logging(root / "logs")
     logger.info("=" * 60)
     logger.info("Representation Analysis — run started")
@@ -1545,15 +2048,12 @@ def main():
     N = len(texts)
 
     # ------------------------------------------------------------------
-    # 2. Extract / load embeddings (one model at a time)
+    # 2. Extract / load embeddings
     # ------------------------------------------------------------------
     embeddings = {}
     for model_name, cfg in MODELS.items():
         cache_path = data_dir / f"embeddings_{model_name}.pkl"
 
-        # Always load from cache if the final .pkl exists — regardless of
-        # --skip_extraction. This means a restart automatically picks up any
-        # model that already completed without any flags needed.
         if cache_path.exists():
             logger.info(f"Loading cached embeddings: {model_name}")
             with open(cache_path, "rb") as f:
@@ -1562,7 +2062,7 @@ def main():
             continue
 
         if args.skip_extraction:
-            logger.warning(f"--skip_extraction set but no cache found for {model_name}, skipping")
+            logger.warning(f"--skip_extraction but no cache for {model_name}, skipping")
             continue
 
         logger.info("=" * 60)
@@ -1571,21 +2071,57 @@ def main():
 
         with timer(f"Extract {model_name}"):
             try:
-                if cfg["modality"] == "audio":
-                    emb = extract_whisper_embeddings(
+                modality = cfg["modality"]
+                if modality == "audio-whisper-enc":
+                    emb = extract_whisper_encoder_embeddings(
                         cfg["hf_id"], dataset, device,
                         batch_size=args.whisper_batch_size,
                         checkpoint_dir=data_dir,
                         prefetch_queue_depth=args.prefetch_queue_depth,
                     )
-                elif cfg["modality"] == "audio-parakeet":
+                elif modality == "audio-whisper-dec":
+                    emb = extract_whisper_decoder_embeddings(
+                        cfg["hf_id"], dataset, device,
+                        batch_size=args.whisper_batch_size,
+                        checkpoint_dir=data_dir,
+                        prefetch_queue_depth=args.prefetch_queue_depth,
+                    )
+                elif modality == "audio-parakeet":
                     emb = extract_parakeet_embeddings(
                         cfg["hf_id"], dataset, device,
                         batch_size=args.parakeet_batch_size,
                         checkpoint_dir=data_dir,
                         prefetch_queue_depth=args.prefetch_queue_depth,
                     )
-                else:
+                elif modality == "audio-mimi":
+                    emb = extract_mimi_embeddings(
+                        cfg["hf_id"], dataset, device,
+                        batch_size=args.mimi_batch_size,
+                        checkpoint_dir=data_dir,
+                        prefetch_queue_depth=args.prefetch_queue_depth,
+                    )
+                elif modality == "tts-higgs":
+                    emb = extract_higgs_audio_embeddings(
+                        cfg["hf_id"], texts, device,
+                        batch_size=args.higgs_batch_size,
+                        checkpoint_dir=data_dir,
+                        prefetch_queue_depth=args.prefetch_queue_depth,
+                    )
+                elif modality == "tts-qwen3":
+                    emb = extract_qwen3_tts_embeddings(
+                        cfg["hf_id"], texts, device,
+                        batch_size=args.lm_batch_size,
+                        checkpoint_dir=data_dir,
+                        prefetch_queue_depth=args.prefetch_queue_depth,
+                    )
+                elif modality == "audio-omni":
+                    emb = extract_omni_audio_embeddings(
+                        model_name, cfg["hf_id"], dataset, device,
+                        batch_size=args.omni_batch_size,
+                        checkpoint_dir=data_dir,
+                        prefetch_queue_depth=args.prefetch_queue_depth,
+                    )
+                else:  # text
                     emb = extract_lm_embeddings(
                         cfg["hf_id"], texts, device,
                         batch_size=args.lm_batch_size,
@@ -1593,28 +2129,20 @@ def main():
                         prefetch_queue_depth=args.prefetch_queue_depth,
                     )
             except Exception as e:
-                logger.error(
-                    f"Extraction failed for {model_name}: {e}\n"
-                    f"Skipping this model and continuing with others."
-                )
+                logger.error(f"Extraction failed for {model_name}: {e}. Skipping.")
                 continue
 
         embeddings[model_name] = emb
 
-        # Validate before caching — don't save NaN embeddings to disk
         n_bad = (~np.isfinite(emb)).sum()
         if n_bad > 0:
-            logger.error(
-                f"{model_name}: {n_bad} non-finite values in embeddings "
-                f"({n_bad / emb.size * 100:.1f}% of values). "
-                f"NOT caching — re-extraction needed."
-            )
+            logger.error(f"{model_name}: {n_bad} non-finite values — NOT caching.")
             del embeddings[model_name]
             continue
 
         with open(cache_path, "wb") as f:
             pickle.dump(emb, f)
-        logger.info(f"Cached embeddings → {cache_path}  ({cache_path.stat().st_size / 1024**2:.1f} MB)")
+        logger.info(f"Cached → {cache_path}  ({cache_path.stat().st_size / 1024**2:.1f} MB)")
 
     names = list(embeddings.keys())
     logger.info(f"Models with embeddings: {names}")
@@ -1631,20 +2159,17 @@ def main():
         for name, X in embeddings.items():
             eigenvalues[name] = pca_eigenvalues(X, n_components=args.pca_components)
             er = effective_rank(eigenvalues[name])
-            logger.info(
-                f"  {name:<22}  dim={X.shape[1]:>5}  "
-                f"n_samples={X.shape[0]:>7,}  eff_rank={er:.1f}"
-            )
+            logger.info(f"  {name:<22}  dim={X.shape[1]:>5}  n={X.shape[0]:>7,}  eff_rank={er:.1f}")
 
     with timer("PCA plots"):
-        plot_eigenspectra(eigenvalues, plots_dir)
-        plot_eigenspectra_overlay(eigenvalues, plots_dir)
+        plot_eigenspectra(eigenvalues, plots_dir, max_pc=args.pca_plot_max_pc)
+        plot_eigenspectra_overlay(eigenvalues, plots_dir, max_pc=args.pca_plot_max_pc)
         plot_effective_rank_bar(eigenvalues, plots_dir)
         try:
             from sklearn.decomposition import PCA  # noqa: F401
             plot_pca_scatter(embeddings, plots_dir)
         except ImportError:
-            logger.warning("scikit-learn not installed — skipping PCA scatter (pip install scikit-learn)")
+            logger.warning("scikit-learn not installed — skipping PCA scatter")
 
     # ------------------------------------------------------------------
     # 4. Pairwise minibatch CKA
@@ -1658,7 +2183,7 @@ def main():
     cka_matrix = np.zeros((n, n))
     cka_results = {}
 
-    with timer("Pairwise CKA computation"):
+    with timer("Pairwise CKA"):
         pair_bar = tqdm(total=n_pairs, desc="CKA pairs", unit="pair")
         for i in range(n):
             for j in range(n):
@@ -1669,18 +2194,12 @@ def main():
                     cka_matrix[i, j] = cka_matrix[j, i]
                     continue
                 t_pair = time.perf_counter()
-                score = minibatch_cka(
-                    embeddings[names[i]], embeddings[names[j]],
-                    batch_size=args.batch_size,
-                )
-                elapsed_pair = time.perf_counter() - t_pair
+                score = minibatch_cka(embeddings[names[i]], embeddings[names[j]],
+                                      batch_size=args.batch_size)
                 cka_matrix[i, j] = score
                 key = f"{names[i]} vs {names[j]}"
                 cka_results[key] = score
-                logger.info(
-                    f"  CKA({names[i]}, {names[j]}) = {score:.4f}"
-                    f"  ({elapsed_pair:.1f}s)"
-                )
+                logger.info(f"  CKA({names[i]}, {names[j]}) = {score:.4f}  ({time.perf_counter()-t_pair:.1f}s)")
                 pair_bar.update(1)
         pair_bar.close()
 
@@ -1689,95 +2208,69 @@ def main():
         plot_cka_bar_cross_modal(cka_matrix, names, plots_dir)
 
     # ------------------------------------------------------------------
-    # 5. Outlier stability check  (Horoi et al.)
+    # 5. Outlier stability check
     # ------------------------------------------------------------------
     stability_results = {}
-    if not args.skip_stability:
+    if args.run_stability:
         logger.info("=" * 60)
-        logger.info(
-            f"Outlier stability check  "
-            f"({N_STABILITY_SUBSETS} subsets × {int(STABILITY_SUBSET_FRAC*100)}% of data)"
-        )
+        logger.info(f"Stability check  ({N_STABILITY_SUBSETS} subsets × {int(STABILITY_SUBSET_FRAC*100)}%)")
         logger.info("=" * 60)
-
-        upper_pairs = [
-            (names[i], names[j])
-            for i in range(n) for j in range(n) if j > i
-        ]
+        upper_pairs = [(names[i], names[j]) for i in range(n) for j in range(n) if j > i]
         n_stability_jobs = len(upper_pairs) * N_STABILITY_SUBSETS
-
-        with timer("Stability check"):
-            stab_bar = tqdm(
-                total=n_stability_jobs,
-                desc="Stability subsets",
-                unit="subset",
-            )
+        with timer("Stability"):
+            stab_bar = tqdm(total=n_stability_jobs, desc="Stability subsets", unit="subset")
             for name_a, name_b in upper_pairs:
                 pair_key = f"{name_a} vs {name_b}"
-                stats = cka_stability_check(
-                    embeddings[name_a], embeddings[name_b],
-                    batch_size=args.batch_size,
-                )
+                stats = cka_stability_check(embeddings[name_a], embeddings[name_b],
+                                            batch_size=args.batch_size)
                 stability_results[pair_key] = stats
                 flag = "  ⚠ HIGH VARIANCE" if stats["std"] > 0.03 else ""
-                logger.info(
-                    f"  {pair_key:<42}  "
-                    f"mean={stats['mean']:.4f}  std={stats['std']:.4f}{flag}"
-                )
+                logger.info(f"  {pair_key:<42}  mean={stats['mean']:.4f}  std={stats['std']:.4f}{flag}")
                 stab_bar.update(N_STABILITY_SUBSETS)
             stab_bar.close()
-
         with timer("Stability plot"):
             plot_stability(stability_results, plots_dir)
     else:
-        logger.info("Stability check skipped (--skip_stability)")
+        logger.info("Stability check skipped (pass --run_stability to enable)")
 
     # ------------------------------------------------------------------
-    # 6. Save all outputs
+    # 6. Save outputs
     # ------------------------------------------------------------------
     logger.info("=" * 60)
-    logger.info("Saving summary tables and results JSON")
+    logger.info("Saving summary tables")
     logger.info("=" * 60)
-
     with timer("Save tables"):
-        save_summary_tables(cka_matrix, names, eigenvalues, embeddings, stability_results, data_dir)
+        save_summary_tables(cka_matrix, names, eigenvalues, embeddings,
+                            stability_results, data_dir)
 
     results_json = {
         "n_samples": N,
         "splits_used": args.splits,
         "minibatch_size": args.batch_size,
+        "pca_plot_max_pc": args.pca_plot_max_pc,
         "models": {k: v for k, v in MODELS.items()},
         "embedding_shapes": {k: list(v.shape) for k, v in embeddings.items()},
         "cka_scores": cka_results,
         "cka_matrix": cka_matrix.tolist(),
         "eigenvalue_spectra": {k: v.tolist() for k, v in eigenvalues.items()},
         "effective_ranks": {k: effective_rank(v) for k, v in eigenvalues.items()},
-        "stability": {
-            k: {"mean": v["mean"], "std": v["std"]}
-            for k, v in stability_results.items()
-        },
+        "stability": {k: {"mean": v["mean"], "std": v["std"]}
+                      for k, v in stability_results.items()},
     }
     json_path = data_dir / "results.json"
     with open(json_path, "w") as f:
         json.dump(results_json, f, indent=2)
     logger.info(f"Results JSON → {json_path}")
 
-    # ------------------------------------------------------------------
-    # 7. Console summary
-    # ------------------------------------------------------------------
     print_summary(cka_matrix, names, stability_results)
 
     total_elapsed = time.perf_counter() - run_start
-    total_mins, total_secs = divmod(total_elapsed, 60)
-    total_hrs, total_mins = divmod(total_mins, 60)
-    logger.info("=" * 60)
-    logger.info(
-        f"Run complete — total time: "
-        f"{int(total_hrs)}h {int(total_mins)}m {total_secs:.1f}s"
-    )
-    logger.info(f"Data/   → {data_dir.resolve()}")
-    logger.info(f"Plots/  → {plots_dir.resolve()}")
-    logger.info(f"Log     → {log_path}")
+    m, s = divmod(total_elapsed, 60)
+    h, m = divmod(m, 60)
+    logger.info(f"Run complete — total time: {int(h)}h {int(m)}m {s:.1f}s")
+    logger.info(f"Data/  → {data_dir.resolve()}")
+    logger.info(f"Plots/ → {plots_dir.resolve()}")
+    logger.info(f"Log    → {log_path}")
 
 
 if __name__ == "__main__":
