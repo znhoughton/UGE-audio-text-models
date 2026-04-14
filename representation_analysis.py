@@ -37,7 +37,7 @@ Models:
     - Qwen/Qwen3-TTS-12Hz-1.7B-Base  (TTS, 1.7B, discrete multi-codebook LM)
                                      NOTE: uses qwen-tts package, not transformers.
                                      Extracts LM backbone hidden states on input text.
-    - mistralai/Voxtral-8B-2507    (speech understanding model, 8B)
+    - mistralai/Voxtral-Mini-3B-2507  (speech understanding model, 3B)
     - bosonai/higgs-audio-v2-generation-3B-base  (TTS, ~5.8B, Llama-3.2-3B + DualFFN)
                                      NOTE: text-to-audio generation model (not audio-in).
                                      Extracts LLM backbone hidden states on text input.
@@ -275,10 +275,10 @@ MODELS = {
         # captures the text representations that condition speech generation.
         # Install dependency: pip install qwen-tts
     },
-    "voxtral-8b": {
-        "hf_id": "mistralai/Voxtral-8B-2507",
+    "voxtral-3b": {
+        "hf_id": "mistralai/Voxtral-Mini-3B-2507",
         "modality": "audio-voxtral",
-        "params": "8B",
+        "params": "3B",
         "arch": "Mistral+WhisperEnc",
         "corpus": "Mistral mix + speech",
         # Voxtral is Mistral's speech-understanding model. It consists of a
@@ -374,7 +374,7 @@ MODEL_COLORS = {
     "parakeet-ctc-0.6b": "#00838F",   # teal
     "mimi":              "#D84315",   # deep orange-red
     "qwen3-tts-1.7b":    "#AD1457",   # deep pink
-    "voxtral-8b":        "#FF6F00",   # amber
+    "voxtral-3b":        "#FF6F00",   # amber
     "higgs-audio-v2-3b": "#558B2F",   # olive green
     "babylm-125m":       "#E65100",   # deep orange
     "babylm-1.3b":       "#F9A825",   # yellow
