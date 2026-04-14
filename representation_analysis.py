@@ -1567,13 +1567,14 @@ def _decode_audio_batch(batch) -> list:
     Handles both the decoded format {"array": ..., "sampling_rate": ...} and the
     undecoded format {"bytes": ..., "path": ...} produced by Audio(decode=False).
     We use decode=False on the dataset to avoid torchcodec (which requires FFmpeg
-    shared libs). soundfile decodes FLAC/WAV directly from bytes or path.
+    shared libs that are not available on the pod). torchaudio decodes FLAC/WAV
+    from bytes or path without needing system audio libraries.
 
     Resampling note: the integer decimation `audio[::ratio]` is only exact when
     the source sample rate is an integer multiple of SAMPLE_RATE (16kHz).
     LibriSpeech is always 16kHz so this is fine in practice.
     """
-    import soundfile as sf
+    import torchaudio
 
     audio_arrays = []
     for audio_item in batch["audio"]:
@@ -1586,14 +1587,14 @@ def _decode_audio_batch(batch) -> list:
             raw_bytes = audio_item.get("bytes")
             path      = audio_item.get("path")
             if raw_bytes:
-                arr, sr = sf.read(io.BytesIO(raw_bytes), dtype="float32", always_2d=False)
+                t, sr = torchaudio.load(io.BytesIO(raw_bytes))
             elif path:
-                arr, sr = sf.read(path, dtype="float32", always_2d=False)
+                t, sr = torchaudio.load(path)
             else:
                 raise ValueError(f"Audio item has neither bytes nor path: {list(audio_item.keys())}")
-            arr = arr.astype(np.float32)
-            if arr.ndim > 1:
-                arr = arr.mean(axis=1)  # stereo → mono
+            if t.shape[0] > 1:
+                t = t.mean(dim=0, keepdim=True)  # stereo → mono
+            arr = t.squeeze(0).numpy().astype(np.float32)
         else:
             arr = np.array(audio_item, dtype=np.float32)
             sr  = SAMPLE_RATE
