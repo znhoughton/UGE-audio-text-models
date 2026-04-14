@@ -38,9 +38,9 @@ Models:
                                      NOTE: uses qwen-tts package, not transformers.
                                      Extracts LM backbone hidden states on input text.
     - mistralai/Voxtral-8B-2507    (speech understanding model, 8B)
-    - bosonai/higgs-audio-v2-generation-3B-base  (audio-to-audio LLM, 3B, DualFFN)
-                                     NOTE: uses transformers HiggsAudioV2ForConditionalGeneration.
-                                     Extracts LLM backbone hidden states on audio token inputs.
+    - bosonai/higgs-audio-v2-generation-3B-base  (TTS, ~5.8B, Llama-3.2-3B + DualFFN)
+                                     NOTE: text-to-audio generation model (not audio-in).
+                                     Extracts LLM backbone hidden states on text input.
     - znhoughton/opt-babylm-125m-20eps-seed964  (text, 125M, OPT, BabyLM)
     - znhoughton/opt-babylm-1.3b-20eps-seed964  (text, 1.3B, OPT, BabyLM)
     - allenai/OLMo-2-1124-7B       (text, 7B, OLMo-2, Dolma)
@@ -70,6 +70,12 @@ os.environ.setdefault("HF_DATASETS_MAX_IN_MEMORY_SIZE", str(60 * 1024 ** 3))
 os.environ.setdefault("HF_DATASETS_IN_MEMORY_MAX_SIZE", str(60 * 1024 ** 3))
 os.environ.setdefault("DATASETS_VERBOSITY", "warning")
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+# HuggingFace fast tokenizers use Rust parallelism internally. When tokenization
+# runs inside a Python thread (our prefetch_generator), the Rust threadpool can
+# deadlock with Python's GIL. Setting this to "false" disables the internal Rust
+# parallelism so the tokenizer is safe to call from background threads.
+# The throughput loss is negligible — the GPU forward pass is the bottleneck.
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import numpy as np
 import torch
@@ -417,7 +423,8 @@ def _apply_style():
 # Dataset loading
 # ---------------------------------------------------------------------------
 
-def load_librispeech(splits: list, max_samples: int | None, cache_dir: Path = None):
+def load_librispeech(splits: list, max_samples: int | None,
+                     cache_dir: Path = None, num_proc: int = 8):
     logger.info(f"{'='*60}")
     logger.info(f"Loading LibriSpeech splits: {splits}")
     logger.info(f"{'='*60}")
@@ -431,18 +438,52 @@ def load_librispeech(splits: list, max_samples: int | None, cache_dir: Path = No
             raise ValueError(f"Unknown split '{split}'. Valid options: {list(SPLIT_CONFIG_MAP.keys())}")
         hf_config, hf_split = SPLIT_CONFIG_MAP[split]
         logger.info(f"  Fetching {split} (config={hf_config}, split={hf_split})…")
-        try:
-            ds = load_dataset(
-                "openslr/librispeech_asr",
-                hf_config,
-                split=hf_split,
-                streaming=False,
-                trust_remote_code=True,
-                num_proc=8,
+
+        for attempt in range(2):
+            try:
+                ds = load_dataset(
+                    "openslr/librispeech_asr",
+                    hf_config,
+                    split=hf_split,
+                    streaming=False,
+                    trust_remote_code=True,
+                    num_proc=num_proc,
+                )
+                break
+            except Exception as e:
+                # pyarrow.lib.ArrowInvalid means a shard file is corrupted.
+                # Delete the HF cache for this dataset and retry once.
+                if attempt == 0 and ("ArrowInvalid" in type(e).__name__ or
+                                     "ArrowInvalid" in str(type(e).__mro__) or
+                                     "null or length 0" in str(e) or
+                                     "ipc" in str(e).lower()):
+                    import shutil
+                    hf_cache = Path(os.environ.get("HF_DATASETS_CACHE",
+                                    Path.home() / ".cache" / "huggingface" / "datasets"))
+                    corrupt_dirs = list(hf_cache.glob("openslr__librispeech*"))
+                    if corrupt_dirs:
+                        logger.warning(
+                            f"Corrupted Arrow shard detected for split '{split}'. "
+                            f"Deleting HF datasets cache and retrying download.\n"
+                            f"  Removing: {[str(d) for d in corrupt_dirs]}"
+                        )
+                        for d in corrupt_dirs:
+                            shutil.rmtree(d, ignore_errors=True)
+                    else:
+                        logger.warning(
+                            f"ArrowInvalid error but could not find cache dir to clear. "
+                            f"Try manually deleting: {hf_cache}/openslr__librispeech*"
+                        )
+                    logger.info(f"  Retrying {split} after cache clear…")
+                else:
+                    logger.error(f"Failed to load split '{split}': {e}")
+                    raise
+        else:
+            raise RuntimeError(
+                f"Failed to load split '{split}' after cache clear. "
+                f"Check disk space and network connectivity."
             )
-        except ValueError as e:
-            logger.error(f"Failed to load split '{split}': {e}")
-            raise
+
         logger.info(f"  {split}: {len(ds):,} samples")
         parts.append(ds)
 
@@ -461,8 +502,15 @@ def load_librispeech(splits: list, max_samples: int | None, cache_dir: Path = No
         with open(texts_cache_path) as f:
             texts = json.load(f)
     else:
-        logger.info("Extracting transcripts…")
-        texts = [s["text"].strip() for s in tqdm(dataset, desc="reading transcripts", unit="utt")]
+        logger.info(f"Extracting transcripts (num_proc={num_proc})…")
+        # Use dataset.map for parallel transcript extraction — much faster than
+        # iterating row-by-row when num_proc > 1.
+        texts_ds = dataset.map(
+            lambda x: {"_text": x["text"].strip()},
+            num_proc=num_proc,
+            desc="reading transcripts",
+        )
+        texts = texts_ds["_text"]
         if texts_cache_path:
             with open(texts_cache_path, "w") as f:
                 json.dump(texts, f)
@@ -964,10 +1012,7 @@ def extract_voxtral_embeddings(
     try:
         model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     except Exception:
-        try:
-            model = AutoModelForSpeechSeq2Seq.from_pretrained(model_id, **load_kwargs)
-        except Exception:
-            model = AutoModel.from_pretrained(model_id, **load_kwargs)
+        model = AutoModel.from_pretrained(model_id, **load_kwargs)
 
     model.eval()
     first_device = (
@@ -1576,20 +1621,34 @@ def cka_stability_check(
 # ---------------------------------------------------------------------------
 
 def pca_eigenvalues(X: np.ndarray, n_components: int = PCA_COMPONENTS) -> np.ndarray:
+    """
+    Compute the top-n_components normalised eigenvalues of the covariance matrix.
+
+    Uses randomised SVD (Halko et al. 2011) rather than full SVD. On a 280k × 4096
+    matrix, full SVD would allocate O(N²) memory (~600 GB) and never complete.
+    Randomised SVD runs in O(N × n_components) memory and takes seconds.
+    """
+    from sklearn.utils.extmath import randomized_svd
+
     Xc = X - X.mean(axis=0, keepdims=True)
     n = Xc.shape[0]
     if not np.isfinite(Xc).all():
         Xc = np.nan_to_num(Xc, nan=0.0, posinf=0.0, neginf=0.0)
     Xc_scaled = Xc / np.sqrt(n - 1)
-    try:
-        _, s, _ = np.linalg.svd(Xc_scaled, full_matrices=False)
-    except np.linalg.LinAlgError:
-        from scipy.linalg import svd as scipy_svd
-        _, s, _ = scipy_svd(Xc_scaled, full_matrices=False, check_finite=False,
-                            lapack_driver="gesdd")
+
+    # n_oversamples adds stability to the randomised approximation.
+    # n_iter=4 gives tight singular value estimates with minimal extra passes.
+    _, s, _ = randomized_svd(
+        Xc_scaled,
+        n_components=n_components,
+        n_oversamples=10,
+        n_iter=4,
+        random_state=MINIBATCH_SEED,
+    )
+
     eigs = s ** 2
     eigs /= eigs.sum()
-    return eigs[:n_components]
+    return eigs
 
 
 def effective_rank(eigenvalues: np.ndarray) -> float:
@@ -1691,10 +1750,14 @@ def plot_effective_rank_bar(eigenvalues: dict, plots_dir: Path):
     logger.info(f"  Saved → {path}")
 
 
-def plot_pca_scatter(embeddings: dict, plots_dir: Path):
+def plot_pca_scatter(embeddings: dict, plots_dir: Path,
+                     max_scatter_samples: int = 10_000):
     """
-    2D PCA scatter plots. The x-axis (PC1) and y-axis (PC2) labels already
-    show only two components, which are naturally ≤ 10.
+    2D PCA scatter plots.
+
+    Subsamples to max_scatter_samples before fitting PCA — fitting sklearn PCA
+    on a 280k × 4096 matrix requires O(N²) memory and will OOM. 10k points is
+    more than sufficient to show the geometry and renders quickly.
     """
     from sklearn.decomposition import PCA as skPCA
     _apply_style()
@@ -1707,6 +1770,7 @@ def plot_pca_scatter(embeddings: dict, plots_dir: Path):
         logger.warning("plot_pca_scatter: no valid embeddings, skipping")
         return
 
+    rng = np.random.default_rng(MINIBATCH_SEED)
     names = list(clean.keys())
     n = len(names)
     fig, axes = plt.subplots(1, n, figsize=(4.5 * n, 4.5))
@@ -1715,16 +1779,26 @@ def plot_pca_scatter(embeddings: dict, plots_dir: Path):
 
     for ax, name in zip(axes, names):
         X = clean[name]
+        # Subsample for scatter plot only — does not affect PCA eigenvalue analysis
+        if X.shape[0] > max_scatter_samples:
+            idx = rng.choice(X.shape[0], size=max_scatter_samples, replace=False)
+            X_plot = X[idx]
+        else:
+            X_plot = X
         color = MODEL_COLORS.get(name, "#555")
         pca = skPCA(n_components=2)
-        Z = pca.fit_transform(X)
+        Z = pca.fit_transform(X_plot)
         ax.scatter(Z[:, 0], Z[:, 1], alpha=0.35, s=12, color=color, linewidths=0)
         var = pca.explained_variance_ratio_
         ax.set_title(name, fontsize=10, fontweight="bold", color=color)
         ax.set_xlabel(f"PC1 ({var[0]:.1%})", fontsize=8)
         ax.set_ylabel(f"PC2 ({var[1]:.1%})", fontsize=8)
 
-    fig.suptitle("2D PCA Projections  ·  each point = one utterance", fontsize=12, y=1.01)
+    n_shown = min(max_scatter_samples, min(v.shape[0] for v in clean.values()))
+    fig.suptitle(
+        f"2D PCA Projections  ·  {n_shown:,} utterances per model",
+        fontsize=12, y=1.01,
+    )
     plt.tight_layout()
     path = plots_dir / "pca_scatter.png"
     plt.savefig(path, dpi=150, bbox_inches="tight")
@@ -1814,11 +1888,11 @@ def plot_cka_bar_cross_modal(cka_matrix: np.ndarray, names: list, plots_dir: Pat
     ax.set_ylim(0, min(1.0, max_val * 1.35 + 0.05))
     ax.set_ylabel("CKA with audio/speech model", fontsize=11)
     ax.set_title(
-        "Cross-Modal CKA: Audio/Omni Models vs. Each Text LLM\n"
+        "Cross-Modal CKA: Audio/Speech Models vs. Each Text LLM\n"
         "Higher = more similar representational geometry",
         fontsize=11, fontweight="bold",
     )
-    ax.legend(fontsize=8, framealpha=0.9, title="Audio/Omni model")
+    ax.legend(fontsize=8, framealpha=0.9, title="Audio/speech model")
     plt.tight_layout()
     path = plots_dir / "cka_cross_modal_bar.png"
     plt.savefig(path, dpi=150, bbox_inches="tight")
@@ -2006,8 +2080,10 @@ def parse_args():
                    help="Batch size for Voxtral extraction (default: 8, reduce if OOM)")
     p.add_argument("--higgs_batch_size", type=int, default=8,
                    help="Batch size for Higgs Audio V2 extraction (default: 8, reduce if OOM)")
-    p.add_argument("--prefetch_queue_depth", type=int, default=3,
-                   help="Background prefetch depth (default: 3)")
+    p.add_argument("--num_proc", type=int, default=8,
+                   help="CPU workers for dataset loading and transcript extraction (default: 8, set to ~24 on 28-core machines)")
+    p.add_argument("--prefetch_queue_depth", type=int, default=8,
+                   help="Background prefetch depth (default: 8; higher keeps GPU busier on fast CPUs)")
     p.add_argument("--pca_components", type=int, default=PCA_COMPONENTS,
                    help=f"PCA components for eigenvalue analysis (default: {PCA_COMPONENTS})")
     p.add_argument("--pca_plot_max_pc", type=int, default=PCA_PLOT_MAX_PC,
@@ -2043,7 +2119,10 @@ def main():
     # 1. Load dataset
     # ------------------------------------------------------------------
     with timer("Load LibriSpeech"):
-        dataset, texts = load_librispeech(args.splits, args.max_samples, cache_dir=data_dir)
+        dataset, texts = load_librispeech(
+            args.splits, args.max_samples,
+            cache_dir=data_dir, num_proc=args.num_proc,
+        )
     N = len(texts)
 
     # ------------------------------------------------------------------
@@ -2145,6 +2224,12 @@ def main():
 
     names = list(embeddings.keys())
     logger.info(f"Models with embeddings: {names}")
+
+    total_bytes = sum(v.nbytes for v in embeddings.values())
+    logger.info(
+        f"Total embedding RAM: {total_bytes / 1024**3:.1f} GB  "
+        f"({len(names)} models × {N:,} samples)"
+    )
 
     # ------------------------------------------------------------------
     # 3. PCA eigenvalue analysis
