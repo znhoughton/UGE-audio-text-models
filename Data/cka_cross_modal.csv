@@ -1,0 +1,6 @@
+model,params,arch,corpus,cka_with_whisper
+babylm-125m,125M,OPT,BabyLM,0.748956
+babylm-1.3b,1.3B,OPT,BabyLM,0.733780
+olmo-7b,7B,OLMo-2,Dolma,0.314165
+pythia-6.9b,6.9B,GPT-NeoX,The Pile,0.224797
+parakeet-ctc-0.6b,600M,FastConformer-CTC,Granary (64k hrs English),0.787728
