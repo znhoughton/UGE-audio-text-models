@@ -271,7 +271,7 @@ MODELS = {
     },
     "voxtral-8b": {
         "hf_id": "mistralai/Voxtral-8B-2507",
-        "modality": "audio-omni",
+        "modality": "audio-voxtral",
         "params": "8B",
         "arch": "Mistral+WhisperEnc",
         "corpus": "Mistral mix + speech",
@@ -360,7 +360,7 @@ N_STABILITY_SUBSETS = 10
 STABILITY_SUBSET_FRAC = 0.8
 
 # ── Modality groupings (used for heatmap separator line) ─────────────────
-AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi", "audio-omni", "tts-qwen3", "tts-higgs"}
+AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi", "audio-voxtral", "tts-qwen3", "tts-higgs"}
 
 MODEL_COLORS = {
     "whisper-base-enc":  "#1565C0",   # dark blue
@@ -924,7 +924,7 @@ def extract_mimi_embeddings(
 # Embedding extraction — Omni / multimodal audio-LLM (Qwen2.5-Omni, Voxtral)
 # ---------------------------------------------------------------------------
 
-def extract_omni_audio_embeddings(
+def extract_voxtral_embeddings(
     model_name: str,
     model_id: str,
     dataset,
@@ -934,21 +934,20 @@ def extract_omni_audio_embeddings(
     prefetch_queue_depth: int = 3,
 ) -> np.ndarray:
     """
-    Extract the LLM backbone's last hidden state for multimodal audio-LLM models
-    (Qwen2.5-Omni, Voxtral).
+    Extract the LLM backbone's last hidden state for Voxtral.
 
-    Both models share the same high-level architecture pattern:
-      1. An audio encoder (Whisper-style or conformer) encodes audio frames → audio tokens
+    Voxtral's architecture:
+      1. A Whisper-style audio encoder encodes audio frames → audio tokens
       2. A projection layer maps audio tokens into the LLM's embedding space
-      3. The LLM backbone processes the audio token sequence
+      3. The Mistral 7B LLM backbone processes the audio token sequence
 
-    We pool the LLM backbone's last hidden layer over the audio token positions.
+    We pool the LLM backbone's last hidden layer over all token positions.
     This captures how the language backbone organises audio-derived representations.
 
-    Batching note: batch_size defaults to 8 because these models are large (7–8B)
-    and audio sequences are long. Reduce with --omni_batch_size if you hit OOM.
+    Batching note: batch_size defaults to 8 because Voxtral is ~8B params and
+    audio sequences are long. Reduce with --voxtral_batch_size if you hit OOM.
     """
-    logger.info(f"Loading omni/audio-LLM model: {model_id}  (label={model_name})")
+    logger.info(f"Loading Voxtral model: {model_id}  (label={model_name})")
     log_gpu_memory(f"before {model_name} load")
 
     load_kwargs = dict(
@@ -997,8 +996,8 @@ def extract_omni_audio_embeddings(
         try:
             audio_arrays = _decode_audio_batch(batch)
 
-            # Build processor inputs. Different omni models use different
-            # call signatures; we try the most common patterns in order.
+            # Build processor inputs. Voxtral's processor call signature may
+            # vary slightly by transformers version; try the most common patterns.
             try:
                 inputs = processor(
                     audios=audio_arrays,
@@ -1049,7 +1048,7 @@ def extract_omni_audio_embeddings(
             if "out of memory" in str(e).lower():
                 logger.error(
                     f"CUDA OOM at {model_name} batch {batch_idx}. "
-                    f"Try --omni_batch_size < {batch_size}."
+                    f"Try --voxtral_batch_size < {batch_size}."
                 )
                 _save_checkpoint(checkpoint_path, embeddings, batch_idx)
                 torch.cuda.empty_cache()
@@ -1769,7 +1768,7 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
 
     ax.set_title(
         "Pairwise Minibatch Linear CKA\n"
-        "Dashed line separates audio/omni models from text-only LLMs",
+        "Dashed line separates audio/speech models from text-only LLMs",
         fontsize=12, fontweight="bold", pad=15,
     )
     plt.tight_layout()
@@ -1781,7 +1780,7 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
 
 def plot_cka_bar_cross_modal(cka_matrix: np.ndarray, names: list, plots_dir: Path):
     """
-    Grouped bar chart: for each text LLM, show its CKA with each audio/omni model.
+    Grouped bar chart: for each text LLM, show its CKA with each audio/speech model.
     """
     _apply_style()
     audio_names = [n for n in names if MODELS[n]["modality"] in AUDIO_MODALITIES]
@@ -1813,7 +1812,7 @@ def plot_cka_bar_cross_modal(cka_matrix: np.ndarray, names: list, plots_dir: Pat
         for a in audio_names for lm in lm_names
     )
     ax.set_ylim(0, min(1.0, max_val * 1.35 + 0.05))
-    ax.set_ylabel("CKA with audio/omni model", fontsize=11)
+    ax.set_ylabel("CKA with audio/speech model", fontsize=11)
     ax.set_title(
         "Cross-Modal CKA: Audio/Omni Models vs. Each Text LLM\n"
         "Higher = more similar representational geometry",
@@ -1883,7 +1882,7 @@ def save_summary_tables(
             w.writerow([row_name] + [f"{cka_matrix[i, j]:.6f}" for j in range(len(names))])
     logger.info(f"  Saved → {path1}")
 
-    # Cross-modal table: all audio/omni models vs all text LLMs
+    # Cross-modal table: all audio/speech models vs all text LLMs
     audio_names = [n for n in names if MODELS[n]["modality"] in AUDIO_MODALITIES]
     lm_names    = [n for n in names if MODELS[n]["modality"] not in AUDIO_MODALITIES]
     if audio_names and lm_names:
@@ -1946,7 +1945,7 @@ def print_summary(cka_matrix: np.ndarray, names: list, stability_results: dict):
             print(f"  {pair_key:<42} {score:>7.4f}  {std:>7.4f}{flag}")
 
     print(f"\n{'='*70}")
-    print("CROSS-MODAL CKA  (audio/omni ↔ text LLMs)")
+    print("CROSS-MODAL CKA  (audio/speech ↔ text LLMs)")
     print(f"{'='*70}")
     audio_names = [n for n in names if MODELS[n]["modality"] in AUDIO_MODALITIES]
     lm_names    = [n for n in names if MODELS[n]["modality"] not in AUDIO_MODALITIES]
@@ -2003,7 +2002,7 @@ def parse_args():
                    help="Batch size for Parakeet extraction (default: 32)")
     p.add_argument("--mimi_batch_size", type=int, default=64,
                    help="Batch size for Mimi codec extraction (default: 64, reduce if OOM)")
-    p.add_argument("--omni_batch_size", type=int, default=8,
+    p.add_argument("--voxtral_batch_size", type=int, default=8,
                    help="Batch size for Voxtral extraction (default: 8, reduce if OOM)")
     p.add_argument("--higgs_batch_size", type=int, default=8,
                    help="Batch size for Higgs Audio V2 extraction (default: 8, reduce if OOM)")
@@ -2114,10 +2113,10 @@ def main():
                         checkpoint_dir=data_dir,
                         prefetch_queue_depth=args.prefetch_queue_depth,
                     )
-                elif modality == "audio-omni":
-                    emb = extract_omni_audio_embeddings(
+                elif modality == "audio-voxtral":
+                    emb = extract_voxtral_embeddings(
                         model_name, cfg["hf_id"], dataset, device,
-                        batch_size=args.omni_batch_size,
+                        batch_size=args.voxtral_batch_size,
                         checkpoint_dir=data_dir,
                         prefetch_queue_depth=args.prefetch_queue_depth,
                     )
