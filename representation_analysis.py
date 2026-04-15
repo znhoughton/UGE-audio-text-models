@@ -41,10 +41,14 @@ Models:
     - bosonai/higgs-audio-v2-generation-3B-base  (TTS, ~5.8B, Llama-3.2-3B + DualFFN)
                                      NOTE: text-to-audio generation model (not audio-in).
                                      Extracts LLM backbone hidden states on text input.
-    - znhoughton/opt-babylm-125m-20eps-seed964  (text, 125M, OPT, BabyLM)
-    - znhoughton/opt-babylm-1.3b-20eps-seed964  (text, 1.3B, OPT, BabyLM)
+    - znhoughton/opt-babylm-125m-20eps-seed964  (text, 125M, OPT, BabyLM ~100M tokens)
+    - facebook/opt-125m            (text, 125M, OPT, ~180B tokens)
+                                   NOTE: same arch+size as babylm-125m; isolates data volume.
+    - znhoughton/opt-babylm-1.3b-20eps-seed964  (text, 1.3B, OPT, BabyLM ~100M tokens)
     - allenai/OLMo-2-1124-7B       (text, 7B, OLMo-2, Dolma)
-    - EleutherAI/pythia-6.9b       (text, 6.9B, GPT-NeoX, The Pile)
+    - EleutherAI/pythia-160m       (text, 160M, GPT-NeoX, The Pile 300B tokens)
+                                   NOTE: same family+corpus as pythia-6.9b; isolates model size.
+    - EleutherAI/pythia-6.9b       (text, 6.9B, GPT-NeoX, The Pile 300B tokens)
 """
 
 import argparse
@@ -317,6 +321,15 @@ MODELS = {
         "arch": "OPT",
         "corpus": "BabyLM",
     },
+    "opt-125m": {
+        "hf_id": "facebook/opt-125m",
+        "modality": "text",
+        "params": "125M",
+        "arch": "OPT",
+        "corpus": "RoBERTa+CCNet+The Pile (~180B tokens)",
+        # Same architecture and size as babylm-125m; trained on ~1800× more data.
+        # Isolates the effect of training data volume from model size.
+    },
     "babylm-1.3b": {
         "hf_id": "znhoughton/opt-babylm-1.3b-20eps-seed964",
         "modality": "text",
@@ -330,6 +343,16 @@ MODELS = {
         "params": "7B",
         "arch": "OLMo-2",
         "corpus": "Dolma",
+    },
+    "pythia-160m": {
+        "hf_id": "EleutherAI/pythia-160m",
+        "modality": "text",
+        "params": "160M",
+        "arch": "GPT-NeoX",
+        "corpus": "The Pile",
+        # Same family and corpus as pythia-6.9b; ~40× fewer parameters.
+        # pythia-160m vs pythia-6.9b: same data, different size.
+        # babylm-125m vs pythia-160m: same size, different data.
     },
     "pythia-6.9b": {
         "hf_id": "EleutherAI/pythia-6.9b",
@@ -384,8 +407,10 @@ MODEL_COLORS = {
     "voxtral-3b":        "#FF6F00",   # amber
     "higgs-audio-v2-3b": "#558B2F",   # olive green
     "babylm-125m":       "#E65100",   # deep orange
+    "opt-125m":          "#FFCCBC",   # light orange (same family as babylm-125m, more data)
     "babylm-1.3b":       "#F9A825",   # yellow
     "olmo-7b":           "#2E7D32",   # dark green
+    "pythia-160m":       "#CE93D8",   # light purple (same family as pythia-6.9b, smaller)
     "pythia-6.9b":       "#6A1B9A",   # purple
 }
 
