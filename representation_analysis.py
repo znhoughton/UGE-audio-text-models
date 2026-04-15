@@ -1030,11 +1030,11 @@ def extract_voxtral_embeddings(
     logger.info(f"Loading Voxtral model: {model_id}  (label={model_name})")
     log_gpu_memory(f"before {model_name} load")
 
+    # device_map="auto" conflicts with NeMo's CUDA init (from Parakeet) and
+    # breaks all subsequent model loads. Load to CPU then move explicitly.
     load_kwargs = dict(
         torch_dtype=torch.float16,
         trust_remote_code=True,
-        device_map="auto",
-        max_memory={0: "75GiB", 1: "75GiB"},
     )
     try:
         processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
@@ -1046,12 +1046,8 @@ def extract_voxtral_embeddings(
     except Exception:
         model = AutoModel.from_pretrained(model_id, **load_kwargs)
 
-    model.eval()
-    first_device = (
-        next(iter(model.hf_device_map.values()))
-        if hasattr(model, "hf_device_map") and model.hf_device_map
-        else next(model.parameters()).device
-    )
+    model = model.to(device).eval()
+    first_device = device
     log_gpu_memory(f"after {model_name} load")
 
     n = len(dataset)
@@ -1199,10 +1195,8 @@ def extract_higgs_audio_embeddings(
     model = HiggsAudioV2ForConditionalGeneration.from_pretrained(
         model_id,
         torch_dtype=torch.bfloat16,
-        device_map="auto",
-        max_memory={0: "75GiB", 1: "75GiB"},
     )
-    model.eval()
+    model = model.to(device).eval()
 
     # The LLM backbone sits at model.model (Llama-3.2-3B with DualFFN layers).
     # Tokenizer is accessible via processor.tokenizer.
@@ -1210,11 +1204,7 @@ def extract_higgs_audio_embeddings(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    first_device = (
-        next(iter(model.hf_device_map.values()))
-        if hasattr(model, "hf_device_map") and model.hf_device_map
-        else next(model.parameters()).device
-    )
+    first_device = device
     logger.info(f"Higgs Audio V2 first layer device: {first_device}")
     log_gpu_memory("after Higgs Audio V2 load")
 
@@ -1334,10 +1324,11 @@ def extract_qwen3_tts_embeddings(
 
     model = Qwen3TTSModel.from_pretrained(
         model_id,
-        device_map="auto",
         dtype=torch.bfloat16,
     )
-    # Qwen3TTSModel is not a standard nn.Module in all versions — eval() may not exist.
+    # Qwen3TTSModel is not a standard nn.Module in all versions — to/eval may not exist.
+    if hasattr(model, "to"):
+        model = model.to(device)
     if hasattr(model, "eval"):
         model.eval()
 
@@ -1455,20 +1446,14 @@ def extract_lm_embeddings(
     load_kwargs = dict(
         torch_dtype=torch.float16,
         trust_remote_code=True,
-        device_map="auto",
-        max_memory={0: "75GiB", 1: "75GiB"},
     )
     try:
         model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     except Exception:
         model = AutoModel.from_pretrained(model_id, **load_kwargs)
-    model.eval()
+    model = model.to(device).eval()
 
-    first_device = (
-        next(iter(model.hf_device_map.values()))
-        if hasattr(model, "hf_device_map") and model.hf_device_map
-        else next(model.parameters()).device
-    )
+    first_device = device
 
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     if tokenizer.pad_token is None:
