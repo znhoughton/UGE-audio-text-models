@@ -24,21 +24,46 @@ objectives.
 
 ## Models
 
-| Name | HuggingFace ID | Modality | Params | Architecture | Training Data |
-|---|---|---|---|---|---|
-| whisper-base | openai/whisper-base | Audio | 74M | Transformer encoder | 680k hrs multilingual |
-| parakeet-ctc-0.6b | nvidia/parakeet-ctc-0.6b | Audio | 600M | FastConformer-CTC | Granary 64k hrs English |
-| babylm-125m | znhoughton/opt-babylm-125m-20eps-seed964 | Text | 125M | OPT | BabyLM corpus |
-| babylm-1.3b | znhoughton/opt-babylm-1.3b-20eps-seed964 | Text | 1.3B | OPT | BabyLM corpus |
-| olmo-7b | allenai/OLMo-2-1124-7B | Text | 7B | OLMo-2 | Dolma |
-| pythia-6.9b | EleutherAI/pythia-6.9b | Text | 6.9B | GPT-NeoX | The Pile |
+### Audio models (audio input)
 
-**OLMo-7B vs Pythia-6.9B** is the key architectural control — matched scale (~7B),
-different architecture (OLMo-2 vs GPT-NeoX) and different training data (Dolma vs The
-Pile). High CKA between them means convergence is scale-driven, not architecture-specific.
+| Name | HuggingFace ID | Params | Architecture | Training Data |
+|---|---|---|---|---|
+| whisper-base-enc | openai/whisper-base | 74M | Whisper encoder | 680k hrs audio |
+| whisper-base-dec | openai/whisper-base | 74M | Whisper decoder | 680k hrs audio |
+| whisper-small-enc | openai/whisper-small | 244M | Whisper encoder | 680k hrs audio |
+| whisper-small-dec | openai/whisper-small | 244M | Whisper decoder | 680k hrs audio |
+| whisper-medium-enc | openai/whisper-medium | 769M | Whisper encoder | 680k hrs audio |
+| whisper-medium-dec | openai/whisper-medium | 769M | Whisper decoder | 680k hrs audio |
+| whisper-large-enc | openai/whisper-large-v3 | 1550M | Whisper encoder | 680k hrs audio |
+| whisper-large-dec | openai/whisper-large-v3 | 1550M | Whisper decoder | 680k hrs audio |
+| parakeet-ctc-0.6b | nvidia/parakeet-ctc-0.6b | 600M | FastConformer-CTC | Granary (64k hrs English) |
+| mimi | kyutai/mimi | ~85M | Conv+Transformer codec | Moshi training set |
+| voxtral-3b | mistralai/Voxtral-Mini-3B-2507 | 3B | Whisper enc + Mistral 3B | Mistral mix + speech |
 
-**Whisper vs Parakeet** is the audio architecture control — both audio encoders,
-different architecture (Transformer vs FastConformer) and different training data.
+### Speech/TTS models (text input, audio training)
+
+| Name | HuggingFace ID | Params | Architecture | Training Data |
+|---|---|---|---|---|
+| qwen3-tts-1.7b | Qwen/Qwen3-TTS-12Hz-1.7B-Base | 1.7B | Qwen3 | 5M hrs speech |
+| higgs-audio-v2-3b | bosonai/higgs-audio-v2-generation-3B-base | ~5.8B | Llama-3.2-3B + DualFFN | AudioVerse (10M hrs) |
+
+### Text LLMs (text input, text training)
+
+| Name | HuggingFace ID | Params | Architecture | Training Data |
+|---|---|---|---|---|
+| babylm-125m | znhoughton/opt-babylm-125m-20eps-seed964 | 125M | OPT | BabyLM (~100M tokens) |
+| opt-125m | facebook/opt-125m | 125M | OPT | ~180B tokens |
+| babylm-1.3b | znhoughton/opt-babylm-1.3b-20eps-seed964 | 1.3B | OPT | BabyLM (~100M tokens) |
+| pythia-160m | EleutherAI/pythia-160m | 160M | GPT-NeoX | The Pile (300B tokens) |
+| olmo-7b | allenai/OLMo-2-1124-7B | 7B | OLMo-2 | Dolma |
+| pythia-6.9b | EleutherAI/pythia-6.9b | 6.9B | GPT-NeoX | The Pile (300B tokens) |
+
+**Key controls:**
+- **babylm-125m vs opt-125m**: same architecture and size, ~1800× more training data → isolates data volume
+- **pythia-160m vs pythia-6.9b**: same architecture and corpus, ~40× fewer parameters → isolates model size
+- **OLMo-7B vs Pythia-6.9B**: matched scale, different architecture and corpus → tests architecture/data sensitivity
+- **Whisper scaling (base→large)**: same training data, 74M→1550M → audio encoder scaling
+- **Whisper enc vs dec**: same checkpoint, different network component → encoder vs decoder representations
 
 ---
 
