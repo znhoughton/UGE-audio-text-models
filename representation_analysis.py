@@ -1113,6 +1113,12 @@ def extract_voxtral_embeddings(
     except Exception:
         processor = AutoFeatureExtractor.from_pretrained(model_id, trust_remote_code=True)
 
+    # Voxtral's processor bundles a tokenizer (for its text side). If that
+    # tokenizer has no pad token, batches with variable-length audio trigger
+    # "Asking to pad but the tokenizer does not have a padding token."
+    if hasattr(processor, "tokenizer") and processor.tokenizer.pad_token is None:
+        processor.tokenizer.pad_token = processor.tokenizer.eos_token
+
     try:
         model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     except Exception:
