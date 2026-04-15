@@ -948,7 +948,12 @@ def extract_mimi_embeddings(
                 # hidden states. MimiModel.encoder returns a BaseModelOutput
                 # whose last_hidden_state is the pre-quantization embedding.
                 enc_out = model.encoder(input_values)
-                last_hidden = enc_out.last_hidden_state   # (B, T_frames, D)
+                # Older transformers versions return a raw Tensor; newer ones
+                # return a BaseModelOutput with .last_hidden_state.
+                if isinstance(enc_out, torch.Tensor):
+                    last_hidden = enc_out
+                else:
+                    last_hidden = enc_out.last_hidden_state   # (B, T_frames, D)
 
             # Mean-pool over time frames (unmasked; padding is a tiny fraction
             # at this batch size with variable-length audio).
