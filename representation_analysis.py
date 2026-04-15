@@ -1633,7 +1633,8 @@ def _decode_audio_batch(batch) -> list:
 # ---------------------------------------------------------------------------
 
 def _hsic1_batch(X: np.ndarray, Y: np.ndarray) -> float:
-    """Unbiased HSIC_1 estimator (Song et al. 2007 U-statistic)."""
+    """Debiased HSIC estimator via Szekely & Rizzo (2014) kernel centering,
+    as described in Kornblith et al. (2019) and Murphy et al. (2024)."""
     n = X.shape[0]
     assert n >= 4, f"Minibatch size must be >= 4 for HSIC_1; got {n}"
     K = X @ X.T
@@ -1654,7 +1655,13 @@ def minibatch_cka(
     batch_size: int = MINIBATCH_SIZE,
     seed: int = MINIBATCH_SEED,
 ) -> float:
-    """Minibatch linear CKA (Nguyen, Raghu & Kornblith 2021)."""
+    """Minibatch linear CKA using the debiased HSIC estimator.
+
+    Uses the Szekely & Rizzo (2014) kernel centering as recommended by
+    Kornblith et al. (2019) and Murphy et al. (2024) to avoid inflated
+    similarity scores in the high-dimensionality regime.
+    Minibatch accumulation follows Nguyen, Raghu & Kornblith (2021).
+    """
     N = X.shape[0]
     rng = np.random.default_rng(seed)
     indices = rng.permutation(N)
