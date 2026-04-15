@@ -521,9 +521,9 @@ def load_librispeech(splits: list, max_samples: int | None,
             logger.info(f"Transcripts cached → {texts_cache_path}")
 
     # Disable automatic audio decoding so datasets does not invoke torchcodec
-    # (which requires FFmpeg shared libs that may not be present). Audio bytes
-    # are decoded manually in _decode_audio_batch / the Mimi loop using
-    # soundfile / torchaudio instead.
+    # (which requires FFmpeg shared libs that are not available on the pod).
+    # Audio bytes are decoded manually in _decode_audio_batch / the Mimi loop
+    # using torchaudio, which works without system audio libraries.
     dataset = dataset.cast_column("audio", Audio(decode=False))
     logger.info(f"Final dataset size: {len(texts):,} utterances")
     return dataset, texts
@@ -2275,6 +2275,7 @@ def main():
                     )
             except Exception as e:
                 logger.error(f"Extraction failed for {model_name}: {e}. Skipping.")
+                release_vram(f"after {model_name} failure")
                 continue
 
         embeddings[model_name] = emb
