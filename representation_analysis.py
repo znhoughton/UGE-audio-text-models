@@ -27,8 +27,10 @@ Usage:
     python representation_analysis.py --skip_extraction
 
 Models:
-    - openai/whisper-base          (audio encoder, 74M)
-    - openai/whisper-base          (audio decoder, 74M — same checkpoint, decoder side)
+    - openai/whisper-base          (audio encoder+decoder, 74M)
+    - openai/whisper-small         (audio encoder+decoder, 244M)
+    - openai/whisper-medium        (audio encoder+decoder, 769M)
+    - openai/whisper-large-v3      (audio encoder+decoder, 1550M)
     - nvidia/parakeet-ctc-0.6b     (audio encoder, 600M, FastConformer-CTC)
                                    NOTE: Parakeet CTC has no decoder; decoder extraction skipped.
     - kyutai/mimi                  (audio codec encoder, ~85M, conv+transformer, 12.5Hz)
@@ -240,6 +242,48 @@ MODELS = {
         "params": "74M",
         "arch": "Whisper decoder",
         "corpus": "680k hrs audio",
+    },
+    "whisper-small-enc": {
+        "hf_id": "openai/whisper-small",
+        "modality": "audio-whisper-enc",
+        "params": "244M",
+        "arch": "Whisper encoder",
+        "corpus": "680k hrs audio",
+    },
+    "whisper-small-dec": {
+        "hf_id": "openai/whisper-small",
+        "modality": "audio-whisper-dec",
+        "params": "244M",
+        "arch": "Whisper decoder",
+        "corpus": "680k hrs audio",
+    },
+    "whisper-medium-enc": {
+        "hf_id": "openai/whisper-medium",
+        "modality": "audio-whisper-enc",
+        "params": "769M",
+        "arch": "Whisper encoder",
+        "corpus": "680k hrs audio",
+    },
+    "whisper-medium-dec": {
+        "hf_id": "openai/whisper-medium",
+        "modality": "audio-whisper-dec",
+        "params": "769M",
+        "arch": "Whisper decoder",
+        "corpus": "680k hrs audio",
+    },
+    "whisper-large-enc": {
+        "hf_id": "openai/whisper-large-v3",
+        "modality": "audio-whisper-enc",
+        "params": "1550M",
+        "arch": "Whisper encoder",
+        "corpus": "680k hrs audio",
+    },
+    "whisper-large-dec": {
+        "hf_id": "openai/whisper-large-v3",
+        "modality": "audio-whisper-dec",
+        "params": "1550M",
+        "arch": "Whisper decoder",
+        "corpus": "680k hrs audio",
         # NOTE: The decoder is conditioned on both audio (cross-attention from the
         # encoder) and the previously generated tokens. We feed the encoder output
         # + a BOS token and pool the decoder's last hidden layer — this gives the
@@ -399,8 +443,14 @@ STABILITY_SUBSET_FRAC = 0.8
 AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi", "audio-voxtral", "tts-qwen3", "tts-higgs"}
 
 MODEL_COLORS = {
-    "whisper-base-enc":  "#1565C0",   # dark blue
-    "whisper-base-dec":  "#42A5F5",   # light blue
+    "whisper-base-enc":   "#BBDEFB",   # lightest blue
+    "whisper-base-dec":   "#90CAF9",   # light blue
+    "whisper-small-enc":  "#64B5F6",   # medium-light blue
+    "whisper-small-dec":  "#42A5F5",   # medium blue
+    "whisper-medium-enc": "#1E88E5",   # medium-dark blue
+    "whisper-medium-dec": "#1565C0",   # dark blue
+    "whisper-large-enc":  "#0D47A1",   # very dark blue
+    "whisper-large-dec":  "#283593",   # dark indigo
     "parakeet-ctc-0.6b": "#00838F",   # teal
     "mimi":              "#D84315",   # deep orange-red
     "qwen3-tts-1.7b":    "#AD1457",   # deep pink
@@ -559,6 +609,7 @@ def load_librispeech(splits: list, max_samples: int | None,
 # ---------------------------------------------------------------------------
 
 def extract_whisper_encoder_embeddings(
+    model_name: str,
     model_id: str,
     dataset,
     device: torch.device,
@@ -568,18 +619,18 @@ def extract_whisper_encoder_embeddings(
 ) -> np.ndarray:
     """Mean-pool Whisper encoder last hidden layer over time."""
     logger.info(f"Loading Whisper model (encoder): {model_id}")
-    log_gpu_memory("before Whisper load")
+    log_gpu_memory(f"before {model_name} load")
 
     processor = WhisperProcessor.from_pretrained(model_id)
     model = WhisperModel.from_pretrained(model_id, torch_dtype=torch.float16)
     model = model.to(device).eval()
-    log_gpu_memory("after Whisper load")
+    log_gpu_memory(f"after {model_name} load")
 
     n = len(dataset)
     n_batches = (n + batch_size - 1) // batch_size
-    checkpoint_path = checkpoint_dir / "whisper-base-enc_checkpoint.pkl" if checkpoint_dir else None
+    checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
 
-    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, "Whisper-enc")
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, model_name)
 
     raw_iter = dataset.iter(batch_size=batch_size)
     if start_batch > 0:
@@ -588,7 +639,7 @@ def extract_whisper_encoder_embeddings(
     batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
 
     errors = 0
-    for batch_idx in tqdm(range(start_batch, n_batches), desc="whisper-base-enc",
+    for batch_idx in tqdm(range(start_batch, n_batches), desc=model_name,
                           unit="batch", total=n_batches, initial=start_batch):
         batch = next(batch_iter)
         try:
@@ -614,14 +665,14 @@ def extract_whisper_encoder_embeddings(
         _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
 
     if errors:
-        logger.warning(f"whisper-enc: skipped {errors} batches")
+        logger.warning(f"{model_name}: skipped {errors} batches")
     del model
-    release_vram("whisper-enc")
+    release_vram(model_name)
     _remove_checkpoint(checkpoint_path)
     if not embeddings:
         raise RuntimeError("All batches failed — no embeddings were collected.")
     result = np.concatenate(embeddings, axis=0)
-    logger.info(f"Whisper-enc embeddings shape: {result.shape}")
+    logger.info(f"{model_name} embeddings shape: {result.shape}")
     return result
 
 
@@ -630,6 +681,7 @@ def extract_whisper_encoder_embeddings(
 # ---------------------------------------------------------------------------
 
 def extract_whisper_decoder_embeddings(
+    model_name: str,
     model_id: str,
     dataset,
     device: torch.device,
@@ -649,7 +701,7 @@ def extract_whisper_decoder_embeddings(
     be ~10–100× slower and would conflate representations across tokens.
     """
     logger.info(f"Loading Whisper model (decoder): {model_id}")
-    log_gpu_memory("before Whisper-dec load")
+    log_gpu_memory(f"before {model_name} load")
 
     processor = WhisperProcessor.from_pretrained(model_id)
     model = WhisperModel.from_pretrained(model_id, torch_dtype=torch.float16)
@@ -657,13 +709,13 @@ def extract_whisper_decoder_embeddings(
 
     # BOS token id for the decoder's first-step input
     bos_token_id = model.config.decoder_start_token_id
-    log_gpu_memory("after Whisper-dec load")
+    log_gpu_memory(f"after {model_name} load")
 
     n = len(dataset)
     n_batches = (n + batch_size - 1) // batch_size
-    checkpoint_path = checkpoint_dir / "whisper-base-dec_checkpoint.pkl" if checkpoint_dir else None
+    checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
 
-    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, "Whisper-dec")
+    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, model_name)
 
     raw_iter = dataset.iter(batch_size=batch_size)
     if start_batch > 0:
@@ -672,7 +724,7 @@ def extract_whisper_decoder_embeddings(
     batch_iter = prefetch_generator(raw_iter, queue_depth=prefetch_queue_depth)
 
     errors = 0
-    for batch_idx in tqdm(range(start_batch, n_batches), desc="whisper-base-dec",
+    for batch_idx in tqdm(range(start_batch, n_batches), desc=model_name,
                           unit="batch", total=n_batches, initial=start_batch):
         batch = next(batch_iter)
         try:
@@ -719,9 +771,9 @@ def extract_whisper_decoder_embeddings(
         _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
 
     if errors:
-        logger.warning(f"whisper-dec: skipped {errors} batches")
+        logger.warning(f"{model_name}: skipped {errors} batches")
     del model
-    release_vram("whisper-dec")
+    release_vram(model_name)
     _remove_checkpoint(checkpoint_path)
     if not embeddings:
         raise RuntimeError("All batches failed — no embeddings were collected.")
@@ -2182,14 +2234,14 @@ def main():
                 modality = cfg["modality"]
                 if modality == "audio-whisper-enc":
                     emb = extract_whisper_encoder_embeddings(
-                        cfg["hf_id"], dataset, device,
+                        model_name, cfg["hf_id"], dataset, device,
                         batch_size=args.whisper_batch_size,
                         checkpoint_dir=data_dir,
                         prefetch_queue_depth=args.prefetch_queue_depth,
                     )
                 elif modality == "audio-whisper-dec":
                     emb = extract_whisper_decoder_embeddings(
-                        cfg["hf_id"], dataset, device,
+                        model_name, cfg["hf_id"], dataset, device,
                         batch_size=args.whisper_batch_size,
                         checkpoint_dir=data_dir,
                         prefetch_queue_depth=args.prefetch_queue_depth,
