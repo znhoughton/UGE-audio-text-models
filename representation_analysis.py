@@ -942,26 +942,16 @@ def extract_mimi_embeddings(
                 padding=True,
             )
             input_values = inputs["input_values"].to(device)
-            # padding_mask: 1 = real frame, 0 = padding (Mimi convention)
-            padding_mask = inputs.get("padding_mask", None)
-            if padding_mask is not None:
-                padding_mask = padding_mask.to(device)
 
             with torch.no_grad():
                 # Run the encoder submodule directly to get continuous pre-RVQ
                 # hidden states. MimiModel.encoder returns a BaseModelOutput
                 # whose last_hidden_state is the pre-quantization embedding.
-                enc_out = model.encoder(
-                    input_values,
-                    padding_mask=padding_mask,
-                )
+                enc_out = model.encoder(input_values)
                 last_hidden = enc_out.last_hidden_state   # (B, T_frames, D)
 
-            # Mean-pool over time frames, excluding padding.
-            # padding_mask is at the *input* sample level, not the frame level —
-            # the encoder downsamples by ~1920x (24000/12.5), so we can't apply
-            # it directly. Use unmasked mean; padding is a tiny fraction at
-            # batch_size=64 with variable-length audio.
+            # Mean-pool over time frames (unmasked; padding is a tiny fraction
+            # at this batch size with variable-length audio).
             emb = last_hidden.float().mean(dim=1).cpu().numpy()   # (B, D)
 
             if not np.isfinite(emb).all():
