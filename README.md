@@ -140,10 +140,14 @@ Similar decay curves across models indicate similar intrinsic dimensionality.
 summarising how many dimensions the model is actually using.
 
 ### Step 4 — Pairwise Minibatch CKA
-Computes linear CKA between every pair of models using the unbiased HSIC₁ estimator
-(Nguyen et al. 2021). Processes data in non-overlapping minibatches of 2048 samples,
-averaging HSIC scores across batches before the final normalisation step. This avoids
-the O(N²) memory cost of full CKA while using all 292k samples.
+Computes linear CKA between every pair of models using the **debiased** HSIC estimator
+(Szekely & Rizzo 2014 kernel centering, as recommended by Kornblith et al. 2019 and
+Murphy et al. 2024). The biased estimator inflates similarity scores when feature
+dimensionality exceeds sample count — using the debiased version avoids this. Minibatch
+accumulation follows Nguyen et al. (2021): data is processed in non-overlapping
+minibatches of 2048 samples, averaging HSIC scores across batches before the final
+normalisation step. This avoids the O(N²) memory cost of full CKA while using all 292k
+samples.
 
 CKA is invariant to rotation and isotropic scaling — it measures genuine geometric
 similarity, not coordinate accidents.
