@@ -1296,66 +1296,26 @@ def extract_qwen3_tts_embeddings(
     a pure text LLM?" — a direct Platonic Representation Hypothesis test
     across TTS vs. pure-language training objectives.
 
-    The qwen-tts package wraps a Qwen3 transformer. We access its underlying
-    language model via model.language_model (or model.model, depending on
-    version), then tokenize with its bundled tokenizer and extract the last
-    hidden layer with mean pooling over non-padding tokens.
-
-    Requires: pip install qwen-tts
+    Qwen/Qwen3-TTS-*-Base is a standard HuggingFace causal LM (Qwen3
+    architecture) — we load it directly with AutoModelForCausalLM rather
+    than via the qwen-tts pipeline wrapper, which does not expose a usable
+    nn.Module forward() for embedding extraction.
     """
-    try:
-        from qwen_tts import Qwen3TTSModel
-    except ImportError:
-        raise ImportError(
-            "qwen-tts package not found. Install with: pip install qwen-tts\n"
-            "Then re-run without --skip_extraction to extract Qwen3-TTS embeddings."
-        )
-
     logger.info(f"Loading Qwen3-TTS model: {model_id}")
     log_gpu_memory("before Qwen3-TTS load")
 
-    model = Qwen3TTSModel.from_pretrained(
+    lm = AutoModelForCausalLM.from_pretrained(
         model_id,
-        dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,
+        trust_remote_code=True,
     )
-    # Qwen3TTSModel is not a standard nn.Module in all versions — to/eval may not exist.
-    if hasattr(model, "to"):
-        model = model.to(device)
-    if hasattr(model, "eval"):
-        model.eval()
+    lm = lm.to(device).eval()
 
-    # Qwen3-TTS wraps a Qwen3 transformer. The LM backbone is accessible via
-    # .language_model (most versions) or .model. We need it for hidden states.
-    if hasattr(model, "language_model"):
-        lm = model.language_model
-    elif hasattr(model, "model"):
-        lm = model.model
-    else:
-        raise AttributeError(
-            f"Cannot find LM backbone in Qwen3TTSModel. "
-            f"Available attributes: {[a for a in dir(model) if not a.startswith('_')]}\n"
-            f"Please open an issue or check the qwen-tts version."
-        )
-
-    # The tokenizer is bundled with the model. Try common attribute names.
-    if hasattr(model, "tokenizer"):
-        tokenizer = model.tokenizer
-    elif hasattr(model, "text_tokenizer"):
-        tokenizer = model.text_tokenizer
-    else:
-        # Fall back to loading from HF hub with the same repo
-        logger.warning("Tokenizer not found on model object — loading via AutoTokenizer")
-        tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-
+    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # Determine the device of the LM backbone's first layer
-    if hasattr(lm, "hf_device_map") and lm.hf_device_map:
-        first_device = next(iter(lm.hf_device_map.values()))
-    else:
-        first_device = next(lm.parameters()).device
-
+    first_device = device
     logger.info(f"Qwen3-TTS LM backbone first device: {first_device}")
     log_gpu_memory("after Qwen3-TTS load")
 
@@ -1405,11 +1365,7 @@ def extract_qwen3_tts_embeddings(
 
     if errors:
         logger.warning(f"{label}: skipped {errors} batches")
-    # Guard: lm may be unbound if the AttributeError branch was hit before
-    # assignment. Always delete model; delete lm only if it was assigned.
-    del model
-    if "lm" in locals():
-        del lm
+    del lm
     release_vram(label)
     _remove_checkpoint(checkpoint_path)
     if not embeddings:
