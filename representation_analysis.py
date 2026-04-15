@@ -1069,18 +1069,20 @@ def extract_voxtral_embeddings(
         try:
             audio_arrays = _decode_audio_batch(batch)
 
-            # Build processor inputs. Voxtral's processor call signature may
-            # vary slightly by transformers version; try the most common patterns.
+            # Voxtral's processor wraps WhisperFeatureExtractor internally,
+            # which requires the audio under the key 'raw_speech'.
             try:
                 inputs = processor(
-                    audios=audio_arrays,
+                    raw_speech=audio_arrays,
                     sampling_rate=SAMPLE_RATE,
                     return_tensors="pt",
                     padding=True,
                 )
             except TypeError:
+                # Fallback: pass positionally in case the outer processor
+                # dispatches differently.
                 inputs = processor(
-                    audio=audio_arrays,
+                    audio_arrays,
                     sampling_rate=SAMPLE_RATE,
                     return_tensors="pt",
                     padding=True,
