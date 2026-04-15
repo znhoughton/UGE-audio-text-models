@@ -1654,8 +1654,8 @@ def minibatch_cka(
         Yb = Y.astype(np.float64)
         Xb /= np.linalg.norm(Xb, axis=1, keepdims=True) + 1e-10
         Yb /= np.linalg.norm(Yb, axis=1, keepdims=True) + 1e-10
-        denom = np.sqrt(_hsic1_batch(Xb, Xb) * _hsic1_batch(Yb, Yb))
-        return float(_hsic1_batch(Xb, Yb) / (denom + 1e-10))
+        denom = np.sqrt(max(_hsic1_batch(Xb, Xb), 0.0) * max(_hsic1_batch(Yb, Yb), 0.0))
+        return float(_hsic1_batch(Xb, Yb) / denom) if denom > 1e-10 else 0.0
 
     mean_xy = float(np.mean(hsic_xy))
     denom = np.sqrt(max(float(np.mean(hsic_xx)), 0.0) * max(float(np.mean(hsic_yy)), 0.0))
