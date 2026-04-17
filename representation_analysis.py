@@ -1921,7 +1921,8 @@ def plot_pca_scatter(embeddings: dict, plots_dir: Path,
     logger.info(f"  Saved → {path}")
 
 
-def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
+def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path,
+                     cka_results: dict = None):
     _apply_style()
     fig, ax = plt.subplots(figsize=(max(8, len(names) * 1.0), max(6.5, len(names) * 0.9)))
 
@@ -1942,8 +1943,16 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path):
         for j in range(n):
             val = cka_matrix[i, j]
             text_color = "black" if val < 0.7 else "white"
-            ax.text(j, i, f"{val:.3f}", ha="center", va="center",
-                    fontsize=9, fontweight="bold", color=text_color)
+            # Show score ± SD across minibatches (SD indicates how consistently
+            # the similarity holds across different subsets of utterances).
+            if cka_results is not None and i != j:
+                key = f"{names[min(i,j)]} vs {names[max(i,j)]}"
+                std = cka_results.get(key, {}).get("hsic_std", None)
+                label = f"{val:.3f}\n±{std:.3f}" if std is not None else f"{val:.3f}"
+            else:
+                label = f"{val:.3f}"
+            ax.text(j, i, label, ha="center", va="center",
+                    fontsize=7, fontweight="bold", color=text_color)
 
     # Draw separator between audio and text model groups
     audio_indices = [
@@ -2413,7 +2422,7 @@ def main():
         pair_bar.close()
 
     with timer("CKA plots"):
-        plot_cka_heatmap(cka_matrix, names, plots_dir)
+        plot_cka_heatmap(cka_matrix, names, plots_dir, cka_results=cka_results)
         plot_cka_bar_cross_modal(cka_matrix, names, plots_dir)
 
     # ------------------------------------------------------------------
