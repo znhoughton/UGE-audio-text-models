@@ -1679,6 +1679,17 @@ def minibatch_cka(
     consistently the cross-model similarity holds across different subsets
     of utterances.
     """
+    if X.shape[0] != Y.shape[0]:
+        # Row counts can differ when a model skips batches (e.g. OOM, non-finite
+        # values). Trim to the shorter array so indexing stays valid. Log a warning
+        # so the mismatch is visible in the run log.
+        n_min = min(X.shape[0], Y.shape[0])
+        logger.warning(
+            f"minibatch_cka: row count mismatch (X={X.shape[0]}, Y={Y.shape[0]}). "
+            f"Trimming both to {n_min} rows."
+        )
+        X = X[:n_min]
+        Y = Y[:n_min]
     N = X.shape[0]
     rng = np.random.default_rng(seed)
     indices = rng.permutation(N)
