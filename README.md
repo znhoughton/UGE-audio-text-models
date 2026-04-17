@@ -53,6 +53,7 @@ objectives.
 |---|---|---|---|---|
 | babylm-125m | znhoughton/opt-babylm-125m-20eps-seed964 | 125M | OPT | BabyLM (~100M tokens) |
 | opt-125m | facebook/opt-125m | 125M | OPT | ~180B tokens |
+| babylm-350m | znhoughton/opt-babylm-350m-20eps-seed964 | 350M | OPT | BabyLM (~100M tokens) |
 | babylm-1.3b | znhoughton/opt-babylm-1.3b-20eps-seed964 | 1.3B | OPT | BabyLM (~100M tokens) |
 | pythia-160m | EleutherAI/pythia-160m | 160M | GPT-NeoX | The Pile (300B tokens) |
 | olmo-7b | allenai/OLMo-2-1124-7B | 7B | OLMo-2 | Dolma |
