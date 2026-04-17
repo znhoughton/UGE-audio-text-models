@@ -701,7 +701,7 @@ def extract_whisper_enc_word_embeddings(
         try:
             audio = _resample(utt["audio"], utt["sr"], target_sr)
             inputs = processor(audio, sampling_rate=target_sr,
-                               return_tensors="pt", padding=False)
+                               return_tensors="pt", padding=True)
             input_features = inputs["input_features"].to(device)
 
             with torch.no_grad():
