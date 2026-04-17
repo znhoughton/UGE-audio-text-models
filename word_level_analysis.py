@@ -23,9 +23,16 @@ Data:
                     e.g. from https://www.kaggle.com/datasets/b09901026skho/ljspeech-textgrid
 
 Usage:
+  python word_level_analysis.py                              # auto-downloads TextGrids from Kaggle
   python word_level_analysis.py --textgrid_dir /path/to/textgrids
   python word_level_analysis.py --textgrid_dir /path/to/textgrids --max_words 50000
   python word_level_analysis.py --textgrid_dir /path/to/textgrids --skip_extraction
+
+Auto-download:
+  If --textgrid_dir is omitted (or the directory has < 100 .TextGrid files), the script
+  downloads from Kaggle automatically. Requires:
+    pip install kaggle
+    # Place ~/.kaggle/kaggle.json with your API token (from kaggle.com/settings → API)
 """
 
 import argparse
@@ -251,6 +258,88 @@ def get_device() -> torch.device:
         return torch.device("cuda")
     logger.warning("No GPU detected — running on CPU (will be very slow)")
     return torch.device("cpu")
+
+
+# ---------------------------------------------------------------------------
+# TextGrid auto-download
+# ---------------------------------------------------------------------------
+
+KAGGLE_DATASET = "b09901026skho/ljspeech-textgrid"
+TEXTGRID_PRESENCE_THRESHOLD = 100   # if this many .TextGrid files exist, skip download
+
+
+def ensure_textgrids(textgrid_dir: Path) -> Path:
+    """Ensure TextGrid files are present in textgrid_dir, downloading from Kaggle if needed.
+
+    Returns the (possibly updated) path to the directory that actually contains
+    the .TextGrid files — Kaggle may unzip into a subdirectory.
+
+    Raises RuntimeError with a helpful message if download fails and no files exist.
+    """
+    existing = list(textgrid_dir.rglob("*.TextGrid")) if textgrid_dir.exists() else []
+    if len(existing) >= TEXTGRID_PRESENCE_THRESHOLD:
+        # Find the common directory containing the files (handles subdirectory cases)
+        dirs = set(f.parent for f in existing)
+        best = min(dirs, key=lambda d: len(d.parts))
+        if best != textgrid_dir:
+            logger.info(f"Found {len(existing):,} TextGrid files in {best}")
+        else:
+            logger.info(f"Found {len(existing):,} TextGrid files in {textgrid_dir}")
+        return best
+
+    textgrid_dir.mkdir(parents=True, exist_ok=True)
+    logger.info(f"No TextGrid files found in {textgrid_dir}. Attempting Kaggle download...")
+
+    try:
+        import kaggle  # noqa: F401 — triggers authentication check
+        from kaggle.api.kaggle_api_extended import KaggleApiExtended
+        api = KaggleApiExtended()
+        api.authenticate()
+    except ImportError:
+        raise RuntimeError(
+            "The 'kaggle' package is not installed.\n"
+            "  pip install kaggle\n"
+            "Then set up your API token:\n"
+            "  1. Go to https://www.kaggle.com/settings → API → Create New Token\n"
+            "  2. Place the downloaded kaggle.json at ~/.kaggle/kaggle.json\n"
+            "  3. chmod 600 ~/.kaggle/kaggle.json\n"
+            f"Or download manually: https://www.kaggle.com/datasets/{KAGGLE_DATASET}\n"
+            f"and extract to: {textgrid_dir}"
+        )
+    except Exception as e:
+        raise RuntimeError(
+            f"Kaggle authentication failed: {e}\n"
+            "Make sure ~/.kaggle/kaggle.json exists with a valid API token.\n"
+            "  1. Go to https://www.kaggle.com/settings → API → Create New Token\n"
+            "  2. Place kaggle.json at ~/.kaggle/kaggle.json\n"
+            "  3. chmod 600 ~/.kaggle/kaggle.json\n"
+            f"Or download manually: https://www.kaggle.com/datasets/{KAGGLE_DATASET}\n"
+            f"and extract to: {textgrid_dir}"
+        )
+
+    try:
+        logger.info(f"Downloading {KAGGLE_DATASET} → {textgrid_dir} (this may take a while)...")
+        api.dataset_download_files(KAGGLE_DATASET, path=str(textgrid_dir), unzip=True, quiet=False)
+    except Exception as e:
+        raise RuntimeError(
+            f"Kaggle download failed: {e}\n"
+            f"Try downloading manually: https://www.kaggle.com/datasets/{KAGGLE_DATASET}\n"
+            f"and extracting to: {textgrid_dir}"
+        )
+
+    # After unzip, files may be in a subdirectory — find where they actually are
+    all_tg = list(textgrid_dir.rglob("*.TextGrid"))
+    if not all_tg:
+        raise RuntimeError(
+            f"Download completed but no .TextGrid files found under {textgrid_dir}.\n"
+            "The dataset may use a different file extension or naming convention.\n"
+            f"Check the contents of {textgrid_dir} and pass the correct path with --textgrid_dir."
+        )
+
+    dirs = set(f.parent for f in all_tg)
+    actual_dir = min(dirs, key=lambda d: len(d.parts))
+    logger.info(f"Download complete — {len(all_tg):,} TextGrid files in {actual_dir}")
+    return actual_dir
 
 
 # ---------------------------------------------------------------------------
@@ -1142,8 +1231,10 @@ def save_summary_tables(cka_matrix: np.ndarray, cka_results: dict,
 
 def parse_args():
     p = argparse.ArgumentParser(description="Word-level cross-modal CKA on LJSpeech + TextGrids")
-    p.add_argument("--textgrid_dir", required=True, type=Path,
-                   help="Directory containing .TextGrid files (one per LJSpeech utterance)")
+    p.add_argument("--textgrid_dir", default=None, type=Path,
+                   help="Directory containing .TextGrid files (one per LJSpeech utterance). "
+                        "If omitted, defaults to <root_dir>/WordData/textgrids and the script "
+                        "will attempt to download from Kaggle automatically.")
     p.add_argument("--ljspeech_name", default="keithito/lj_speech",
                    help="HuggingFace dataset name for LJSpeech (default: keithito/lj_speech)")
     p.add_argument("--root_dir", default=".", type=Path,
@@ -1181,6 +1272,16 @@ def main():
     device = get_device()
 
     # ------------------------------------------------------------------
+    # 0. Ensure TextGrids are present (download from Kaggle if needed)
+    # ------------------------------------------------------------------
+    textgrid_dir = args.textgrid_dir or (data_dir / "textgrids")
+    try:
+        textgrid_dir = ensure_textgrids(textgrid_dir)
+    except RuntimeError as e:
+        logger.error(str(e))
+        sys.exit(1)
+
+    # ------------------------------------------------------------------
     # 1. Load LJSpeech + build word records
     # ------------------------------------------------------------------
     # Include max_words in the cache filename so that runs with different
@@ -1200,7 +1301,7 @@ def main():
             utterances = load_ljspeech(args.ljspeech_name)
         with timer("Build word records"):
             word_records = build_word_records(
-                utterances, args.textgrid_dir,
+                utterances, textgrid_dir,
                 max_words=args.max_words,
             )
         with open(word_records_path, "w") as f:
