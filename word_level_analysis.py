@@ -31,15 +31,12 @@ Usage:
 import argparse
 import csv
 import gc
-import io
 import json
 import logging
 import os
 import pickle
-import queue
 import re
 import sys
-import threading
 import time
 from contextlib import contextmanager
 from datetime import datetime
@@ -62,6 +59,7 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     MimiModel,
+    ParakeetForCTC,
     WhisperModel,
     WhisperProcessor,
 )
@@ -590,16 +588,15 @@ def extract_parakeet_word_embeddings(
 ) -> np.ndarray:
     """Extract word-level embeddings from Parakeet FastConformer encoder.
 
-    Uses model.encoder() directly to get frame-level hidden states at 12.5Hz.
-    NeMo is not imported at module level to avoid CUDA poisoning; import is
-    deferred to inside this function.
+    Uses the transformers ParakeetForCTC API (same as the utterance-level script)
+    to get frame-level hidden states at 12.5Hz, then slices by word timestamps.
     """
     model_name = "parakeet-ctc-0.6b"
     logger.info(f"Loading Parakeet: {model_id}")
     log_gpu_memory(f"before {model_name} load")
 
-    import nemo.collections.asr as nemo_asr
-    model = nemo_asr.models.EncDecCTCModelBPE.from_pretrained(model_id)
+    feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
+    model = ParakeetForCTC.from_pretrained(model_id, torch_dtype=torch.float32)
     model = model.to(device).eval()
     log_gpu_memory(f"after {model_name} load")
 
@@ -617,18 +614,22 @@ def extract_parakeet_word_embeddings(
         utt = utterances[utt_id]
         try:
             audio = _resample(utt["audio"], utt["sr"], target_sr)
-            audio_t = torch.from_numpy(audio).unsqueeze(0).to(device)  # (1, T)
-            audio_len = torch.tensor([audio_t.shape[1]], device=device)
+            inputs = feature_extractor(
+                [audio], sampling_rate=target_sr,
+                return_tensors="pt", padding="longest",
+            )
+            input_key = next(k for k in inputs.keys() if "mask" not in k)
+            input_tensor = inputs[input_key].to(device, dtype=torch.float32)
 
             with torch.no_grad():
-                processed, processed_len = model.preprocessor(
-                    input_signal=audio_t, length=audio_len,
-                )
-                enc_out, _ = model.encoder(
-                    audio_signal=processed, length=processed_len,
-                )
-            # NeMo encoder output: (B, D, T) → transpose to (T, D)
-            hidden = enc_out[0].float().cpu().numpy().T  # (T, D)
+                if hasattr(model, "parakeet") and hasattr(model.parakeet, "encoder"):
+                    enc_out = model.parakeet.encoder(input_tensor, output_hidden_states=True)
+                    last_hidden = enc_out.last_hidden_state   # (1, T, D)
+                else:
+                    out = model(input_tensor, output_hidden_states=True)
+                    last_hidden = out.hidden_states[-1]        # (1, T, D)
+            # Transformers convention: (B, T, D) — index 0 gives (T, D) directly
+            hidden = last_hidden[0].float().cpu().numpy()  # (T, D)
 
             for word_idx in utt_to_words[utt_id]:
                 if word_idx in completed_words:
@@ -1182,7 +1183,11 @@ def main():
     # ------------------------------------------------------------------
     # 1. Load LJSpeech + build word records
     # ------------------------------------------------------------------
-    word_records_path = data_dir / "word_records.json"
+    # Include max_words in the cache filename so that runs with different
+    # --max_words arguments don't silently reuse each other's cached records.
+    cache_suffix = f"_max{args.max_words}" if args.max_words else ""
+    word_records_path = data_dir / f"word_records{cache_suffix}.json"
+
     if word_records_path.exists():
         logger.info(f"Loading cached word records from {word_records_path}")
         with open(word_records_path) as f:
