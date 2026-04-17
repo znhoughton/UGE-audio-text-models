@@ -46,6 +46,7 @@ Models:
     - znhoughton/opt-babylm-125m-20eps-seed964  (text, 125M, OPT, BabyLM ~100M tokens)
     - facebook/opt-125m            (text, 125M, OPT, ~180B tokens)
                                    NOTE: same arch+size as babylm-125m; isolates data volume.
+    - znhoughton/opt-babylm-350m-20eps-seed964  (text, 350M, OPT, BabyLM ~100M tokens)
     - znhoughton/opt-babylm-1.3b-20eps-seed964  (text, 1.3B, OPT, BabyLM ~100M tokens)
     - allenai/OLMo-2-1124-7B       (text, 7B, OLMo-2, Dolma)
     - EleutherAI/pythia-160m       (text, 160M, GPT-NeoX, The Pile 300B tokens)
@@ -374,6 +375,13 @@ MODELS = {
         # Same architecture and size as babylm-125m; trained on ~1800× more data.
         # Isolates the effect of training data volume from model size.
     },
+    "babylm-350m": {
+        "hf_id": "znhoughton/opt-babylm-350m-20eps-seed964",
+        "modality": "text",
+        "params": "350M",
+        "arch": "OPT",
+        "corpus": "BabyLM",
+    },
     "babylm-1.3b": {
         "hf_id": "znhoughton/opt-babylm-1.3b-20eps-seed964",
         "modality": "text",
@@ -458,6 +466,7 @@ MODEL_COLORS = {
     "higgs-audio-v2-3b": "#558B2F",   # olive green
     "babylm-125m":       "#E65100",   # deep orange
     "opt-125m":          "#FFCCBC",   # light orange (same family as babylm-125m, more data)
+    "babylm-350m":       "#FB8C00",   # orange (between babylm-125m and babylm-1.3b)
     "babylm-1.3b":       "#F9A825",   # yellow
     "olmo-7b":           "#2E7D32",   # dark green
     "pythia-160m":       "#CE93D8",   # light purple (same family as pythia-6.9b, smaller)
