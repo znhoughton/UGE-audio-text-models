@@ -641,6 +641,22 @@ def _resample(audio: np.ndarray, src_sr: int, dst_sr: int) -> np.ndarray:
     return t.squeeze(0).numpy()
 
 
+def _resample_utterances(utterances: dict, utt_ids: list, target_sr: int) -> str:
+    """Pre-cache resampled audio for the given utterance IDs and sample rate.
+
+    Audio is stored under the key f"audio_{target_sr}" so that different models
+    with different target sample rates don't overwrite each other's cached arrays.
+    Returns the cache key so callers can pass it directly to _run_batch_audio.
+    """
+    key = f"audio_{target_sr}"
+    to_resample = [uid for uid in utt_ids if key not in utterances[uid]]
+    if to_resample:
+        for uid in tqdm(to_resample, desc=f"Resampling to {target_sr} Hz", unit="utt"):
+            utt = utterances[uid]
+            utterances[uid][key] = _resample(utt["audio"], utt["sr"], target_sr)
+    return key
+
+
 def _time_to_frame(t: float, fps: float, max_frame: int) -> int:
     return min(int(t * fps), max_frame)
 
@@ -663,6 +679,77 @@ def _slice_frames(hidden: np.ndarray, start: float, end: float,
 
 
 # ---------------------------------------------------------------------------
+# Shared batch helper
+# ---------------------------------------------------------------------------
+
+def _run_batch_audio(
+    model_name: str,
+    utt_ids: list,
+    start_utt: int,
+    batch_size: int,
+    word_records: list[dict],
+    utterances: dict,
+    utt_to_words: dict,
+    completed_words: set,
+    word_embeddings_list: list,
+    encode_fn,          # callable(audio_arrays) → (B, T, D) np.ndarray
+    fps: float,
+    checkpoint_path,
+    audio_key: str = "audio_resampled",
+) -> int:
+    """Shared batched loop for all audio encoder extractors.
+
+    encode_fn takes a list of 1-D float32 numpy arrays (already resampled)
+    and returns a (B, T, D) numpy array of encoder hidden states.
+
+    audio_key is the key in utterances[uid] that holds the resampled array
+    (set by _resample_utterances, e.g. "audio_16000" or "audio_24000").
+
+    Returns the number of word-level errors encountered.
+    """
+    N_utt = len(utt_ids)
+    errors = 0
+    pbar = tqdm(range(start_utt, N_utt, batch_size), desc=model_name,
+                unit="batch", total=(N_utt - start_utt + batch_size - 1) // batch_size)
+
+    for batch_start in pbar:
+        batch_ids = utt_ids[batch_start : batch_start + batch_size]
+        try:
+            audio_arrays = [utterances[uid][audio_key] for uid in batch_ids]
+            hidden_batch = encode_fn(audio_arrays)          # (B, T, D)
+
+            for b, utt_id in enumerate(batch_ids):
+                hidden = hidden_batch[b]                    # (T, D)
+                for word_idx in utt_to_words[utt_id]:
+                    if word_idx in completed_words:
+                        continue
+                    rec = word_records[word_idx]
+                    emb = _slice_frames(hidden, rec["start"], rec["end"], fps)
+                    if emb is None:
+                        errors += 1
+                        continue
+                    word_embeddings_list.append((word_idx, emb))
+                    completed_words.add(word_idx)
+
+        except RuntimeError as e:
+            if "out of memory" in str(e).lower():
+                _save_checkpoint(checkpoint_path, word_embeddings_list, batch_start)
+                torch.cuda.empty_cache()
+                raise
+            errors += 1
+            logger.warning(f"Skipping batch at utt {batch_start}: {e}")
+        except Exception as e:
+            errors += 1
+            logger.warning(f"Skipping batch at utt {batch_start}: {e}")
+
+        next_utt = batch_start + batch_size
+        if next_utt % (CHECKPOINT_EVERY * batch_size) < batch_size:
+            _save_checkpoint(checkpoint_path, word_embeddings_list, next_utt)
+
+    return errors
+
+
+# ---------------------------------------------------------------------------
 # Whisper encoder word-level extraction
 # ---------------------------------------------------------------------------
 
@@ -674,12 +761,13 @@ def extract_whisper_enc_word_embeddings(
     device: torch.device,
     fps: float = WHISPER_ENC_FPS,
     target_sr: int = WHISPER_SR,
+    batch_size: int = 64,
     checkpoint_dir: Path = None,
 ) -> np.ndarray:
-    """Extract word-level embeddings from a Whisper encoder.
+    """Extract word-level embeddings from a Whisper encoder (batched).
 
-    For each utterance: run the full audio through the encoder once to get
-    (T_frames, D) hidden states, then slice by each word's time boundaries.
+    Processes utterances in batches: runs the encoder once per batch to get
+    (B, T, D) hidden states, then slices each utterance's word frames.
     """
     logger.info(f"Loading Whisper encoder: {model_id}")
     log_gpu_memory(f"before {model_name} load")
@@ -689,64 +777,33 @@ def extract_whisper_enc_word_embeddings(
     model = model.to(device).eval()
     log_gpu_memory(f"after {model_name} load")
 
-    # Group word records by utterance to avoid re-running the encoder
     utt_to_words = _group_by_utt(word_records)
     utt_ids = list(utt_to_words.keys())
+    audio_key = _resample_utterances(utterances, utt_ids, target_sr)
 
     checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
     start_utt, word_embeddings_list = _load_checkpoint(checkpoint_path, model_name)
-
-    # word_embeddings_list stores (word_idx, embedding) pairs
     completed_words = {idx for idx, _ in word_embeddings_list}
 
-    errors = 0
-    for utt_num, utt_id in enumerate(tqdm(utt_ids[start_utt:], desc=model_name,
-                                           unit="utt", initial=start_utt,
-                                           total=len(utt_ids))):
-        utt = utterances[utt_id]
-        try:
-            audio = _resample(utt["audio"], utt["sr"], target_sr)
-            inputs = processor(audio, sampling_rate=target_sr,
-                               return_tensors="pt", padding=True)
-            input_features = inputs["input_features"].to(device)
+    def encode(audio_arrays):
+        inputs = processor(audio_arrays, sampling_rate=target_sr,
+                           return_tensors="pt", padding=True)
+        features = inputs["input_features"].to(device, dtype=torch.float16)
+        with torch.no_grad():
+            enc_out = model.encoder(features, output_hidden_states=False)
+        return enc_out.last_hidden_state.float().cpu().numpy()  # (B, T, D)
 
-            with torch.no_grad():
-                enc_out = model.encoder(input_features, output_hidden_states=False)
-            # enc_out.last_hidden_state: (1, T, D)
-            hidden = enc_out.last_hidden_state[0].float().cpu().numpy()  # (T, D)
-
-            for word_idx in utt_to_words[utt_id]:
-                if word_idx in completed_words:
-                    continue
-                rec = word_records[word_idx]
-                emb = _slice_frames(hidden, rec["start"], rec["end"], fps)
-                if emb is None:
-                    errors += 1
-                    continue
-                word_embeddings_list.append((word_idx, emb))
-                completed_words.add(word_idx)
-
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                _save_checkpoint(checkpoint_path, word_embeddings_list, utt_num + start_utt)
-                torch.cuda.empty_cache()
-                raise
-            errors += 1
-            logger.warning(f"Skipping utterance {utt_id}: {e}")
-        except Exception as e:
-            errors += 1
-            logger.warning(f"Skipping utterance {utt_id}: {e}")
-
-        if (utt_num + start_utt + 1) % CHECKPOINT_EVERY == 0:
-            _save_checkpoint(checkpoint_path, word_embeddings_list, utt_num + start_utt + 1)
+    errors = _run_batch_audio(
+        model_name, utt_ids, start_utt, batch_size,
+        word_records, utterances, utt_to_words, completed_words,
+        word_embeddings_list, encode, fps, checkpoint_path, audio_key,
+    )
 
     del model
     release_vram(model_name)
     _remove_checkpoint(checkpoint_path)
-
     if errors:
-        logger.warning(f"{model_name}: {errors} errors during extraction")
-
+        logger.warning(f"{model_name}: {errors} word-level errors")
     return _sort_embeddings(word_embeddings_list, len(word_records))
 
 
@@ -761,13 +818,10 @@ def extract_parakeet_word_embeddings(
     device: torch.device,
     fps: float = PARAKEET_FPS,
     target_sr: int = WHISPER_SR,
+    batch_size: int = 32,
     checkpoint_dir: Path = None,
 ) -> np.ndarray:
-    """Extract word-level embeddings from Parakeet FastConformer encoder.
-
-    Uses the transformers ParakeetForCTC API (same as the utterance-level script)
-    to get frame-level hidden states at 12.5Hz, then slices by word timestamps.
-    """
+    """Extract word-level embeddings from Parakeet FastConformer encoder (batched)."""
     model_name = "parakeet-ctc-0.6b"
     logger.info(f"Loading Parakeet: {model_id}")
     log_gpu_memory(f"before {model_name} load")
@@ -779,67 +833,39 @@ def extract_parakeet_word_embeddings(
 
     utt_to_words = _group_by_utt(word_records)
     utt_ids = list(utt_to_words.keys())
+    audio_key = _resample_utterances(utterances, utt_ids, target_sr)
 
     checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
     start_utt, word_embeddings_list = _load_checkpoint(checkpoint_path, model_name)
     completed_words = {idx for idx, _ in word_embeddings_list}
 
-    errors = 0
-    for utt_num, utt_id in enumerate(tqdm(utt_ids[start_utt:], desc=model_name,
-                                           unit="utt", initial=start_utt,
-                                           total=len(utt_ids))):
-        utt = utterances[utt_id]
-        try:
-            audio = _resample(utt["audio"], utt["sr"], target_sr)
-            inputs = feature_extractor(
-                [audio], sampling_rate=target_sr,
-                return_tensors="pt", padding="longest",
-            )
-            input_key = next(k for k in inputs.keys() if "mask" not in k)
-            input_tensor = inputs[input_key].to(device, dtype=torch.float32)
+    def encode(audio_arrays):
+        inputs = feature_extractor(
+            audio_arrays, sampling_rate=target_sr,
+            return_tensors="pt", padding="longest",
+        )
+        input_key = next(k for k in inputs.keys() if "mask" not in k)
+        input_tensor = inputs[input_key].to(device, dtype=torch.float32)
+        with torch.no_grad():
+            if hasattr(model, "parakeet") and hasattr(model.parakeet, "encoder"):
+                enc_out = model.parakeet.encoder(input_tensor, output_hidden_states=True)
+                last_hidden = enc_out.last_hidden_state
+            else:
+                out = model(input_tensor, output_hidden_states=True)
+                last_hidden = out.hidden_states[-1]
+        return last_hidden.float().cpu().numpy()  # (B, T, D)
 
-            with torch.no_grad():
-                if hasattr(model, "parakeet") and hasattr(model.parakeet, "encoder"):
-                    enc_out = model.parakeet.encoder(input_tensor, output_hidden_states=True)
-                    last_hidden = enc_out.last_hidden_state   # (1, T, D)
-                else:
-                    out = model(input_tensor, output_hidden_states=True)
-                    last_hidden = out.hidden_states[-1]        # (1, T, D)
-            # Transformers convention: (B, T, D) — index 0 gives (T, D) directly
-            hidden = last_hidden[0].float().cpu().numpy()  # (T, D)
-
-            for word_idx in utt_to_words[utt_id]:
-                if word_idx in completed_words:
-                    continue
-                rec = word_records[word_idx]
-                emb = _slice_frames(hidden, rec["start"], rec["end"], fps)
-                if emb is None:
-                    errors += 1
-                    continue
-                word_embeddings_list.append((word_idx, emb))
-                completed_words.add(word_idx)
-
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                _save_checkpoint(checkpoint_path, word_embeddings_list, utt_num + start_utt)
-                torch.cuda.empty_cache()
-                raise
-            errors += 1
-            logger.warning(f"Skipping utterance {utt_id}: {e}")
-        except Exception as e:
-            errors += 1
-            logger.warning(f"Skipping utterance {utt_id}: {e}")
-
-        if (utt_num + start_utt + 1) % CHECKPOINT_EVERY == 0:
-            _save_checkpoint(checkpoint_path, word_embeddings_list, utt_num + start_utt + 1)
+    errors = _run_batch_audio(
+        model_name, utt_ids, start_utt, batch_size,
+        word_records, utterances, utt_to_words, completed_words,
+        word_embeddings_list, encode, fps, checkpoint_path, audio_key,
+    )
 
     del model
     release_vram(model_name)
     _remove_checkpoint(checkpoint_path)
-
     if errors:
         logger.warning(f"{model_name}: {errors} errors")
-
     return _sort_embeddings(word_embeddings_list, len(word_records))
 
 
@@ -854,13 +880,10 @@ def extract_mimi_word_embeddings(
     device: torch.device,
     fps: float = MIMI_FPS,
     target_sr: int = MIMI_SR,
+    batch_size: int = 64,
     checkpoint_dir: Path = None,
 ) -> np.ndarray:
-    """Extract word-level embeddings from Mimi encoder (pre-RVQ hidden states).
-
-    Mimi operates at 24kHz and outputs at 12.5Hz. LJSpeech (22050Hz) is
-    resampled to 24kHz before encoding.
-    """
+    """Extract word-level embeddings from Mimi encoder (batched, pre-RVQ hidden states)."""
     model_name = "mimi"
     logger.info(f"Loading Mimi: {model_id}")
     log_gpu_memory(f"before {model_name} load")
@@ -872,67 +895,37 @@ def extract_mimi_word_embeddings(
 
     utt_to_words = _group_by_utt(word_records)
     utt_ids = list(utt_to_words.keys())
+    audio_key = _resample_utterances(utterances, utt_ids, target_sr)
 
     checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
     start_utt, word_embeddings_list = _load_checkpoint(checkpoint_path, model_name)
     completed_words = {idx for idx, _ in word_embeddings_list}
 
-    errors = 0
-    for utt_num, utt_id in enumerate(tqdm(utt_ids[start_utt:], desc=model_name,
-                                           unit="utt", initial=start_utt,
-                                           total=len(utt_ids))):
-        utt = utterances[utt_id]
-        try:
-            audio = _resample(utt["audio"], utt["sr"], target_sr)
-            inputs = feature_extractor(
-                raw_audio=[audio], sampling_rate=target_sr,
-                return_tensors="pt", padding=True,
-            )
-            input_values = inputs["input_values"].to(device)
+    def encode(audio_arrays):
+        inputs = feature_extractor(
+            raw_audio=audio_arrays, sampling_rate=target_sr,
+            return_tensors="pt", padding=True,
+        )
+        input_values = inputs["input_values"].to(device)
+        with torch.no_grad():
+            enc_out = model.encoder(input_values)
+        if isinstance(enc_out, torch.Tensor):
+            # Channels-first (B, D, T) → transpose to (B, T, D)
+            return enc_out.float().cpu().numpy().transpose(0, 2, 1)
+        else:
+            return enc_out.last_hidden_state.float().cpu().numpy()  # (B, T, D)
 
-            with torch.no_grad():
-                enc_out = model.encoder(input_values)
-            if isinstance(enc_out, torch.Tensor):
-                # Raw Tensor: Mimi's convolutional encoder is channels-first (B, D, T).
-                # [0] gives (D, T); transpose to (T, D) for _slice_frames.
-                hidden = enc_out[0].float().cpu().numpy().T   # (T, D)
-            else:
-                # BaseModelOutput: transformers convention is (B, T, D).
-                # [0] gives (T, D) directly.
-                hidden = enc_out.last_hidden_state[0].float().cpu().numpy()  # (T, D)
-
-            for word_idx in utt_to_words[utt_id]:
-                if word_idx in completed_words:
-                    continue
-                rec = word_records[word_idx]
-                emb = _slice_frames(hidden, rec["start"], rec["end"], fps)
-                if emb is None:
-                    errors += 1
-                    continue
-                word_embeddings_list.append((word_idx, emb))
-                completed_words.add(word_idx)
-
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                _save_checkpoint(checkpoint_path, word_embeddings_list, utt_num + start_utt)
-                torch.cuda.empty_cache()
-                raise
-            errors += 1
-            logger.warning(f"Skipping utterance {utt_id}: {e}")
-        except Exception as e:
-            errors += 1
-            logger.warning(f"Skipping utterance {utt_id}: {e}")
-
-        if (utt_num + start_utt + 1) % CHECKPOINT_EVERY == 0:
-            _save_checkpoint(checkpoint_path, word_embeddings_list, utt_num + start_utt + 1)
+    errors = _run_batch_audio(
+        model_name, utt_ids, start_utt, batch_size,
+        word_records, utterances, utt_to_words, completed_words,
+        word_embeddings_list, encode, fps, checkpoint_path, audio_key,
+    )
 
     del model
     release_vram(model_name)
     _remove_checkpoint(checkpoint_path)
-
     if errors:
         logger.warning(f"{model_name}: {errors} errors")
-
     return _sort_embeddings(word_embeddings_list, len(word_records))
 
 
@@ -945,17 +938,17 @@ def extract_lm_word_embeddings(
     model_id: str,
     word_records: list[dict],
     device: torch.device,
+    batch_size: int = 32,
     checkpoint_dir: Path = None,
 ) -> np.ndarray:
-    """Extract word-level embeddings from a causal LM.
+    """Extract word-level embeddings from a causal LM (batched).
 
-    For each sentence: tokenize with offset mapping, run through the model,
-    then find which tokens correspond to each target word by character offset
-    and mean-pool their hidden states.
+    Processes utterances in batches: tokenizes B sentences together with
+    padding, runs one forward pass, then uses per-sentence offset mappings
+    to locate each word's tokens and mean-pools their hidden states.
 
     Context is preserved — the model sees the full sentence, not the word
-    in isolation. This means the same word will have different embeddings
-    depending on its surrounding context, which is what we want.
+    in isolation.
     """
     logger.info(f"Loading LM: {model_id}")
     log_gpu_memory(f"before {model_name} load")
@@ -975,77 +968,77 @@ def extract_lm_word_embeddings(
         tokenizer.pad_token = tokenizer.eos_token
     log_gpu_memory(f"after {model_name} load")
 
-    # Group word records by sentence to avoid re-running the model per word
     utt_to_words = _group_by_utt(word_records)
     utt_ids = list(utt_to_words.keys())
+    N_utt = len(utt_ids)
 
     checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
     start_utt, word_embeddings_list = _load_checkpoint(checkpoint_path, model_name)
     completed_words = {idx for idx, _ in word_embeddings_list}
 
     errors = 0
-    for utt_num, utt_id in enumerate(tqdm(utt_ids[start_utt:], desc=model_name,
-                                           unit="utt", initial=start_utt,
-                                           total=len(utt_ids))):
-        # All words in this utterance share the same sentence
-        word_indices = utt_to_words[utt_id]
-        sentence = word_records[word_indices[0]]["sentence"]
+    pbar = tqdm(range(start_utt, N_utt, batch_size), desc=model_name,
+                unit="batch", total=(N_utt - start_utt + batch_size - 1) // batch_size)
+
+    for batch_start in pbar:
+        batch_ids = utt_ids[batch_start : batch_start + batch_size]
+        sentences = [word_records[utt_to_words[uid][0]]["sentence"] for uid in batch_ids]
 
         try:
             enc = tokenizer(
-                sentence,
+                sentences,
                 return_tensors="pt",
                 truncation=True,
                 max_length=MAX_TEXT_TOKENS,
+                padding=True,
                 return_offsets_mapping=True,
             )
-            offset_mapping = enc.pop("offset_mapping")[0].tolist()  # [(char_s, char_e), ...]
+            # offset_mapping: (B, T, 2) — padding tokens have (0, 0)
+            offset_mapping = enc.pop("offset_mapping").tolist()
             input_ids      = enc["input_ids"].to(device)
             attention_mask = enc["attention_mask"].to(device)
 
             with torch.no_grad():
                 out = model(input_ids=input_ids, attention_mask=attention_mask,
                             output_hidden_states=True)
-            # hidden: (1, T_tokens, D) → (T_tokens, D)
-            hidden = out.hidden_states[-1][0].float().cpu().numpy()
+            hidden_batch = out.hidden_states[-1].float().cpu().numpy()  # (B, T, D)
 
-            for word_idx in word_indices:
-                if word_idx in completed_words:
-                    continue
-                rec = word_records[word_idx]
-                char_s, char_e = rec["char_start"], rec["char_end"]
-
-                if char_s < 0:
-                    # Word not found in sentence during build_word_records
-                    errors += 1
-                    continue
-
-                # Find tokens whose character span overlaps with [char_s, char_e)
-                token_indices = [
-                    t for t, (ts, te) in enumerate(offset_mapping)
-                    if ts < char_e and te > char_s and ts < te
-                ]
-                if not token_indices:
-                    errors += 1
-                    continue
-
-                emb = hidden[token_indices].mean(axis=0)  # (D,)
-                word_embeddings_list.append((word_idx, emb))
-                completed_words.add(word_idx)
+            for b, utt_id in enumerate(batch_ids):
+                hidden = hidden_batch[b]    # (T, D)
+                om     = offset_mapping[b]  # [(ts, te), ...]
+                for word_idx in utt_to_words[utt_id]:
+                    if word_idx in completed_words:
+                        continue
+                    rec = word_records[word_idx]
+                    char_s, char_e = rec["char_start"], rec["char_end"]
+                    if char_s < 0:
+                        errors += 1
+                        continue
+                    token_indices = [
+                        t for t, (ts, te) in enumerate(om)
+                        if ts < char_e and te > char_s and ts < te
+                    ]
+                    if not token_indices:
+                        errors += 1
+                        continue
+                    emb = hidden[token_indices].mean(axis=0)
+                    word_embeddings_list.append((word_idx, emb))
+                    completed_words.add(word_idx)
 
         except RuntimeError as e:
             if "out of memory" in str(e).lower():
-                _save_checkpoint(checkpoint_path, word_embeddings_list, utt_num + start_utt)
+                _save_checkpoint(checkpoint_path, word_embeddings_list, batch_start)
                 torch.cuda.empty_cache()
                 raise
             errors += 1
-            logger.warning(f"Skipping utterance {utt_id}: {e}")
+            logger.warning(f"Skipping batch at utt {batch_start}: {e}")
         except Exception as e:
             errors += 1
-            logger.warning(f"Skipping utterance {utt_id}: {e}")
+            logger.warning(f"Skipping batch at utt {batch_start}: {e}")
 
-        if (utt_num + start_utt + 1) % CHECKPOINT_EVERY == 0:
-            _save_checkpoint(checkpoint_path, word_embeddings_list, utt_num + start_utt + 1)
+        next_utt = batch_start + batch_size
+        if next_utt % (CHECKPOINT_EVERY * batch_size) < batch_size:
+            _save_checkpoint(checkpoint_path, word_embeddings_list, next_utt)
 
     del model
     release_vram(model_name)
@@ -1333,6 +1326,14 @@ def parse_args():
                    help="Cap total word records (useful for testing)")
     p.add_argument("--batch_size", default=2048, type=int,
                    help="Minibatch size for CKA computation")
+    p.add_argument("--whisper_batch_size", default=64, type=int,
+                   help="Number of utterances per batch for Whisper encoder extraction")
+    p.add_argument("--parakeet_batch_size", default=32, type=int,
+                   help="Number of utterances per batch for Parakeet extraction")
+    p.add_argument("--mimi_batch_size", default=64, type=int,
+                   help="Number of utterances per batch for Mimi extraction")
+    p.add_argument("--lm_batch_size", default=32, type=int,
+                   help="Number of utterances per batch for LM extraction")
     p.add_argument("--skip_extraction", action="store_true",
                    help="Skip extraction even if no cache exists")
     p.add_argument("--pca_components", default=50, type=int)
@@ -1438,24 +1439,28 @@ def main():
                     emb = extract_whisper_enc_word_embeddings(
                         model_name, cfg["hf_id"], word_records, utterances,
                         device, fps=cfg["fps"], target_sr=cfg["target_sr"],
+                        batch_size=args.whisper_batch_size,
                         checkpoint_dir=data_dir,
                     )
                 elif modality == "audio-parakeet":
                     emb = extract_parakeet_word_embeddings(
                         cfg["hf_id"], word_records, utterances,
                         device, fps=cfg["fps"], target_sr=cfg["target_sr"],
+                        batch_size=args.parakeet_batch_size,
                         checkpoint_dir=data_dir,
                     )
                 elif modality == "audio-mimi":
                     emb = extract_mimi_word_embeddings(
                         cfg["hf_id"], word_records, utterances,
                         device, fps=cfg["fps"], target_sr=cfg["target_sr"],
+                        batch_size=args.mimi_batch_size,
                         checkpoint_dir=data_dir,
                     )
                 else:  # text
                     emb = extract_lm_word_embeddings(
                         model_name, cfg["hf_id"], word_records,
-                        device, checkpoint_dir=data_dir,
+                        device, batch_size=args.lm_batch_size,
+                        checkpoint_dir=data_dir,
                     )
             except Exception as e:
                 logger.error(f"Extraction failed for {model_name}: {e}. Skipping.")
