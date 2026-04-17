@@ -1037,21 +1037,13 @@ def extract_mimi_embeddings(
                 # Older transformers versions return a raw Tensor; newer ones
                 # return a BaseModelOutput with .last_hidden_state.
                 if isinstance(enc_out, torch.Tensor):
-                    last_hidden = enc_out
+                    # Raw Tensor: Mimi's convolutional encoder is channels-first (B, D, T).
+                    # Pool over dim=-1 (time) to get (B, D).
+                    emb = enc_out.float().mean(dim=-1).cpu().numpy()   # (B, D)
                 else:
-                    last_hidden = enc_out.last_hidden_state
-
-            # Mimi's convolutional encoder returns channels-first: (B, D, T).
-            # Mean-pool over the time axis (dim=-1) to get (B, D).
-            # (If a future transformers version returns (B, T, D) instead,
-            # pooling over dim=1 would give the same result since D is fixed.)
-            h = last_hidden.float()
-            if h.ndim == 3 and h.shape[1] < h.shape[2]:
-                # (B, D, T) — time is the last axis
-                emb = h.mean(dim=-1).cpu().numpy()   # (B, D)
-            else:
-                # (B, T, D) — time is the middle axis
-                emb = h.mean(dim=1).cpu().numpy()    # (B, D)
+                    # BaseModelOutput: transformers convention is (B, T, D).
+                    # Pool over dim=1 (time) to get (B, D).
+                    emb = enc_out.last_hidden_state.float().mean(dim=1).cpu().numpy()  # (B, D)
 
             if not np.isfinite(emb).all():
                 n_bad = (~np.isfinite(emb)).sum()

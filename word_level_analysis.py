@@ -353,6 +353,10 @@ def build_word_records(
 
         sentence = utt["text"].lower()  # LJSpeech normalized_text is uppercase; lowercase for matching
 
+        # Track how many times each word has appeared so far in this utterance
+        # so that _find_word_in_sentence finds the correct occurrence (not always the first).
+        word_occurrence_count: dict[str, int] = {}
+
         for wi in word_intervals:
             word = wi["word"].lower()
             dur  = wi["end"] - wi["start"]
@@ -365,9 +369,11 @@ def build_word_records(
             if sum(c.isalpha() for c in word) < MIN_WORD_ALPHA:
                 continue
 
-            # Find character position of this word in the sentence
-            # Search from left; use word boundaries to avoid partial matches
-            char_start, char_end = _find_word_in_sentence(word, sentence)
+            # Find the Nth occurrence of this word in the sentence, where N is
+            # how many times it has already appeared in this utterance's TextGrid.
+            occ = word_occurrence_count.get(word, 0)
+            word_occurrence_count[word] = occ + 1
+            char_start, char_end = _find_word_in_sentence(word, sentence, occurrence=occ)
 
             records.append({
                 "utt_id":     utt_id,
@@ -389,18 +395,36 @@ def build_word_records(
     return records
 
 
-def _find_word_in_sentence(word: str, sentence: str) -> tuple[int, int]:
-    """Return (char_start, char_end) of word in sentence, or (-1, -1) if not found."""
-    # Try exact match first
-    idx = sentence.find(word)
-    if idx >= 0:
-        return idx, idx + len(word)
-    # Try stripping punctuation from the word
+def _find_word_in_sentence(word: str, sentence: str, occurrence: int = 0) -> tuple[int, int]:
+    """Return (char_start, char_end) of the nth occurrence (0-indexed) of word in sentence.
+
+    Uses regex word boundaries to avoid matching substrings (e.g. "the" inside "there").
+    Falls back to punctuation-stripped form if no boundary match is found.
+    Returns (-1, -1) if the word is not found.
+    """
+    def _nth_match(pattern: str, text: str, n: int) -> tuple[int, int]:
+        matches = list(re.finditer(pattern, text))
+        if n < len(matches):
+            m = matches[n]
+            return m.start(), m.end()
+        # Occurrence n not found; fall back to last available match
+        if matches:
+            m = matches[-1]
+            return m.start(), m.end()
+        return -1, -1
+
+    # Try word-boundary match
+    start, end = _nth_match(r'\b' + re.escape(word) + r'\b', sentence, occurrence)
+    if start >= 0:
+        return start, end
+
+    # Try stripping punctuation from the word (e.g. "it's" → "its")
     clean = re.sub(r"[^a-z']", "", word)
-    if clean:
-        idx = sentence.find(clean)
-        if idx >= 0:
-            return idx, idx + len(clean)
+    if clean and clean != word:
+        start, end = _nth_match(r'\b' + re.escape(clean) + r'\b', sentence, occurrence)
+        if start >= 0:
+            return start, end
+
     return -1, -1
 
 
@@ -691,10 +715,13 @@ def extract_mimi_word_embeddings(
             with torch.no_grad():
                 enc_out = model.encoder(input_values)
             if isinstance(enc_out, torch.Tensor):
-                last_hidden = enc_out
+                # Raw Tensor: Mimi's convolutional encoder is channels-first (B, D, T).
+                # [0] gives (D, T); transpose to (T, D) for _slice_frames.
+                hidden = enc_out[0].float().cpu().numpy().T   # (T, D)
             else:
-                last_hidden = enc_out.last_hidden_state   # (1, T, D)
-            hidden = last_hidden[0].float().cpu().numpy()  # (T, D)
+                # BaseModelOutput: transformers convention is (B, T, D).
+                # [0] gives (T, D) directly.
+                hidden = enc_out.last_hidden_state[0].float().cpu().numpy()  # (T, D)
 
             for word_idx in utt_to_words[utt_id]:
                 if word_idx in completed_words:
