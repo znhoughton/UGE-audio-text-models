@@ -275,15 +275,18 @@ def ensure_ljspeech(ljspeech_dir: Path) -> Path:
 
     Returns the path to the LJSpeech-1.1 root (contains metadata.csv and wavs/).
     """
+    def _has_wavs(d: Path) -> bool:
+        return (d / "metadata.csv").exists() and (d / "wavs").is_dir() and any((d / "wavs").glob("*.wav"))
+
     # If directory already has metadata.csv and a populated wavs/, we're done
-    if (ljspeech_dir / "metadata.csv").exists() and any((ljspeech_dir / "wavs").glob("*.wav")):
+    if _has_wavs(ljspeech_dir):
         n_wavs = sum(1 for _ in (ljspeech_dir / "wavs").glob("*.wav"))
         logger.info(f"Found LJSpeech at {ljspeech_dir} ({n_wavs:,} wav files)")
         return ljspeech_dir
 
     # Check one level up in case the tarball extracted to a subdirectory
     candidate = ljspeech_dir / "LJSpeech-1.1"
-    if (candidate / "metadata.csv").exists() and any((candidate / "wavs").glob("*.wav")):
+    if _has_wavs(candidate):
         logger.info(f"Found LJSpeech at {candidate}")
         return candidate
 
@@ -309,7 +312,10 @@ def ensure_ljspeech(ljspeech_dir: Path) -> Path:
     logger.info(f"Extracting {tarball} ...")
     try:
         with tarfile.open(tarball, "r:bz2") as tf:
-            tf.extractall(ljspeech_dir)
+            try:
+                tf.extractall(ljspeech_dir, filter="data")  # Python 3.12+ safe extraction
+            except TypeError:
+                tf.extractall(ljspeech_dir)                 # Python < 3.12 fallback
     except Exception as e:
         raise RuntimeError(f"Failed to extract {tarball}: {e}")
 
