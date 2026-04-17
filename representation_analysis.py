@@ -1666,13 +1666,18 @@ def minibatch_cka(
     Y: np.ndarray,
     batch_size: int = MINIBATCH_SIZE,
     seed: int = MINIBATCH_SEED,
-) -> float:
+) -> tuple[float, float]:
     """Minibatch linear CKA using the debiased HSIC estimator.
 
     Uses the Szekely & Rizzo (2014) kernel centering as recommended by
     Kornblith et al. (2019) and Murphy et al. (2024) to avoid inflated
     similarity scores in the high-dimensionality regime.
     Minibatch accumulation follows Nguyen, Raghu & Kornblith (2021).
+
+    Returns (cka_score, hsic_xy_std) where hsic_xy_std is the standard
+    deviation of per-minibatch HSIC(X,Y) values — a measure of how
+    consistently the cross-model similarity holds across different subsets
+    of utterances.
     """
     N = X.shape[0]
     rng = np.random.default_rng(seed)
@@ -1695,11 +1700,14 @@ def minibatch_cka(
         Xb /= np.linalg.norm(Xb, axis=1, keepdims=True) + 1e-10
         Yb /= np.linalg.norm(Yb, axis=1, keepdims=True) + 1e-10
         denom = np.sqrt(max(_hsic1_batch(Xb, Xb), 0.0) * max(_hsic1_batch(Yb, Yb), 0.0))
-        return float(_hsic1_batch(Xb, Yb) / denom) if denom > 1e-10 else 0.0
+        score = float(_hsic1_batch(Xb, Yb) / denom) if denom > 1e-10 else 0.0
+        return score, 0.0
 
     mean_xy = float(np.mean(hsic_xy))
+    std_xy = float(np.std(hsic_xy))
     denom = np.sqrt(max(float(np.mean(hsic_xx)), 0.0) * max(float(np.mean(hsic_yy)), 0.0))
-    return float(mean_xy / denom) if denom > 1e-10 else 0.0
+    score = float(mean_xy / denom) if denom > 1e-10 else 0.0
+    return score, std_xy
 
 
 def cka_stability_check(
@@ -1715,7 +1723,7 @@ def cka_stability_check(
     rng = np.random.default_rng(MINIBATCH_SEED + 999)
     for i in range(n_subsets):
         idx = rng.choice(N, size=k, replace=False)
-        scores.append(minibatch_cka(X[idx], Y[idx], batch_size=batch_size, seed=i))
+        scores.append(minibatch_cka(X[idx], Y[idx], batch_size=batch_size, seed=i)[0])
     return {
         "mean": float(np.mean(scores)),
         "std": float(np.std(scores)),
@@ -2049,6 +2057,7 @@ def plot_stability(stability_results: dict, plots_dir: Path):
 
 def save_summary_tables(
     cka_matrix: np.ndarray,
+    cka_results: dict,
     names: list,
     eigenvalues: dict,
     embeddings: dict,
@@ -2094,9 +2103,17 @@ def save_summary_tables(
             ])
     logger.info(f"  Saved → {path3}")
 
+    path4 = data_dir / "cka_minibatch_std.csv"
+    with open(path4, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["pair", "cka_score", "hsic_std"])
+        for pair, vals in cka_results.items():
+            w.writerow([pair, f"{vals['score']:.6f}", f"{vals['hsic_std']:.6f}"])
+    logger.info(f"  Saved → {path4}")
+
     if stability_results:
-        path4 = data_dir / "cka_stability.csv"
-        with open(path4, "w", newline="") as f:
+        path5 = data_dir / "cka_stability.csv"
+        with open(path5, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["pair", "cka_mean", "cka_std", "cka_min", "cka_max", "unstable"])
             for pair, stats in stability_results.items():
@@ -2106,7 +2123,7 @@ def save_summary_tables(
                     f"{min(scores):.6f}", f"{max(scores):.6f}",
                     "yes" if stats["std"] > 0.03 else "no",
                 ])
-        logger.info(f"  Saved → {path4}")
+        logger.info(f"  Saved → {path5}")
 
 
 def print_summary(cka_matrix: np.ndarray, names: list, stability_results: dict):
@@ -2386,12 +2403,12 @@ def main():
                     cka_matrix[i, j] = cka_matrix[j, i]
                     continue
                 t_pair = time.perf_counter()
-                score = minibatch_cka(embeddings[names[i]], embeddings[names[j]],
-                                      batch_size=args.batch_size)
+                score, hsic_std = minibatch_cka(embeddings[names[i]], embeddings[names[j]],
+                                                batch_size=args.batch_size)
                 cka_matrix[i, j] = score
                 key = f"{names[i]} vs {names[j]}"
-                cka_results[key] = score
-                logger.info(f"  CKA({names[i]}, {names[j]}) = {score:.4f}  ({time.perf_counter()-t_pair:.1f}s)")
+                cka_results[key] = {"score": score, "hsic_std": hsic_std}
+                logger.info(f"  CKA({names[i]}, {names[j]}) = {score:.4f}  (hsic_std={hsic_std:.4f}, {time.perf_counter()-t_pair:.1f}s)")
                 pair_bar.update(1)
         pair_bar.close()
 
@@ -2432,7 +2449,7 @@ def main():
     logger.info("Saving summary tables")
     logger.info("=" * 60)
     with timer("Save tables"):
-        save_summary_tables(cka_matrix, names, eigenvalues, embeddings,
+        save_summary_tables(cka_matrix, cka_results, names, eigenvalues, embeddings,
                             stability_results, data_dir)
 
     results_json = {
