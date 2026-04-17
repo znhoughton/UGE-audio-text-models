@@ -1654,6 +1654,10 @@ def _hsic1_batch(X: np.ndarray, Y: np.ndarray) -> float:
     term1 = np.trace(KL)                                                    # K·L
     term2 = (ones @ K @ ones) * (ones @ L @ ones) / ((n - 1) * (n - 2))   # +mean_K·mean_L  (grand mean added back)
     term3 = 2.0 / (n - 2) * (ones @ KL @ ones)                             # -(K·mean_L + mean_K·L)
+    # Dividing by n(n-3) makes the estimator unbiased — analogous to dividing
+    # by n-1 in sample variance. Double-centering consumes 3 degrees of freedom
+    # (row mean, column mean, grand mean), so the effective sample size is
+    # n(n-3) rather than n².
     return float((term1 + term2 - term3) / (n * (n - 3)))
 
 
