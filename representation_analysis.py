@@ -1644,9 +1644,11 @@ def _hsic1_batch(X: np.ndarray, Y: np.ndarray) -> float:
     np.fill_diagonal(L, 0.0)
     KL = K @ L
     ones = np.ones(n)
-    term1 = np.trace(KL)
-    term2 = (ones @ K @ ones) * (ones @ L @ ones) / ((n - 1) * (n - 2))
-    term3 = 2.0 / (n - 2) * (ones @ KL @ ones)
+    # Expanding (K - mean_K)(L - mean_L) = K·L - K·mean_L - mean_K·L + mean_K·mean_L
+    # gives three correction terms:
+    term1 = np.trace(KL)                                                    # K·L
+    term2 = (ones @ K @ ones) * (ones @ L @ ones) / ((n - 1) * (n - 2))   # +mean_K·mean_L
+    term3 = 2.0 / (n - 2) * (ones @ KL @ ones)                             # -(K·mean_L + mean_K·L)
     return float((term1 + term2 - term3) / (n * (n - 3)))
 
 
