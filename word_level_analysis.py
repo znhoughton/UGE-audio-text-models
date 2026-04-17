@@ -23,19 +23,22 @@ Data:
                     e.g. from https://www.kaggle.com/datasets/b09901026skho/ljspeech-textgrid
 
 Usage:
+  python word_level_analysis.py                              # fully automatic (downloads everything)
   python word_level_analysis.py --ljspeech_dir /path/to/LJSpeech-1.1
   python word_level_analysis.py --ljspeech_dir /path/to/LJSpeech-1.1 --max_words 50000
-  python word_level_analysis.py --ljspeech_dir /path/to/LJSpeech-1.1 --textgrid_dir /path/to/textgrids
 
 Auto-download:
-  If --textgrid_dir is omitted (or the directory has < 100 .TextGrid files), the script
-  downloads from Kaggle automatically. Requires:
-    pip install kaggle
-    # Place ~/.kaggle/kaggle.json with your API token (from kaggle.com/settings → API)
+  LJSpeech:  if --ljspeech_dir is omitted, downloads LJSpeech-1.1 (~2.6 GB) from
+             https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2
+  TextGrids: if --textgrid_dir is omitted, downloads from Kaggle. Requires:
+               pip install kaggle
+               # Place ~/.kaggle/kaggle.json with your API token
 """
 
 import argparse
 import csv
+import tarfile
+import urllib.request
 import gc
 import json
 import logging
@@ -258,6 +261,69 @@ def get_device() -> torch.device:
         return torch.device("cuda")
     logger.warning("No GPU detected — running on CPU (will be very slow)")
     return torch.device("cpu")
+
+
+# ---------------------------------------------------------------------------
+# LJSpeech auto-download
+# ---------------------------------------------------------------------------
+
+LJSPEECH_URL = "https://data.keithito.com/data/speech/LJSpeech-1.1.tar.bz2"
+
+
+def ensure_ljspeech(ljspeech_dir: Path) -> Path:
+    """Ensure LJSpeech-1.1 is present, downloading and extracting if needed.
+
+    Returns the path to the LJSpeech-1.1 root (contains metadata.csv and wavs/).
+    """
+    # If directory already has metadata.csv and a populated wavs/, we're done
+    if (ljspeech_dir / "metadata.csv").exists() and any((ljspeech_dir / "wavs").glob("*.wav")):
+        n_wavs = sum(1 for _ in (ljspeech_dir / "wavs").glob("*.wav"))
+        logger.info(f"Found LJSpeech at {ljspeech_dir} ({n_wavs:,} wav files)")
+        return ljspeech_dir
+
+    # Check one level up in case the tarball extracted to a subdirectory
+    candidate = ljspeech_dir / "LJSpeech-1.1"
+    if (candidate / "metadata.csv").exists() and any((candidate / "wavs").glob("*.wav")):
+        logger.info(f"Found LJSpeech at {candidate}")
+        return candidate
+
+    ljspeech_dir.mkdir(parents=True, exist_ok=True)
+    tarball = ljspeech_dir / "LJSpeech-1.1.tar.bz2"
+
+    if not tarball.exists():
+        logger.info(f"Downloading LJSpeech-1.1 (~2.6 GB) from {LJSPEECH_URL} ...")
+        try:
+            def _progress(block_num, block_size, total_size):
+                if total_size > 0:
+                    pct = min(100.0, block_num * block_size / total_size * 100)
+                    if block_num % 500 == 0:
+                        logger.info(f"  Download progress: {pct:.1f}%")
+            urllib.request.urlretrieve(LJSPEECH_URL, tarball, reporthook=_progress)
+        except Exception as e:
+            raise RuntimeError(
+                f"LJSpeech download failed: {e}\n"
+                f"Download manually from {LJSPEECH_URL}\n"
+                f"and extract to {ljspeech_dir}, then pass --ljspeech_dir to the script."
+            )
+
+    logger.info(f"Extracting {tarball} ...")
+    try:
+        with tarfile.open(tarball, "r:bz2") as tf:
+            tf.extractall(ljspeech_dir)
+    except Exception as e:
+        raise RuntimeError(f"Failed to extract {tarball}: {e}")
+
+    tarball.unlink()   # remove the tarball to save ~2.6 GB
+
+    # After extraction, LJSpeech-1.1/ should be a subdirectory
+    if (candidate / "metadata.csv").exists():
+        logger.info(f"LJSpeech ready at {candidate}")
+        return candidate
+
+    raise RuntimeError(
+        f"Extraction completed but metadata.csv not found under {ljspeech_dir}.\n"
+        f"Check the contents of {ljspeech_dir} and pass the correct path with --ljspeech_dir."
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1251,9 +1317,10 @@ def parse_args():
                    help="Directory containing .TextGrid files (one per LJSpeech utterance). "
                         "If omitted, defaults to <root_dir>/WordData/textgrids and the script "
                         "will attempt to download from Kaggle automatically.")
-    p.add_argument("--ljspeech_dir", required=True, type=Path,
-                   help="Path to the LJSpeech-1.1 root directory "
-                        "(must contain metadata.csv and wavs/)")
+    p.add_argument("--ljspeech_dir", default=None, type=Path,
+                   help="Path to the LJSpeech-1.1 root directory (must contain metadata.csv "
+                        "and wavs/). If omitted, defaults to <root_dir>/WordData/LJSpeech-1.1 "
+                        "and downloads automatically if not present.")
     p.add_argument("--root_dir", default=".", type=Path,
                    help="Root directory for WordData/, WordPlots/, logs/")
     p.add_argument("--max_words", default=None, type=int,
@@ -1291,6 +1358,13 @@ def main():
     # ------------------------------------------------------------------
     # 0. Ensure TextGrids are present (download from Kaggle if needed)
     # ------------------------------------------------------------------
+    ljspeech_dir = args.ljspeech_dir or (data_dir / "LJSpeech-1.1")
+    try:
+        ljspeech_dir = ensure_ljspeech(ljspeech_dir)
+    except RuntimeError as e:
+        logger.error(str(e))
+        sys.exit(1)
+
     textgrid_dir = args.textgrid_dir or (data_dir / "textgrids")
     try:
         textgrid_dir = ensure_textgrids(textgrid_dir)
@@ -1312,10 +1386,10 @@ def main():
             word_records = json.load(f)
         logger.info(f"Loaded {len(word_records):,} word records")
         # Still need utterances for audio extraction
-        utterances = load_ljspeech(args.ljspeech_dir)
+        utterances = load_ljspeech(ljspeech_dir)
     else:
         with timer("Load LJSpeech"):
-            utterances = load_ljspeech(args.ljspeech_dir)
+            utterances = load_ljspeech(ljspeech_dir)
         with timer("Build word records"):
             word_records = build_word_records(
                 utterances, textgrid_dir,
