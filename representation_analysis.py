@@ -1147,24 +1147,16 @@ def extract_voxtral_embeddings(
         try:
             audio_arrays = _decode_audio_batch(batch)
 
-            # Voxtral's processor wraps WhisperFeatureExtractor internally,
-            # which requires the audio under the key 'raw_speech'.
-            try:
-                inputs = processor(
-                    raw_speech=audio_arrays,
-                    sampling_rate=SAMPLE_RATE,
-                    return_tensors="pt",
-                    padding=True,
-                )
-            except TypeError:
-                # Fallback: pass positionally in case the outer processor
-                # dispatches differently.
-                inputs = processor(
-                    audio_arrays,
-                    sampling_rate=SAMPLE_RATE,
-                    return_tensors="pt",
-                    padding=True,
-                )
+            # VoxtralProcessor.__call__ only accepts text; audio must be
+            # passed via apply_transcription_request which wraps the audio
+            # into the expected multimodal input format.
+            inputs = processor.apply_transcription_request(
+                audio=audio_arrays,
+                model_id=model_id,
+                sampling_rate=SAMPLE_RATE,
+                return_tensors="pt",
+                padding=True,
+            )
 
             # Move all tensor inputs to the first-layer device
             inputs = {
