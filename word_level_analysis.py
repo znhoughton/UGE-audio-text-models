@@ -786,7 +786,7 @@ def extract_whisper_enc_word_embeddings(
 
     def encode(audio_arrays):
         inputs = processor(audio_arrays, sampling_rate=target_sr,
-                           return_tensors="pt", padding=True)
+                           return_tensors="pt", padding="max_length")
         features = inputs["input_features"].to(device, dtype=torch.float16)
         with torch.no_grad():
             enc_out = model.encoder(features, output_hidden_states=False)
