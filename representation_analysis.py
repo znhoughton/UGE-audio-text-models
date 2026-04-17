@@ -1039,11 +1039,19 @@ def extract_mimi_embeddings(
                 if isinstance(enc_out, torch.Tensor):
                     last_hidden = enc_out
                 else:
-                    last_hidden = enc_out.last_hidden_state   # (B, T_frames, D)
+                    last_hidden = enc_out.last_hidden_state
 
-            # Mean-pool over time frames (unmasked; padding is a tiny fraction
-            # at this batch size with variable-length audio).
-            emb = last_hidden.float().mean(dim=1).cpu().numpy()   # (B, D)
+            # Mimi's convolutional encoder returns channels-first: (B, D, T).
+            # Mean-pool over the time axis (dim=-1) to get (B, D).
+            # (If a future transformers version returns (B, T, D) instead,
+            # pooling over dim=1 would give the same result since D is fixed.)
+            h = last_hidden.float()
+            if h.ndim == 3 and h.shape[1] < h.shape[2]:
+                # (B, D, T) — time is the last axis
+                emb = h.mean(dim=-1).cpu().numpy()   # (B, D)
+            else:
+                # (B, T, D) — time is the middle axis
+                emb = h.mean(dim=1).cpu().numpy()    # (B, D)
 
             if not np.isfinite(emb).all():
                 n_bad = (~np.isfinite(emb)).sum()
