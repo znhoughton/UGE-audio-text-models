@@ -1479,6 +1479,43 @@ def main():
     logger.info(f"Models with embeddings: {names}")
 
     # ------------------------------------------------------------------
+    # 2b. Align embeddings — keep only words all models could embed
+    # ------------------------------------------------------------------
+    # Words where any model produced a zero vector (failed to extract) are
+    # excluded so that all models are compared on exactly the same set.
+    if embeddings:
+        valid_mask = np.ones(N, dtype=bool)
+        for name, emb in embeddings.items():
+            valid_mask &= np.linalg.norm(emb, axis=1) > 1e-10
+
+        n_valid    = int(valid_mask.sum())
+        n_dropped  = N - n_valid
+        frac_dropped = n_dropped / N
+
+        logger.info(
+            f"Word alignment: {n_valid:,} / {N:,} words valid across all models "
+            f"({n_dropped:,} dropped, {frac_dropped:.2%})"
+        )
+
+        if frac_dropped > 0.02:
+            raise RuntimeError(
+                f"{frac_dropped:.2%} of words ({n_dropped:,} / {N:,}) were dropped "
+                f"during alignment — exceeds the 2% threshold. "
+                f"Investigate word record / embedding mismatches before proceeding.\n"
+                f"Per-model zero counts:\n" +
+                "\n".join(
+                    f"  {name}: {int((np.linalg.norm(emb, axis=1) <= 1e-10).sum()):,} zeros"
+                    for name, emb in embeddings.items()
+                )
+            )
+
+        if n_dropped > 0:
+            for name in list(embeddings.keys()):
+                embeddings[name] = embeddings[name][valid_mask]
+            N = n_valid
+            logger.info(f"All embedding matrices trimmed to {N:,} aligned words")
+
+    # ------------------------------------------------------------------
     # 3. PCA eigenvalue analysis
     # ------------------------------------------------------------------
     logger.info("=" * 60)
