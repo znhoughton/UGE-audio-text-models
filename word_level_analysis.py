@@ -23,10 +23,9 @@ Data:
                     e.g. from https://www.kaggle.com/datasets/b09901026skho/ljspeech-textgrid
 
 Usage:
-  python word_level_analysis.py                              # auto-downloads TextGrids from Kaggle
-  python word_level_analysis.py --textgrid_dir /path/to/textgrids
-  python word_level_analysis.py --textgrid_dir /path/to/textgrids --max_words 50000
-  python word_level_analysis.py --textgrid_dir /path/to/textgrids --skip_extraction
+  python word_level_analysis.py --ljspeech_dir /path/to/LJSpeech-1.1
+  python word_level_analysis.py --ljspeech_dir /path/to/LJSpeech-1.1 --max_words 50000
+  python word_level_analysis.py --ljspeech_dir /path/to/LJSpeech-1.1 --textgrid_dir /path/to/textgrids
 
 Auto-download:
   If --textgrid_dir is omitted (or the directory has < 100 .TextGrid files), the script
@@ -60,7 +59,6 @@ import torchaudio
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 from matplotlib.colors import LinearSegmentedColormap
-from datasets import load_dataset
 from tqdm import tqdm
 from transformers import (
     AutoFeatureExtractor,
@@ -386,20 +384,44 @@ def parse_textgrid(path: Path) -> list[dict]:
 # Data loading: LJSpeech + TextGrids
 # ---------------------------------------------------------------------------
 
-def load_ljspeech(hf_name: str = "keithito/lj_speech") -> dict:
-    """Load LJSpeech from HuggingFace. Returns dict: utt_id → {audio, sr, text}."""
-    logger.info(f"Loading LJSpeech from {hf_name}...")
-    ds = load_dataset(hf_name, split="train", trust_remote_code=True)
+def load_ljspeech(ljspeech_dir: str) -> dict:
+    """Load LJSpeech from a local directory. Returns dict: utt_id → {audio, sr, text}.
+
+    Expects the standard LJSpeech-1.1 layout:
+      <ljspeech_dir>/metadata.csv          (id|text|normalized_text, pipe-separated)
+      <ljspeech_dir>/wavs/LJ001-0001.wav   (22050 Hz mono WAV)
+    """
+    ljspeech_dir = Path(ljspeech_dir)
+    metadata_path = ljspeech_dir / "metadata.csv"
+    wavs_dir      = ljspeech_dir / "wavs"
+
+    if not metadata_path.exists():
+        raise FileNotFoundError(
+            f"metadata.csv not found in {ljspeech_dir}. "
+            "Pass the path to the LJSpeech-1.1 root directory via --ljspeech_dir."
+        )
+
+    logger.info(f"Loading LJSpeech from {ljspeech_dir}...")
     utterances = {}
-    for sample in tqdm(ds, desc="Loading LJSpeech", unit="utt"):
-        utt_id = sample["id"]
-        audio_info = sample["audio"]
-        # audio_info is {"array": np.ndarray, "sampling_rate": int}
-        utterances[utt_id] = {
-            "audio":  np.array(audio_info["array"], dtype=np.float32),
-            "sr":     int(audio_info["sampling_rate"]),
-            "text":   sample.get("normalized_text", sample.get("text", "")),
-        }
+    with open(metadata_path, encoding="utf-8") as f:
+        for line in tqdm(f, desc="Loading LJSpeech", unit="utt"):
+            line = line.rstrip("\n")
+            parts = line.split("|")
+            if len(parts) < 2:
+                continue
+            utt_id   = parts[0]
+            # metadata.csv columns: id | text | normalized_text (normalized may be absent)
+            text = parts[2] if len(parts) >= 3 and parts[2] else parts[1]
+
+            wav_path = wavs_dir / f"{utt_id}.wav"
+            if not wav_path.exists():
+                continue
+
+            waveform, sr = torchaudio.load(str(wav_path))
+            audio = waveform.squeeze(0).numpy().astype(np.float32)
+
+            utterances[utt_id] = {"audio": audio, "sr": int(sr), "text": text.lower()}
+
     logger.info(f"Loaded {len(utterances)} LJSpeech utterances")
     return utterances
 
@@ -1229,8 +1251,9 @@ def parse_args():
                    help="Directory containing .TextGrid files (one per LJSpeech utterance). "
                         "If omitted, defaults to <root_dir>/WordData/textgrids and the script "
                         "will attempt to download from Kaggle automatically.")
-    p.add_argument("--ljspeech_name", default="keithito/lj_speech",
-                   help="HuggingFace dataset name for LJSpeech (default: keithito/lj_speech)")
+    p.add_argument("--ljspeech_dir", required=True, type=Path,
+                   help="Path to the LJSpeech-1.1 root directory "
+                        "(must contain metadata.csv and wavs/)")
     p.add_argument("--root_dir", default=".", type=Path,
                    help="Root directory for WordData/, WordPlots/, logs/")
     p.add_argument("--max_words", default=None, type=int,
@@ -1289,10 +1312,10 @@ def main():
             word_records = json.load(f)
         logger.info(f"Loaded {len(word_records):,} word records")
         # Still need utterances for audio extraction
-        utterances = load_ljspeech(args.ljspeech_name)
+        utterances = load_ljspeech(args.ljspeech_dir)
     else:
         with timer("Load LJSpeech"):
-            utterances = load_ljspeech(args.ljspeech_name)
+            utterances = load_ljspeech(args.ljspeech_dir)
         with timer("Build word records"):
             word_records = build_word_records(
                 utterances, textgrid_dir,
