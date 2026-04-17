@@ -18,7 +18,7 @@ lets us examine which word types (content vs function, frequent vs rare)
 drive or inhibit cross-modal alignment.
 
 Data:
-  LJSpeech audio  — HuggingFace: keithito/lj_speech (or local path)
+  LJSpeech audio  — downloaded automatically from keithito.com, or pass --ljspeech_dir
   TextGrids       — one .TextGrid file per utterance, named LJ{set}-{id}.TextGrid
                     e.g. from https://www.kaggle.com/datasets/b09901026skho/ljspeech-textgrid
 
@@ -60,7 +60,6 @@ import numpy as np
 import torch
 import torchaudio
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 from matplotlib.colors import LinearSegmentedColormap
 from tqdm import tqdm
 from transformers import (
@@ -91,7 +90,7 @@ MIN_WORD_DUR     = 0.05     # seconds — skip words shorter than this (< 1 Whis
 MAX_WORD_DUR     = 3.0      # seconds — skip implausibly long words
 MIN_WORD_ALPHA   = 2        # minimum alphabetic characters in word
 
-CHECKPOINT_EVERY = 200      # save checkpoint every N utterances processed
+CHECKPOINT_EVERY = 200      # save checkpoint every N batches processed
 MINIBATCH_SIZE   = 2048
 MINIBATCH_SEED   = 42
 MAX_TEXT_TOKENS  = 256
@@ -611,7 +610,7 @@ def _load_checkpoint(path: Path, label: str) -> tuple[int, list]:
     if path and path.exists():
         with open(path, "rb") as f:
             ckpt = pickle.load(f)
-        logger.info(f"Resuming {label} from utterance {ckpt['next_utt']}")
+        logger.info(f"Resuming {label} from batch index {ckpt['next_utt']}")
         return ckpt["next_utt"], ckpt["embeddings"]
     return 0, []
 
