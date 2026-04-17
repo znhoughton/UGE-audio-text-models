@@ -1644,10 +1644,15 @@ def _hsic1_batch(X: np.ndarray, Y: np.ndarray) -> float:
     np.fill_diagonal(L, 0.0)
     KL = K @ L
     ones = np.ones(n)
-    # Expanding (K - mean_K)(L - mean_L) = K·L - K·mean_L - mean_K·L + mean_K·mean_L
-    # gives three correction terms:
+    # We want the similarity between mean-centered K and L so that the score
+    # reflects genuine geometric agreement rather than shared mean offsets.
+    # Rather than explicitly constructing K̃ = K - mean_K and L̃ = L - mean_L,
+    # we expand their element-wise product directly:
+    #   (K - mean_K)(L - mean_L) = K·L - K·mean_L - mean_K·L + mean_K·mean_L
+    # which gives three terms (subtracting both means double-subtracts the
+    # grand mean, so we add it back as term2):
     term1 = np.trace(KL)                                                    # K·L
-    term2 = (ones @ K @ ones) * (ones @ L @ ones) / ((n - 1) * (n - 2))   # +mean_K·mean_L
+    term2 = (ones @ K @ ones) * (ones @ L @ ones) / ((n - 1) * (n - 2))   # +mean_K·mean_L  (grand mean added back)
     term3 = 2.0 / (n - 2) * (ones @ KL @ ones)                             # -(K·mean_L + mean_K·L)
     return float((term1 + term2 - term3) / (n * (n - 3)))
 
