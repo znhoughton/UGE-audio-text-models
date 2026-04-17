@@ -43,6 +43,8 @@ import logging
 import os
 import pickle
 import re
+import shutil
+import subprocess
 import sys
 import time
 from contextlib import contextmanager
@@ -290,14 +292,9 @@ def ensure_textgrids(textgrid_dir: Path) -> Path:
     textgrid_dir.mkdir(parents=True, exist_ok=True)
     logger.info(f"No TextGrid files found in {textgrid_dir}. Attempting Kaggle download...")
 
-    try:
-        import kaggle  # noqa: F401 — triggers authentication check
-        from kaggle.api.kaggle_api_extended import KaggleApiExtended
-        api = KaggleApiExtended()
-        api.authenticate()
-    except ImportError:
+    if shutil.which("kaggle") is None:
         raise RuntimeError(
-            "The 'kaggle' package is not installed.\n"
+            "The 'kaggle' CLI is not available. Install with:\n"
             "  pip install kaggle\n"
             "Then set up your API token:\n"
             "  1. Go to https://www.kaggle.com/settings → API → Create New Token\n"
@@ -306,25 +303,22 @@ def ensure_textgrids(textgrid_dir: Path) -> Path:
             f"Or download manually: https://www.kaggle.com/datasets/{KAGGLE_DATASET}\n"
             f"and extract to: {textgrid_dir}"
         )
-    except Exception as e:
+
+    logger.info(f"Downloading {KAGGLE_DATASET} → {textgrid_dir} (this may take a while)...")
+    result = subprocess.run(
+        ["kaggle", "datasets", "download", "-d", KAGGLE_DATASET,
+         "-p", str(textgrid_dir), "--unzip"],
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
         raise RuntimeError(
-            f"Kaggle authentication failed: {e}\n"
-            "Make sure ~/.kaggle/kaggle.json exists with a valid API token.\n"
+            f"Kaggle download failed:\n{result.stderr}\n"
+            "Make sure your API token is set up:\n"
             "  1. Go to https://www.kaggle.com/settings → API → Create New Token\n"
             "  2. Place kaggle.json at ~/.kaggle/kaggle.json\n"
             "  3. chmod 600 ~/.kaggle/kaggle.json\n"
             f"Or download manually: https://www.kaggle.com/datasets/{KAGGLE_DATASET}\n"
             f"and extract to: {textgrid_dir}"
-        )
-
-    try:
-        logger.info(f"Downloading {KAGGLE_DATASET} → {textgrid_dir} (this may take a while)...")
-        api.dataset_download_files(KAGGLE_DATASET, path=str(textgrid_dir), unzip=True, quiet=False)
-    except Exception as e:
-        raise RuntimeError(
-            f"Kaggle download failed: {e}\n"
-            f"Try downloading manually: https://www.kaggle.com/datasets/{KAGGLE_DATASET}\n"
-            f"and extracting to: {textgrid_dir}"
         )
 
     # After unzip, files may be in a subdirectory — find where they actually are
