@@ -64,7 +64,6 @@ from matplotlib.colors import LinearSegmentedColormap
 from tqdm import tqdm
 from transformers import (
     AutoFeatureExtractor,
-    AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
     MimiModel,
@@ -909,10 +908,17 @@ def extract_mimi_word_embeddings(
         with torch.no_grad():
             enc_out = model.encoder(input_values)
         if isinstance(enc_out, torch.Tensor):
-            # Channels-first (B, D, T) → transpose to (B, T, D)
-            return enc_out.float().cpu().numpy().transpose(0, 2, 1)
+            h = enc_out.float()
         else:
-            return enc_out.last_hidden_state.float().cpu().numpy()  # (B, T, D)
+            h = enc_out.last_hidden_state.float()
+        # Mimi's encoder can return (B, D, T) or (B, T, D) depending on the
+        # transformers version. Detect using model.config.hidden_size (D=512).
+        hidden_size = getattr(model.config, "hidden_size", None)
+        if (h.dim() == 3 and hidden_size is not None
+                and h.shape[1] == hidden_size and h.shape[2] != hidden_size):
+            return h.cpu().numpy().transpose(0, 2, 1)  # (B, D, T) → (B, T, D)
+        else:
+            return h.cpu().numpy()  # already (B, T, D)
 
     errors = _run_batch_audio(
         model_name, utt_ids, start_utt, batch_size,
@@ -952,14 +958,9 @@ def extract_lm_word_embeddings(
     logger.info(f"Loading LM: {model_id}")
     log_gpu_memory(f"before {model_name} load")
 
-    try:
-        model = AutoModelForCausalLM.from_pretrained(
-            model_id, torch_dtype=torch.float16, trust_remote_code=True,
-        )
-    except Exception:
-        model = AutoModel.from_pretrained(
-            model_id, torch_dtype=torch.float16, trust_remote_code=True,
-        )
+    model = AutoModelForCausalLM.from_pretrained(
+        model_id, torch_dtype=torch.float16, trust_remote_code=True,
+    )
     model = model.to(device).eval()
 
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
