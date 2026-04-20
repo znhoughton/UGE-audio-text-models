@@ -64,7 +64,6 @@ from matplotlib.colors import LinearSegmentedColormap
 from tqdm import tqdm
 from transformers import (
     AutoFeatureExtractor,
-    AutoModel,
     AutoModelForCausalLM,
     AutoTokenizer,
     MimiModel,
@@ -166,12 +165,6 @@ MODELS = {
         "params": "~85M", "arch": "Conv+Transformer codec", "corpus": "Moshi training set",
         "fps": MIMI_FPS, "target_sr": MIMI_SR,
     },
-    # ── Speech/TTS models (text input, audio training) ───────────────────
-    "qwen3-tts-1.7b": {
-        "hf_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-        "modality": "tts-qwen3",
-        "params": "1.7B", "arch": "Qwen3", "corpus": "5M hrs speech",
-    },
     # ── Text LLMs ─────────────────────────────────────────────────────────
     "babylm-125m": {
         "hf_id": "znhoughton/opt-babylm-125m-20eps-seed964",
@@ -204,6 +197,8 @@ MODELS = {
 }
 
 AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi"}
+# Note: tts-qwen3 (Qwen3-TTS) was removed — its architecture requires the custom
+# qwen-tts package and does not expose hidden states via a standard forward() call.
 
 MODEL_COLORS = {
     "whisper-base-enc":    "#B3E5FC",
@@ -216,7 +211,6 @@ MODEL_COLORS = {
     "whisper-large-dec":   "#0277BD",
     "parakeet-ctc-0.6b":   "#880E4F",
     "mimi":                "#D84315",
-    "qwen3-tts-1.7b":      "#558B2F",
     "babylm-125m":         "#E65100",
     "opt-125m":            "#FFCCBC",
     "babylm-350m":         "#FB8C00",
@@ -1225,128 +1219,6 @@ def extract_lm_word_embeddings(
 
 
 # ---------------------------------------------------------------------------
-# TTS/speech LM word-level extraction (text input, AutoModel)
-# ---------------------------------------------------------------------------
-
-def extract_tts_lm_word_embeddings(
-    model_name: str,
-    model_id: str,
-    word_records: list[dict],
-    device: torch.device,
-    batch_size: int = 32,
-    checkpoint_dir: Path = None,
-) -> np.ndarray:
-    """Extract word-level embeddings from a TTS/speech LM that takes text input.
-
-    Identical to extract_lm_word_embeddings but uses AutoModel instead of
-    AutoModelForCausalLM, for models (e.g. Qwen3-TTS) whose architecture is
-    not registered under AutoModelForCausalLM.
-    """
-    logger.info(f"Loading TTS LM: {model_id}")
-    log_gpu_memory(f"before {model_name} load")
-
-    model = AutoModel.from_pretrained(
-        model_id, torch_dtype=torch.float16, trust_remote_code=True,
-    )
-    model = model.to(device).eval()
-
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    log_gpu_memory(f"after {model_name} load")
-
-    utt_to_words = _group_by_utt(word_records)
-    utt_ids = list(utt_to_words.keys())
-    N_utt = len(utt_ids)
-
-    checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
-    start_utt, word_embeddings_list = _load_checkpoint(checkpoint_path, model_name)
-    completed_words = {idx for idx, _ in word_embeddings_list}
-
-    errors = 0
-    pbar = tqdm(range(start_utt, N_utt, batch_size), desc=model_name,
-                unit="batch", total=(N_utt - start_utt + batch_size - 1) // batch_size)
-
-    for batch_start in pbar:
-        batch_ids = utt_ids[batch_start : batch_start + batch_size]
-        sentences = [word_records[utt_to_words[uid][0]]["sentence"] for uid in batch_ids]
-
-        try:
-            enc = tokenizer(
-                sentences,
-                return_tensors="pt",
-                truncation=True,
-                max_length=MAX_TEXT_TOKENS,
-                padding=True,
-                return_offsets_mapping=True,
-            )
-            offset_mapping = enc.pop("offset_mapping").tolist()
-            input_ids      = enc["input_ids"].to(device)
-            attention_mask = enc["attention_mask"].to(device)
-
-            with torch.no_grad():
-                out = model(input_ids=input_ids, attention_mask=attention_mask,
-                            output_hidden_states=True)
-
-            if hasattr(out, "hidden_states") and out.hidden_states is not None:
-                hidden_batch = out.hidden_states[-1].float().cpu().numpy()
-            elif hasattr(out, "decoder_hidden_states") and out.decoder_hidden_states is not None:
-                hidden_batch = out.decoder_hidden_states[-1].float().cpu().numpy()
-            elif hasattr(out, "last_hidden_state") and out.last_hidden_state is not None:
-                hidden_batch = out.last_hidden_state.float().cpu().numpy()
-            else:
-                raise ValueError(
-                    f"{model_name}: output_hidden_states=True produced no hidden states. "
-                    f"Output keys: {[k for k in vars(out) if not k.startswith('_')]}"
-                )
-
-            for b, utt_id in enumerate(batch_ids):
-                hidden = hidden_batch[b]
-                om     = offset_mapping[b]
-                for word_idx in utt_to_words[utt_id]:
-                    if word_idx in completed_words:
-                        continue
-                    rec = word_records[word_idx]
-                    char_s, char_e = rec["char_start"], rec["char_end"]
-                    if char_s < 0:
-                        errors += 1
-                        continue
-                    token_indices = [
-                        t for t, (ts, te) in enumerate(om)
-                        if ts < char_e and te > char_s and ts < te
-                    ]
-                    if not token_indices:
-                        errors += 1
-                        continue
-                    emb = hidden[token_indices].mean(axis=0)
-                    word_embeddings_list.append((word_idx, emb))
-                    completed_words.add(word_idx)
-
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                _save_checkpoint(checkpoint_path, word_embeddings_list, batch_start)
-                torch.cuda.empty_cache()
-                raise
-            errors += 1
-            logger.warning(f"Skipping batch at utt {batch_start}: {e}")
-        except Exception as e:
-            errors += 1
-            logger.warning(f"Skipping batch at utt {batch_start}: {e}")
-
-        next_utt = batch_start + batch_size
-        if next_utt % (CHECKPOINT_EVERY * batch_size) < batch_size:
-            _save_checkpoint(checkpoint_path, word_embeddings_list, next_utt)
-
-    del model
-    release_vram(model_name)
-    _remove_checkpoint(checkpoint_path)
-
-    if errors:
-        logger.warning(f"{model_name}: {errors} word-level errors")
-    return _sort_embeddings(word_embeddings_list, len(word_records))
-
-
-# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -1759,12 +1631,6 @@ def main():
                         cfg["hf_id"], word_records, utterances,
                         device, fps=cfg["fps"], target_sr=cfg["target_sr"],
                         batch_size=args.mimi_batch_size,
-                        checkpoint_dir=data_dir,
-                    )
-                elif modality == "tts-qwen3":
-                    emb = extract_tts_lm_word_embeddings(
-                        model_name, cfg["hf_id"], word_records,
-                        device, batch_size=args.lm_batch_size,
                         checkpoint_dir=data_dir,
                     )
                 else:  # text

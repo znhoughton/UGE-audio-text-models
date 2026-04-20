@@ -314,19 +314,6 @@ MODELS = {
         # Natively supported in transformers via MimiModel.
     },
     # ── TTS / Omni / Speech-LM ───────────────────────────────────────────
-    "qwen3-tts-1.7b": {
-        "hf_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-        "modality": "tts-qwen3",
-        "params": "1.7B",
-        "arch": "Qwen3-TTS (discrete multi-codebook LM)",
-        "corpus": "5M hrs speech, 10 languages",
-        # Qwen3-TTS uses the custom `qwen-tts` package (not transformers).
-        # Architecture: text tokenizer → Qwen3 LM backbone → speech codec tokens.
-        # We feed the LibriSpeech transcript through the LM backbone and
-        # mean-pool the last hidden layer over text token positions — this
-        # captures the text representations that condition speech generation.
-        # Install dependency: pip install qwen-tts
-    },
     "voxtral-3b": {
         "hf_id": "mistralai/Voxtral-Mini-3B-2507",
         "modality": "audio-voxtral",
@@ -444,7 +431,7 @@ N_STABILITY_SUBSETS = 10
 STABILITY_SUBSET_FRAC = 0.8
 
 # ── Modality groupings (used for heatmap separator line) ─────────────────
-AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi", "audio-voxtral", "tts-qwen3", "tts-higgs"}
+AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi", "audio-voxtral", "tts-higgs"}
 
 MODEL_COLORS = {
     "whisper-base-enc":   "#BBDEFB",   # lightest blue
@@ -457,7 +444,6 @@ MODEL_COLORS = {
     "whisper-large-dec":  "#283593",   # dark indigo
     "parakeet-ctc-0.6b": "#00838F",   # teal
     "mimi":              "#D84315",   # deep orange-red
-    "qwen3-tts-1.7b":    "#AD1457",   # deep pink
     "voxtral-3b":        "#FF6F00",   # amber
     "higgs-audio-v2-3b": "#558B2F",   # olive green
     "babylm-125m":       "#E65100",   # deep orange
@@ -1365,129 +1351,6 @@ def extract_higgs_audio_embeddings(
 
 
 # ---------------------------------------------------------------------------
-# Embedding extraction — Qwen3-TTS
-# ---------------------------------------------------------------------------
-
-def extract_qwen3_tts_embeddings(
-    model_id: str,
-    texts: list,
-    device: torch.device,
-    batch_size: int = 32,
-    checkpoint_dir: Path = None,
-    prefetch_queue_depth: int = 3,
-) -> np.ndarray:
-    """
-    Extract Qwen3-TTS LM backbone hidden states on input text.
-
-    Qwen3-TTS is a text-to-speech model with architecture:
-        text tokens → Qwen3 LM backbone → speech codec token predictions
-
-    Since LibriSpeech gives us transcripts (text), not target audio, the
-    natural extraction point is the LM backbone processing the input text —
-    identical in spirit to how we extract from text LLMs. This lets us ask:
-    "how similar are the text representations a TTS LM forms to those of
-    a pure text LLM?" — a direct Platonic Representation Hypothesis test
-    across TTS vs. pure-language training objectives.
-
-    Qwen/Qwen3-TTS-*-Base is a standard HuggingFace causal LM (Qwen3
-    architecture) — we load it directly with AutoModelForCausalLM rather
-    than via the qwen-tts pipeline wrapper, which does not expose a usable
-    nn.Module forward() for embedding extraction.
-    """
-    logger.info(f"Loading Qwen3-TTS model: {model_id}")
-    log_gpu_memory("before Qwen3-TTS load")
-
-    # Qwen3-TTS architecture: Qwen3TTSForConditionalGeneration (model_type="qwen3_tts").
-    # This is a nested TTS model (LM talker + speaker encoder), NOT a causal LM.
-    # AutoModelForCausalLM will not recognise it; use AutoModelForConditionalGeneration.
-    # Requires transformers ≥4.57.3 for native support.
-    # If you see "architecture not recognized", run:
-    #   pip install --upgrade transformers   (needs ≥4.57.3)
-    # AutoModelForConditionalGeneration was removed in transformers 5.x.
-    # AutoModel is the correct class for hidden state extraction anyway —
-    # we don't need the generation head, just the transformer backbone.
-    load_kwargs = dict(torch_dtype=torch.bfloat16, trust_remote_code=True)
-    lm = AutoModel.from_pretrained(model_id, **load_kwargs)
-    lm = lm.to(device).eval()
-    logger.info(f"Qwen3-TTS loaded: {type(lm).__name__}")
-
-    tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    first_device = device
-    logger.info(f"Qwen3-TTS LM backbone first device: {first_device}")
-    log_gpu_memory("after Qwen3-TTS load")
-
-    n = len(texts)
-    n_batches = (n + batch_size - 1) // batch_size
-    label = "qwen3-tts-1.7b"
-    checkpoint_path = checkpoint_dir / f"{label}_checkpoint.pkl" if checkpoint_dir else None
-
-    start_batch, embeddings = _load_checkpoint(checkpoint_path, n_batches, label)
-
-    token_iter = prefetch_generator(
-        _tokenized_batches(texts, tokenizer, start_batch, n_batches, batch_size, MAX_TEXT_TOKENS),
-        queue_depth=prefetch_queue_depth,
-    )
-
-    errors = 0
-    for batch_idx, enc in tqdm(token_iter, desc=label,
-                                unit="batch", total=n_batches - start_batch):
-        try:
-            input_ids = enc["input_ids"].to(first_device)
-            attention_mask = enc["attention_mask"].to(first_device)
-            with torch.no_grad():
-                out = lm(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    output_hidden_states=True,
-                )
-                # Qwen3TTSForConditionalGeneration may return hidden states under
-                # different attribute names depending on whether the forward pass
-                # treats the text input as encoder or decoder input. Try in order:
-                # hidden_states (causal/decoder), then decoder_hidden_states (seq2seq).
-                if hasattr(out, "hidden_states") and out.hidden_states is not None:
-                    hidden = out.hidden_states[-1].float()      # (B, T, D)
-                elif hasattr(out, "decoder_hidden_states") and out.decoder_hidden_states is not None:
-                    hidden = out.decoder_hidden_states[-1].float()
-                else:
-                    raise ValueError(
-                        f"{label}: output_hidden_states=True produced no hidden states. "
-                        f"Output keys: {[k for k in vars(out) if not k.startswith('_')]}"
-                    )
-            mask = attention_mask.unsqueeze(-1).float()
-            pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
-            embeddings.append(pooled.cpu().numpy())
-        except RuntimeError as e:
-            if "out of memory" in str(e).lower():
-                logger.error(
-                    f"CUDA OOM at {label} batch {batch_idx}. "
-                    f"Try reducing --lm_batch_size (currently {batch_size})."
-                )
-                _save_checkpoint(checkpoint_path, embeddings, batch_idx)
-                torch.cuda.empty_cache()
-                raise
-            errors += 1
-            logger.warning(f"Skipping batch {batch_idx}: {e}")
-        except Exception as e:
-            errors += 1
-            logger.warning(f"Skipping batch {batch_idx}: {e}")
-        _maybe_save_checkpoint(checkpoint_path, embeddings, batch_idx, n_batches)
-
-    if errors:
-        logger.warning(f"{label}: skipped {errors} batches")
-    del lm
-    release_vram(label)
-    _remove_checkpoint(checkpoint_path)
-    if not embeddings:
-        raise RuntimeError("All batches failed — no embeddings were collected.")
-    result = np.concatenate(embeddings, axis=0)
-    logger.info(f"{label} embeddings shape: {result.shape}")
-    return result
-
-
-# ---------------------------------------------------------------------------
 # Embedding extraction — text LLMs
 # ---------------------------------------------------------------------------
 
@@ -2346,13 +2209,6 @@ def main():
                     emb = extract_higgs_audio_embeddings(
                         cfg["hf_id"], texts, device,
                         batch_size=args.higgs_batch_size,
-                        checkpoint_dir=data_dir,
-                        prefetch_queue_depth=args.prefetch_queue_depth,
-                    )
-                elif modality == "tts-qwen3":
-                    emb = extract_qwen3_tts_embeddings(
-                        cfg["hf_id"], texts, device,
-                        batch_size=args.lm_batch_size,
                         checkpoint_dir=data_dir,
                         prefetch_queue_depth=args.prefetch_queue_depth,
                     )
