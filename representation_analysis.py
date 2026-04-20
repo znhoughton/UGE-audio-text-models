@@ -36,10 +36,6 @@ Models:
     - kyutai/mimi                  (audio codec encoder, ~85M, conv+transformer, 12.5Hz)
                                    NOTE: pure audio codec, no text signal. Extracts pre-RVQ
                                    encoder hidden state — the most purely acoustic model here.
-    - Qwen/Qwen3-TTS-12Hz-1.7B-Base  (TTS, 1.7B, discrete multi-codebook LM)
-                                     NOTE: uses qwen-tts package, not transformers.
-                                     Extracts LM backbone hidden states on input text.
-    - mistralai/Voxtral-Mini-3B-2507  (speech understanding model, 3B)
     - bosonai/higgs-audio-v2-generation-3B-base  (TTS, ~5.8B, Llama-3.2-3B + DualFFN)
                                      NOTE: text-to-audio generation model (not audio-in).
                                      Extracts LLM backbone hidden states on text input.
@@ -1037,13 +1033,18 @@ def extract_mimi_embeddings(
                 # Older transformers versions return a raw Tensor; newer ones
                 # return a BaseModelOutput with .last_hidden_state.
                 if isinstance(enc_out, torch.Tensor):
-                    # Raw Tensor: Mimi's convolutional encoder is channels-first (B, D, T).
-                    # Pool over dim=-1 (time) to get (B, D).
-                    emb = enc_out.float().mean(dim=-1).cpu().numpy()   # (B, D)
+                    h = enc_out.float()
                 else:
-                    # BaseModelOutput: transformers convention is (B, T, D).
-                    # Pool over dim=1 (time) to get (B, D).
-                    emb = enc_out.last_hidden_state.float().mean(dim=1).cpu().numpy()  # (B, D)
+                    h = enc_out.last_hidden_state.float()
+                # Mimi's convolutional encoder can return either (B, D, T) or (B, T, D)
+                # depending on the transformers version. Detect by comparing dim 1
+                # against model.config.hidden_size (D=512 for Mimi, time T varies).
+                hidden_size = getattr(model.config, "hidden_size", None)
+                if (h.dim() == 3 and hidden_size is not None
+                        and h.shape[1] == hidden_size and h.shape[2] != hidden_size):
+                    emb = h.mean(dim=2).cpu().numpy()  # (B, D, T) → (B, D)
+                else:
+                    emb = h.mean(dim=1).cpu().numpy()  # (B, T, D) → (B, D)
 
             if not np.isfinite(emb).all():
                 n_bad = (~np.isfinite(emb)).sum()
@@ -1105,22 +1106,25 @@ def extract_voxtral_embeddings(
     We pool the LLM backbone's last hidden layer over all token positions.
     This captures how the language backbone organises audio-derived representations.
 
+    Processor note: apply_transcription_request requires format="wav" when passing
+    numpy arrays. Omitting format causes `len(None)` inside the processor's
+    audio-length validation (processing_voxtral.py line 382).
+
+    Model class: VoxtralForConditionalGeneration (returns CausalLMOutputWithPast).
+
     Batching note: batch_size defaults to 8 because Voxtral audio sequences are
     long. Reduce with --voxtral_batch_size if you hit OOM.
     """
     logger.info(f"Loading Voxtral model: {model_id}  (label={model_name})")
     log_gpu_memory(f"before {model_name} load")
 
-    # device_map="auto" conflicts with NeMo's CUDA init (from Parakeet) and
-    # breaks all subsequent model loads. Load to CPU then move explicitly.
+    from transformers import VoxtralForConditionalGeneration
+
     load_kwargs = dict(
         torch_dtype=torch.float16,
         trust_remote_code=True,
     )
-    try:
-        processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
-    except Exception:
-        processor = AutoFeatureExtractor.from_pretrained(model_id, trust_remote_code=True)
+    processor = AutoProcessor.from_pretrained(model_id, trust_remote_code=True)
 
     # Voxtral's processor bundles a tokenizer (for its text side). If that
     # tokenizer has no pad token, batches with variable-length audio trigger
@@ -1128,11 +1132,7 @@ def extract_voxtral_embeddings(
     if hasattr(processor, "tokenizer") and processor.tokenizer.pad_token is None:
         processor.tokenizer.pad_token = processor.tokenizer.eos_token
 
-    try:
-        model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
-    except Exception:
-        model = AutoModel.from_pretrained(model_id, **load_kwargs)
-
+    model = VoxtralForConditionalGeneration.from_pretrained(model_id, **load_kwargs)
     model = model.to(device).eval()
     first_device = device
     log_gpu_memory(f"after {model_name} load")
@@ -1156,13 +1156,14 @@ def extract_voxtral_embeddings(
         try:
             audio_arrays = _decode_audio_batch(batch)
 
-            # VoxtralProcessor.__call__ only accepts text; audio must be
-            # passed via apply_transcription_request which wraps the audio
-            # into the expected multimodal input format.
+            # apply_transcription_request requires format="wav" when audio is
+            # passed as numpy arrays. Without it, the processor calls len(format)
+            # during audio-count validation and crashes with NoneType has no len().
             inputs = processor.apply_transcription_request(
                 audio=audio_arrays,
                 model_id=model_id,
                 sampling_rate=SAMPLE_RATE,
+                format="wav",
                 return_tensors="pt",
                 padding=True,
             )
@@ -1360,6 +1361,8 @@ def extract_higgs_audio_embeddings(
     return result
 
 
+
+
 # ---------------------------------------------------------------------------
 # Embedding extraction — Qwen3-TTS
 # ---------------------------------------------------------------------------
@@ -1393,12 +1396,25 @@ def extract_qwen3_tts_embeddings(
     logger.info(f"Loading Qwen3-TTS model: {model_id}")
     log_gpu_memory("before Qwen3-TTS load")
 
-    lm = AutoModelForCausalLM.from_pretrained(
-        model_id,
-        torch_dtype=torch.bfloat16,
-        trust_remote_code=True,
-    )
+    # Qwen3-TTS architecture: Qwen3TTSForConditionalGeneration (model_type="qwen3_tts").
+    # This is a nested TTS model (LM talker + speaker encoder), NOT a causal LM.
+    # AutoModelForCausalLM will not recognise it; use AutoModelForConditionalGeneration.
+    # Requires transformers ≥4.57.3 for native support.
+    # If you see "architecture not recognized", run:
+    #   pip install --upgrade transformers   (needs ≥4.57.3)
+    from transformers import AutoModelForConditionalGeneration
+    load_kwargs = dict(torch_dtype=torch.bfloat16, trust_remote_code=True)
+    try:
+        lm = AutoModelForConditionalGeneration.from_pretrained(model_id, **load_kwargs)
+    except Exception as exc:
+        raise RuntimeError(
+            f"Failed to load Qwen3-TTS ({model_id}). "
+            f"Requires transformers ≥4.57.3 — upgrade with: "
+            f"pip install --upgrade transformers. "
+            f"Original error: {exc}"
+        ) from exc
     lm = lm.to(device).eval()
+    logger.info(f"Qwen3-TTS loaded: {type(lm).__name__}")
 
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
     if tokenizer.pad_token is None:
@@ -1432,7 +1448,19 @@ def extract_qwen3_tts_embeddings(
                     attention_mask=attention_mask,
                     output_hidden_states=True,
                 )
-                hidden = out.hidden_states[-1].float()   # (B, T, D)
+                # Qwen3TTSForConditionalGeneration may return hidden states under
+                # different attribute names depending on whether the forward pass
+                # treats the text input as encoder or decoder input. Try in order:
+                # hidden_states (causal/decoder), then decoder_hidden_states (seq2seq).
+                if hasattr(out, "hidden_states") and out.hidden_states is not None:
+                    hidden = out.hidden_states[-1].float()      # (B, T, D)
+                elif hasattr(out, "decoder_hidden_states") and out.decoder_hidden_states is not None:
+                    hidden = out.decoder_hidden_states[-1].float()
+                else:
+                    raise ValueError(
+                        f"{label}: output_hidden_states=True produced no hidden states. "
+                        f"Output keys: {[k for k in vars(out) if not k.startswith('_')]}"
+                    )
             mask = attention_mask.unsqueeze(-1).float()
             pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
             embeddings.append(pooled.cpu().numpy())
@@ -1484,10 +1512,7 @@ def extract_lm_embeddings(
         torch_dtype=torch.float16,
         trust_remote_code=True,
     )
-    try:
-        model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
-    except Exception:
-        model = AutoModel.from_pretrained(model_id, **load_kwargs)
+    model = AutoModelForCausalLM.from_pretrained(model_id, **load_kwargs)
     model = model.to(device).eval()
 
     first_device = device
