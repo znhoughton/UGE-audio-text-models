@@ -1156,14 +1156,15 @@ def extract_voxtral_embeddings(
         try:
             audio_arrays = _decode_audio_batch(batch)
 
-            # apply_transcription_request requires format="wav" when audio is
-            # passed as numpy arrays. Without it, the processor calls len(format)
-            # during audio-count validation and crashes with NoneType has no len().
+            # apply_transcription_request requires format per audio item when
+            # passing numpy arrays. format="wav" is wrong — the processor calls
+            # len(format) to check alignment with the audio list, so len("wav")==3
+            # causes a length mismatch. Pass a list with one entry per audio item.
             inputs = processor.apply_transcription_request(
                 audio=audio_arrays,
                 model_id=model_id,
                 sampling_rate=SAMPLE_RATE,
-                format="wav",
+                format=["wav"] * len(audio_arrays),
                 return_tensors="pt",
                 padding=True,
             )
@@ -1402,17 +1403,11 @@ def extract_qwen3_tts_embeddings(
     # Requires transformers ≥4.57.3 for native support.
     # If you see "architecture not recognized", run:
     #   pip install --upgrade transformers   (needs ≥4.57.3)
-    from transformers import AutoModelForConditionalGeneration
+    # AutoModelForConditionalGeneration was removed in transformers 5.x.
+    # AutoModel is the correct class for hidden state extraction anyway —
+    # we don't need the generation head, just the transformer backbone.
     load_kwargs = dict(torch_dtype=torch.bfloat16, trust_remote_code=True)
-    try:
-        lm = AutoModelForConditionalGeneration.from_pretrained(model_id, **load_kwargs)
-    except Exception as exc:
-        raise RuntimeError(
-            f"Failed to load Qwen3-TTS ({model_id}). "
-            f"Requires transformers ≥4.57.3 — upgrade with: "
-            f"pip install --upgrade transformers. "
-            f"Original error: {exc}"
-        ) from exc
+    lm = AutoModel.from_pretrained(model_id, **load_kwargs)
     lm = lm.to(device).eval()
     logger.info(f"Qwen3-TTS loaded: {type(lm).__name__}")
 
