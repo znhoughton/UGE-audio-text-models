@@ -1151,6 +1151,7 @@ def extract_voxtral_embeddings(
                 model_id=model_id,
                 sampling_rate=SAMPLE_RATE,
                 format=["wav"] * len(audio_arrays),
+                language=["en"] * len(audio_arrays),
                 return_tensors="pt",
                 padding=True,
             )
