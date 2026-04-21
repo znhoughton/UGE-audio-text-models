@@ -1,6 +1,8 @@
 # Large embedding caches
 Data/*.pkl
-
+WordData/*.pkl
+WordData/LJSpeech-1.1/
+WordData/textgrids
 # Logs
 logs/
 

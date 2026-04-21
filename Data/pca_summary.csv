@@ -8,6 +8,8 @@ whisper-medium-dec,769M,Whisper decoder,680k hrs audio,1024,7.05,0.5614,0.7918,0
 whisper-large-enc,1550M,Whisper encoder,680k hrs audio,1280,3.64,0.7129,0.9176,0.9505
 whisper-large-dec,1550M,Whisper decoder,680k hrs audio,1280,4.61,0.6783,0.8620,0.9131
 parakeet-ctc-0.6b,600M,FastConformer-CTC,Granary (64k hrs English),1024,11.98,0.4577,0.6717,0.7892
+mimi,~85M,Conv+Transformer codec (EnCodec-style),Speech data (Moshi training set),512,9.13,0.4897,0.7491,0.8556
+voxtral-3b,3B,Mistral+WhisperEnc,Mistral mix + speech,3072,23.80,0.2129,0.5123,0.6728
 higgs-audio-v2-3b,~5.8B,Llama-3.2-3B + DualFFN adapter (2.2B),AudioVerse (10M hrs speech+music+SFX),3072,5.11,0.6431,0.8570,0.9185
 babylm-125m,125M,OPT,BabyLM,768,34.14,0.1098,0.3718,0.5347
 opt-125m,125M,OPT,RoBERTa+CCNet+The Pile (~180B tokens),768,29.65,0.1544,0.4365,0.5923
