@@ -82,13 +82,6 @@
       "arch": "Conv+Transformer codec (EnCodec-style)",
       "corpus": "Speech data (Moshi training set)"
     },
-    "qwen3-tts-1.7b": {
-      "hf_id": "Qwen/Qwen3-TTS-12Hz-1.7B-Base",
-      "modality": "tts-qwen3",
-      "params": "1.7B",
-      "arch": "Qwen3-TTS (discrete multi-codebook LM)",
-      "corpus": "5M hrs speech, 10 languages"
-    },
     "voxtral-3b": {
       "hf_id": "mistralai/Voxtral-Mini-3B-2507",
       "modality": "audio-voxtral",
@@ -190,6 +183,14 @@
       292367,
       1024
     ],
+    "mimi": [
+      292367,
+      512
+    ],
+    "voxtral-3b": [
+      292367,
+      3072
+    ],
     "higgs-audio-v2-3b": [
       292367,
       3072
@@ -224,142 +225,690 @@
     ]
   },
   "cka_scores": {
-    "whisper-base-enc vs whisper-base-dec": 0.23557438392697808,
-    "whisper-base-enc vs whisper-small-enc": 0.9621063640264733,
-    "whisper-base-enc vs whisper-small-dec": 0.16235587037024893,
-    "whisper-base-enc vs whisper-medium-enc": 0.9526912896907013,
-    "whisper-base-enc vs whisper-medium-dec": 0.28563910648148966,
-    "whisper-base-enc vs whisper-large-enc": 0.8728651125686911,
-    "whisper-base-enc vs whisper-large-dec": 0.24260748480059835,
-    "whisper-base-enc vs parakeet-ctc-0.6b": 0.7881725860384451,
-    "whisper-base-enc vs higgs-audio-v2-3b": 0.2931842952385775,
-    "whisper-base-enc vs babylm-125m": 0.17354496159317487,
-    "whisper-base-enc vs opt-125m": 0.22452367856820787,
-    "whisper-base-enc vs babylm-350m": 0.7304266028909709,
-    "whisper-base-enc vs babylm-1.3b": 0.19874894145352706,
-    "whisper-base-enc vs olmo-7b": 0.31415661820044777,
-    "whisper-base-enc vs pythia-160m": 0.18467856735373858,
-    "whisper-base-enc vs pythia-6.9b": 0.22475486876818787,
-    "whisper-base-dec vs whisper-small-enc": 0.22463124785485214,
-    "whisper-base-dec vs whisper-small-dec": 0.33317142517666326,
-    "whisper-base-dec vs whisper-medium-enc": 0.248476487585314,
-    "whisper-base-dec vs whisper-medium-dec": 0.266168343454069,
-    "whisper-base-dec vs whisper-large-enc": 0.21657030247694117,
-    "whisper-base-dec vs whisper-large-dec": 0.15328550229455393,
-    "whisper-base-dec vs parakeet-ctc-0.6b": 0.29444474801597975,
-    "whisper-base-dec vs higgs-audio-v2-3b": 0.10125048699863835,
-    "whisper-base-dec vs babylm-125m": 0.2317680248583717,
-    "whisper-base-dec vs opt-125m": 0.22952529985825976,
-    "whisper-base-dec vs babylm-350m": 0.20514666440225196,
-    "whisper-base-dec vs babylm-1.3b": 0.23109958357903634,
-    "whisper-base-dec vs olmo-7b": 0.24448039029236723,
-    "whisper-base-dec vs pythia-160m": 0.20381389456063523,
-    "whisper-base-dec vs pythia-6.9b": 0.2462453208369317,
-    "whisper-small-enc vs whisper-small-dec": 0.15355673955736743,
-    "whisper-small-enc vs whisper-medium-enc": 0.9597865161712476,
-    "whisper-small-enc vs whisper-medium-dec": 0.2765640055631255,
-    "whisper-small-enc vs whisper-large-enc": 0.8906226731031863,
-    "whisper-small-enc vs whisper-large-dec": 0.24722964112035686,
-    "whisper-small-enc vs parakeet-ctc-0.6b": 0.7870060537134235,
-    "whisper-small-enc vs higgs-audio-v2-3b": 0.28735891031082544,
-    "whisper-small-enc vs babylm-125m": 0.16407624921589656,
-    "whisper-small-enc vs opt-125m": 0.21374510733356583,
-    "whisper-small-enc vs babylm-350m": 0.7117605914098798,
-    "whisper-small-enc vs babylm-1.3b": 0.19016047956105386,
-    "whisper-small-enc vs olmo-7b": 0.2967740072067738,
-    "whisper-small-enc vs pythia-160m": 0.17758936385632257,
-    "whisper-small-enc vs pythia-6.9b": 0.2168546687418482,
-    "whisper-small-dec vs whisper-medium-enc": 0.16996899904778645,
-    "whisper-small-dec vs whisper-medium-dec": 0.46948137098075343,
-    "whisper-small-dec vs whisper-large-enc": 0.1533214119150769,
-    "whisper-small-dec vs whisper-large-dec": 0.12980051059294948,
-    "whisper-small-dec vs parakeet-ctc-0.6b": 0.18567928151981986,
-    "whisper-small-dec vs higgs-audio-v2-3b": 0.08061229179782962,
-    "whisper-small-dec vs babylm-125m": 0.11039310232810133,
-    "whisper-small-dec vs opt-125m": 0.11690112642640967,
-    "whisper-small-dec vs babylm-350m": 0.1752273286648269,
-    "whisper-small-dec vs babylm-1.3b": 0.11062781920314087,
-    "whisper-small-dec vs olmo-7b": 0.14460785209615673,
-    "whisper-small-dec vs pythia-160m": 0.0980788645641596,
-    "whisper-small-dec vs pythia-6.9b": 0.11523174425223162,
-    "whisper-medium-enc vs whisper-medium-dec": 0.2927383725454127,
-    "whisper-medium-enc vs whisper-large-enc": 0.9431734278698274,
-    "whisper-medium-enc vs whisper-large-dec": 0.25748979655845183,
-    "whisper-medium-enc vs parakeet-ctc-0.6b": 0.803974453874627,
-    "whisper-medium-enc vs higgs-audio-v2-3b": 0.29181177384542384,
-    "whisper-medium-enc vs babylm-125m": 0.18892357358876996,
-    "whisper-medium-enc vs opt-125m": 0.23780173212352185,
-    "whisper-medium-enc vs babylm-350m": 0.7261903588412065,
-    "whisper-medium-enc vs babylm-1.3b": 0.2133728890278765,
-    "whisper-medium-enc vs olmo-7b": 0.32344410780791205,
-    "whisper-medium-enc vs pythia-160m": 0.19845093723281126,
-    "whisper-medium-enc vs pythia-6.9b": 0.24120073265518133,
-    "whisper-medium-dec vs whisper-large-enc": 0.26371186075353975,
-    "whisper-medium-dec vs whisper-large-dec": 0.17030609107929204,
-    "whisper-medium-dec vs parakeet-ctc-0.6b": 0.25883081714503053,
-    "whisper-medium-dec vs higgs-audio-v2-3b": 0.10465842154556043,
-    "whisper-medium-dec vs babylm-125m": 0.07912412261875472,
-    "whisper-medium-dec vs opt-125m": 0.0920361527382092,
-    "whisper-medium-dec vs babylm-350m": 0.2503647795202293,
-    "whisper-medium-dec vs babylm-1.3b": 0.08607438211567917,
-    "whisper-medium-dec vs olmo-7b": 0.13703095464486703,
-    "whisper-medium-dec vs pythia-160m": 0.07504963953252157,
-    "whisper-medium-dec vs pythia-6.9b": 0.09362763090208165,
-    "whisper-large-enc vs whisper-large-dec": 0.36955117831694323,
-    "whisper-large-enc vs parakeet-ctc-0.6b": 0.7403554535618043,
-    "whisper-large-enc vs higgs-audio-v2-3b": 0.2642338071399532,
-    "whisper-large-enc vs babylm-125m": 0.16476948291754928,
-    "whisper-large-enc vs opt-125m": 0.20772774141772563,
-    "whisper-large-enc vs babylm-350m": 0.6651346382775112,
-    "whisper-large-enc vs babylm-1.3b": 0.18648673183339315,
-    "whisper-large-enc vs olmo-7b": 0.28799973787609734,
-    "whisper-large-enc vs pythia-160m": 0.17387414078534247,
-    "whisper-large-enc vs pythia-6.9b": 0.21175974064857217,
-    "whisper-large-dec vs parakeet-ctc-0.6b": 0.22573828808467014,
-    "whisper-large-dec vs higgs-audio-v2-3b": 0.1038952891996698,
-    "whisper-large-dec vs babylm-125m": 0.06883923481818419,
-    "whisper-large-dec vs opt-125m": 0.08360349371433931,
-    "whisper-large-dec vs babylm-350m": 0.2381984132004739,
-    "whisper-large-dec vs babylm-1.3b": 0.07736976223883232,
-    "whisper-large-dec vs olmo-7b": 0.126020619460049,
-    "whisper-large-dec vs pythia-160m": 0.07119484485380372,
-    "whisper-large-dec vs pythia-6.9b": 0.0899341609108015,
-    "parakeet-ctc-0.6b vs higgs-audio-v2-3b": 0.29847753848812814,
-    "parakeet-ctc-0.6b vs babylm-125m": 0.4067360757876265,
-    "parakeet-ctc-0.6b vs opt-125m": 0.4516432742490155,
-    "parakeet-ctc-0.6b vs babylm-350m": 0.6942318099776315,
-    "parakeet-ctc-0.6b vs babylm-1.3b": 0.4217253096179674,
-    "parakeet-ctc-0.6b vs olmo-7b": 0.5097215111282175,
-    "parakeet-ctc-0.6b vs pythia-160m": 0.38665284307657566,
-    "parakeet-ctc-0.6b vs pythia-6.9b": 0.4654906873082861,
-    "higgs-audio-v2-3b vs babylm-125m": 0.12734077212339595,
-    "higgs-audio-v2-3b vs opt-125m": 0.16733947662628132,
-    "higgs-audio-v2-3b vs babylm-350m": 0.3912082158299033,
-    "higgs-audio-v2-3b vs babylm-1.3b": 0.14142166048611646,
-    "higgs-audio-v2-3b vs olmo-7b": 0.2331943977708267,
-    "higgs-audio-v2-3b vs pythia-160m": 0.15886969366683135,
-    "higgs-audio-v2-3b vs pythia-6.9b": 0.17143017342416855,
-    "babylm-125m vs opt-125m": 0.7235343396057042,
-    "babylm-125m vs babylm-350m": 0.22165924632574605,
-    "babylm-125m vs babylm-1.3b": 0.8814505854258754,
-    "babylm-125m vs olmo-7b": 0.61658384728757,
-    "babylm-125m vs pythia-160m": 0.6468952883602737,
-    "babylm-125m vs pythia-6.9b": 0.727739037463946,
-    "opt-125m vs babylm-350m": 0.2959870851370993,
-    "opt-125m vs babylm-1.3b": 0.7167972430077921,
-    "opt-125m vs olmo-7b": 0.6879063986368762,
-    "opt-125m vs pythia-160m": 0.7672979589915645,
-    "opt-125m vs pythia-6.9b": 0.7675658756856668,
-    "babylm-350m vs babylm-1.3b": 0.2520307961391518,
-    "babylm-350m vs olmo-7b": 0.4427032819161185,
-    "babylm-350m vs pythia-160m": 0.26568296011252385,
-    "babylm-350m vs pythia-6.9b": 0.30557318368428804,
-    "babylm-1.3b vs olmo-7b": 0.6092615265507938,
-    "babylm-1.3b vs pythia-160m": 0.6468093612016501,
-    "babylm-1.3b vs pythia-6.9b": 0.7162043613456626,
-    "olmo-7b vs pythia-160m": 0.6172815669917915,
-    "olmo-7b vs pythia-6.9b": 0.7746209391064107,
-    "pythia-160m vs pythia-6.9b": 0.7199976416091457
+    "whisper-base-enc vs whisper-base-dec": {
+      "score": 0.23557438392697808,
+      "hsic_std": 4.583943500629151e-06
+    },
+    "whisper-base-enc vs whisper-small-enc": {
+      "score": 0.9621063640264733,
+      "hsic_std": 7.92299259244768e-06
+    },
+    "whisper-base-enc vs whisper-small-dec": {
+      "score": 0.16235587037024893,
+      "hsic_std": 1.8161121834366712e-06
+    },
+    "whisper-base-enc vs whisper-medium-enc": {
+      "score": 0.9526912896907013,
+      "hsic_std": 5.333277076755042e-06
+    },
+    "whisper-base-enc vs whisper-medium-dec": {
+      "score": 0.28563910648148966,
+      "hsic_std": 1.4585409108509541e-06
+    },
+    "whisper-base-enc vs whisper-large-enc": {
+      "score": 0.8728651125686911,
+      "hsic_std": 4.809541569981356e-06
+    },
+    "whisper-base-enc vs whisper-large-dec": {
+      "score": 0.24260748480059835,
+      "hsic_std": 4.556492919211867e-06
+    },
+    "whisper-base-enc vs parakeet-ctc-0.6b": {
+      "score": 0.7881725860384451,
+      "hsic_std": 1.3747292129776785e-05
+    },
+    "whisper-base-enc vs mimi": {
+      "score": 0.7865690603456609,
+      "hsic_std": 1.7624333639839171e-06
+    },
+    "whisper-base-enc vs voxtral-3b": {
+      "score": 0.5202460886470331,
+      "hsic_std": 4.509169394508442e-06
+    },
+    "whisper-base-enc vs higgs-audio-v2-3b": {
+      "score": 0.2931842952385775,
+      "hsic_std": 3.142133753410648e-05
+    },
+    "whisper-base-enc vs babylm-125m": {
+      "score": 0.17354496159317487,
+      "hsic_std": 6.867248316993383e-06
+    },
+    "whisper-base-enc vs opt-125m": {
+      "score": 0.22452367856820787,
+      "hsic_std": 3.3152106308997733e-06
+    },
+    "whisper-base-enc vs babylm-350m": {
+      "score": 0.7304266028909709,
+      "hsic_std": 1.1665836127241399e-05
+    },
+    "whisper-base-enc vs babylm-1.3b": {
+      "score": 0.19874894145352706,
+      "hsic_std": 7.90620343483633e-06
+    },
+    "whisper-base-enc vs olmo-7b": {
+      "score": 0.31415661820044777,
+      "hsic_std": 2.6435181464983215e-06
+    },
+    "whisper-base-enc vs pythia-160m": {
+      "score": 0.18467856735373858,
+      "hsic_std": 3.829959087272378e-08
+    },
+    "whisper-base-enc vs pythia-6.9b": {
+      "score": 0.22475486876818787,
+      "hsic_std": 1.8889890428427665e-06
+    },
+    "whisper-base-dec vs whisper-small-enc": {
+      "score": 0.22463124785485214,
+      "hsic_std": 5.8036172059739645e-06
+    },
+    "whisper-base-dec vs whisper-small-dec": {
+      "score": 0.33317142517666326,
+      "hsic_std": 6.058608937702433e-06
+    },
+    "whisper-base-dec vs whisper-medium-enc": {
+      "score": 0.248476487585314,
+      "hsic_std": 4.097008305594494e-06
+    },
+    "whisper-base-dec vs whisper-medium-dec": {
+      "score": 0.266168343454069,
+      "hsic_std": 3.0881231698029883e-06
+    },
+    "whisper-base-dec vs whisper-large-enc": {
+      "score": 0.21657030247694117,
+      "hsic_std": 3.7441895644120704e-06
+    },
+    "whisper-base-dec vs whisper-large-dec": {
+      "score": 0.15328550229455393,
+      "hsic_std": 7.515983983546534e-06
+    },
+    "whisper-base-dec vs parakeet-ctc-0.6b": {
+      "score": 0.29444474801597975,
+      "hsic_std": 1.1259612380743122e-05
+    },
+    "whisper-base-dec vs mimi": {
+      "score": 0.18961704128739457,
+      "hsic_std": 1.3387832774983624e-06
+    },
+    "whisper-base-dec vs voxtral-3b": {
+      "score": 0.31581368620500244,
+      "hsic_std": 5.298374539082686e-06
+    },
+    "whisper-base-dec vs higgs-audio-v2-3b": {
+      "score": 0.10125048699863835,
+      "hsic_std": 2.8248177564108895e-05
+    },
+    "whisper-base-dec vs babylm-125m": {
+      "score": 0.2317680248583717,
+      "hsic_std": 1.265908136775009e-05
+    },
+    "whisper-base-dec vs opt-125m": {
+      "score": 0.22952529985825976,
+      "hsic_std": 4.839072994643701e-06
+    },
+    "whisper-base-dec vs babylm-350m": {
+      "score": 0.20514666440225196,
+      "hsic_std": 9.91401744454678e-06
+    },
+    "whisper-base-dec vs babylm-1.3b": {
+      "score": 0.23109958357903634,
+      "hsic_std": 1.3238978336938937e-05
+    },
+    "whisper-base-dec vs olmo-7b": {
+      "score": 0.24448039029236723,
+      "hsic_std": 3.1859643332703833e-06
+    },
+    "whisper-base-dec vs pythia-160m": {
+      "score": 0.20381389456063523,
+      "hsic_std": 6.070590098613727e-08
+    },
+    "whisper-base-dec vs pythia-6.9b": {
+      "score": 0.2462453208369317,
+      "hsic_std": 3.001485049005052e-06
+    },
+    "whisper-small-enc vs whisper-small-dec": {
+      "score": 0.15355673955736743,
+      "hsic_std": 2.2204135054334303e-06
+    },
+    "whisper-small-enc vs whisper-medium-enc": {
+      "score": 0.9597865161712476,
+      "hsic_std": 6.714840892808864e-06
+    },
+    "whisper-small-enc vs whisper-medium-dec": {
+      "score": 0.2765640055631255,
+      "hsic_std": 1.7999814178218714e-06
+    },
+    "whisper-small-enc vs whisper-large-enc": {
+      "score": 0.8906226731031863,
+      "hsic_std": 6.162584542661912e-06
+    },
+    "whisper-small-enc vs whisper-large-dec": {
+      "score": 0.24722964112035686,
+      "hsic_std": 5.815342252577981e-06
+    },
+    "whisper-small-enc vs parakeet-ctc-0.6b": {
+      "score": 0.7870060537134235,
+      "hsic_std": 1.7336496504243187e-05
+    },
+    "whisper-small-enc vs mimi": {
+      "score": 0.754956263841881,
+      "hsic_std": 2.1522135215628806e-06
+    },
+    "whisper-small-enc vs voxtral-3b": {
+      "score": 0.524444241119683,
+      "hsic_std": 5.780804062834955e-06
+    },
+    "whisper-small-enc vs higgs-audio-v2-3b": {
+      "score": 0.28735891031082544,
+      "hsic_std": 3.91811726121349e-05
+    },
+    "whisper-small-enc vs babylm-125m": {
+      "score": 0.16407624921589656,
+      "hsic_std": 8.355510453948472e-06
+    },
+    "whisper-small-enc vs opt-125m": {
+      "score": 0.21374510733356583,
+      "hsic_std": 4.0561725021797664e-06
+    },
+    "whisper-small-enc vs babylm-350m": {
+      "score": 0.7117605914098798,
+      "hsic_std": 1.4451143561941265e-05
+    },
+    "whisper-small-enc vs babylm-1.3b": {
+      "score": 0.19016047956105386,
+      "hsic_std": 9.718687718340528e-06
+    },
+    "whisper-small-enc vs olmo-7b": {
+      "score": 0.2967740072067738,
+      "hsic_std": 3.205060457277115e-06
+    },
+    "whisper-small-enc vs pythia-160m": {
+      "score": 0.17758936385632257,
+      "hsic_std": 4.7111260604046314e-08
+    },
+    "whisper-small-enc vs pythia-6.9b": {
+      "score": 0.2168546687418482,
+      "hsic_std": 2.3379576697234068e-06
+    },
+    "whisper-small-dec vs whisper-medium-enc": {
+      "score": 0.16996899904778645,
+      "hsic_std": 1.6480525085754323e-06
+    },
+    "whisper-small-dec vs whisper-medium-dec": {
+      "score": 0.46948137098075343,
+      "hsic_std": 3.426793036734555e-06
+    },
+    "whisper-small-dec vs whisper-large-enc": {
+      "score": 0.1533214119150769,
+      "hsic_std": 1.5518257870135089e-06
+    },
+    "whisper-small-dec vs whisper-large-dec": {
+      "score": 0.12980051059294948,
+      "hsic_std": 3.180310884695901e-06
+    },
+    "whisper-small-dec vs parakeet-ctc-0.6b": {
+      "score": 0.18567928151981986,
+      "hsic_std": 4.1809887494283e-06
+    },
+    "whisper-small-dec vs mimi": {
+      "score": 0.12081846258430409,
+      "hsic_std": 4.547968447325145e-07
+    },
+    "whisper-small-dec vs voxtral-3b": {
+      "score": 0.15035918437822945,
+      "hsic_std": 1.5666957923609412e-06
+    },
+    "whisper-small-dec vs higgs-audio-v2-3b": {
+      "score": 0.08061229179782962,
+      "hsic_std": 1.2436172071061681e-05
+    },
+    "whisper-small-dec vs babylm-125m": {
+      "score": 0.11039310232810133,
+      "hsic_std": 3.446877299293767e-06
+    },
+    "whisper-small-dec vs opt-125m": {
+      "score": 0.11690112642640967,
+      "hsic_std": 1.4973727081995152e-06
+    },
+    "whisper-small-dec vs babylm-350m": {
+      "score": 0.1752273286648269,
+      "hsic_std": 4.0958295129784486e-06
+    },
+    "whisper-small-dec vs babylm-1.3b": {
+      "score": 0.11062781920314087,
+      "hsic_std": 3.6093938777239542e-06
+    },
+    "whisper-small-dec vs olmo-7b": {
+      "score": 0.14460785209615673,
+      "hsic_std": 1.2314071823312746e-06
+    },
+    "whisper-small-dec vs pythia-160m": {
+      "score": 0.0980788645641596,
+      "hsic_std": 1.8455835922993023e-08
+    },
+    "whisper-small-dec vs pythia-6.9b": {
+      "score": 0.11523174425223162,
+      "hsic_std": 8.925482352465326e-07
+    },
+    "whisper-medium-enc vs whisper-medium-dec": {
+      "score": 0.2927383725454127,
+      "hsic_std": 1.3077248569397932e-06
+    },
+    "whisper-medium-enc vs whisper-large-enc": {
+      "score": 0.9431734278698274,
+      "hsic_std": 4.219035236893141e-06
+    },
+    "whisper-medium-enc vs whisper-large-dec": {
+      "score": 0.25748979655845183,
+      "hsic_std": 4.077942050347508e-06
+    },
+    "whisper-medium-enc vs parakeet-ctc-0.6b": {
+      "score": 0.803974453874627,
+      "hsic_std": 1.1587823056046197e-05
+    },
+    "whisper-medium-enc vs mimi": {
+      "score": 0.7850073262078852,
+      "hsic_std": 1.476217646133423e-06
+    },
+    "whisper-medium-enc vs voxtral-3b": {
+      "score": 0.545118218482571,
+      "hsic_std": 3.845903303830886e-06
+    },
+    "whisper-medium-enc vs higgs-audio-v2-3b": {
+      "score": 0.29181177384542384,
+      "hsic_std": 2.6484345295199655e-05
+    },
+    "whisper-medium-enc vs babylm-125m": {
+      "score": 0.18892357358876996,
+      "hsic_std": 5.727182194669321e-06
+    },
+    "whisper-medium-enc vs opt-125m": {
+      "score": 0.23780173212352185,
+      "hsic_std": 2.7740321235979153e-06
+    },
+    "whisper-medium-enc vs babylm-350m": {
+      "score": 0.7261903588412065,
+      "hsic_std": 9.828289808324235e-06
+    },
+    "whisper-medium-enc vs babylm-1.3b": {
+      "score": 0.2133728890278765,
+      "hsic_std": 6.619234665733629e-06
+    },
+    "whisper-medium-enc vs olmo-7b": {
+      "score": 0.32344410780791205,
+      "hsic_std": 2.2371612257828653e-06
+    },
+    "whisper-medium-enc vs pythia-160m": {
+      "score": 0.19845093723281126,
+      "hsic_std": 3.2354159274196934e-08
+    },
+    "whisper-medium-enc vs pythia-6.9b": {
+      "score": 0.24120073265518133,
+      "hsic_std": 1.5977943009457367e-06
+    },
+    "whisper-medium-dec vs whisper-large-enc": {
+      "score": 0.26371186075353975,
+      "hsic_std": 1.1859443910341633e-06
+    },
+    "whisper-medium-dec vs whisper-large-dec": {
+      "score": 0.17030609107929204,
+      "hsic_std": 1.9890342081444063e-06
+    },
+    "whisper-medium-dec vs parakeet-ctc-0.6b": {
+      "score": 0.25883081714503053,
+      "hsic_std": 3.2650448297272557e-06
+    },
+    "whisper-medium-dec vs mimi": {
+      "score": 0.2138868264633321,
+      "hsic_std": 3.942500634240166e-07
+    },
+    "whisper-medium-dec vs voxtral-3b": {
+      "score": 0.17665293680671795,
+      "hsic_std": 1.1853094341626556e-06
+    },
+    "whisper-medium-dec vs higgs-audio-v2-3b": {
+      "score": 0.10465842154556043,
+      "hsic_std": 8.650173730810415e-06
+    },
+    "whisper-medium-dec vs babylm-125m": {
+      "score": 0.07912412261875472,
+      "hsic_std": 2.1493977085573297e-06
+    },
+    "whisper-medium-dec vs opt-125m": {
+      "score": 0.0920361527382092,
+      "hsic_std": 9.160418992745819e-07
+    },
+    "whisper-medium-dec vs babylm-350m": {
+      "score": 0.2503647795202293,
+      "hsic_std": 2.913044236322997e-06
+    },
+    "whisper-medium-dec vs babylm-1.3b": {
+      "score": 0.08607438211567917,
+      "hsic_std": 2.327770192506716e-06
+    },
+    "whisper-medium-dec vs olmo-7b": {
+      "score": 0.13703095464486703,
+      "hsic_std": 7.783694310162655e-07
+    },
+    "whisper-medium-dec vs pythia-160m": {
+      "score": 0.07504963953252157,
+      "hsic_std": 1.0547022937465416e-08
+    },
+    "whisper-medium-dec vs pythia-6.9b": {
+      "score": 0.09362763090208165,
+      "hsic_std": 5.448711009838638e-07
+    },
+    "whisper-large-enc vs whisper-large-dec": {
+      "score": 0.36955117831694323,
+      "hsic_std": 4.322558088577564e-06
+    },
+    "whisper-large-enc vs parakeet-ctc-0.6b": {
+      "score": 0.7403554535618043,
+      "hsic_std": 1.0385973056624735e-05
+    },
+    "whisper-large-enc vs mimi": {
+      "score": 0.7141217772988866,
+      "hsic_std": 1.3205736210966503e-06
+    },
+    "whisper-large-enc vs voxtral-3b": {
+      "score": 0.5167291766034424,
+      "hsic_std": 3.4775136462884104e-06
+    },
+    "whisper-large-enc vs higgs-audio-v2-3b": {
+      "score": 0.2642338071399532,
+      "hsic_std": 2.352620230842916e-05
+    },
+    "whisper-large-enc vs babylm-125m": {
+      "score": 0.16476948291754928,
+      "hsic_std": 5.161249967794831e-06
+    },
+    "whisper-large-enc vs opt-125m": {
+      "score": 0.20772774141772563,
+      "hsic_std": 2.4320485375225647e-06
+    },
+    "whisper-large-enc vs babylm-350m": {
+      "score": 0.6651346382775112,
+      "hsic_std": 8.639073927576122e-06
+    },
+    "whisper-large-enc vs babylm-1.3b": {
+      "score": 0.18648673183339315,
+      "hsic_std": 5.923115430974165e-06
+    },
+    "whisper-large-enc vs olmo-7b": {
+      "score": 0.28799973787609734,
+      "hsic_std": 1.9838721032909235e-06
+    },
+    "whisper-large-enc vs pythia-160m": {
+      "score": 0.17387414078534247,
+      "hsic_std": 2.8424933076802012e-08
+    },
+    "whisper-large-enc vs pythia-6.9b": {
+      "score": 0.21175974064857217,
+      "hsic_std": 1.4066305934570892e-06
+    },
+    "whisper-large-dec vs parakeet-ctc-0.6b": {
+      "score": 0.22573828808467014,
+      "hsic_std": 9.742681704675529e-06
+    },
+    "whisper-large-dec vs mimi": {
+      "score": 0.17923864044742224,
+      "hsic_std": 1.2147256352364909e-06
+    },
+    "whisper-large-dec vs voxtral-3b": {
+      "score": 0.3010537629477596,
+      "hsic_std": 5.093815073077419e-06
+    },
+    "whisper-large-dec vs higgs-audio-v2-3b": {
+      "score": 0.1038952891996698,
+      "hsic_std": 2.4752313358612607e-05
+    },
+    "whisper-large-dec vs babylm-125m": {
+      "score": 0.06883923481818419,
+      "hsic_std": 6.244352154167337e-06
+    },
+    "whisper-large-dec vs opt-125m": {
+      "score": 0.08360349371433931,
+      "hsic_std": 2.8295016154716464e-06
+    },
+    "whisper-large-dec vs babylm-350m": {
+      "score": 0.2381984132004739,
+      "hsic_std": 9.328601654423295e-06
+    },
+    "whisper-large-dec vs babylm-1.3b": {
+      "score": 0.07736976223883232,
+      "hsic_std": 7.149368874446256e-06
+    },
+    "whisper-large-dec vs olmo-7b": {
+      "score": 0.126020619460049,
+      "hsic_std": 2.452334604928631e-06
+    },
+    "whisper-large-dec vs pythia-160m": {
+      "score": 0.07119484485380372,
+      "hsic_std": 3.480254185548344e-08
+    },
+    "whisper-large-dec vs pythia-6.9b": {
+      "score": 0.0899341609108015,
+      "hsic_std": 1.7068141200525695e-06
+    },
+    "parakeet-ctc-0.6b vs mimi": {
+      "score": 0.7167826694689933,
+      "hsic_std": 3.977831678457723e-06
+    },
+    "parakeet-ctc-0.6b vs voxtral-3b": {
+      "score": 0.6303957481778011,
+      "hsic_std": 1.0024676283065174e-05
+    },
+    "parakeet-ctc-0.6b vs higgs-audio-v2-3b": {
+      "score": 0.29847753848812814,
+      "hsic_std": 7.060601550535814e-05
+    },
+    "parakeet-ctc-0.6b vs babylm-125m": {
+      "score": 0.4067360757876265,
+      "hsic_std": 1.7194925292839028e-05
+    },
+    "parakeet-ctc-0.6b vs opt-125m": {
+      "score": 0.4516432742490155,
+      "hsic_std": 8.518737305114086e-06
+    },
+    "parakeet-ctc-0.6b vs babylm-350m": {
+      "score": 0.6942318099776315,
+      "hsic_std": 2.658206552426808e-05
+    },
+    "parakeet-ctc-0.6b vs babylm-1.3b": {
+      "score": 0.4217253096179674,
+      "hsic_std": 1.9445211650073198e-05
+    },
+    "parakeet-ctc-0.6b vs olmo-7b": {
+      "score": 0.5097215111282175,
+      "hsic_std": 6.443468388956371e-06
+    },
+    "parakeet-ctc-0.6b vs pythia-160m": {
+      "score": 0.38665284307657566,
+      "hsic_std": 9.593845037443682e-08
+    },
+    "parakeet-ctc-0.6b vs pythia-6.9b": {
+      "score": 0.4654906873082861,
+      "hsic_std": 4.860011337964358e-06
+    },
+    "mimi vs voxtral-3b": {
+      "score": 0.41527253259792235,
+      "hsic_std": 1.197368101657291e-06
+    },
+    "mimi vs higgs-audio-v2-3b": {
+      "score": 0.27570747599541845,
+      "hsic_std": 8.979152854112642e-06
+    },
+    "mimi vs babylm-125m": {
+      "score": 0.15390964340248,
+      "hsic_std": 2.0637485640959686e-06
+    },
+    "mimi vs opt-125m": {
+      "score": 0.20017160957661825,
+      "hsic_std": 1.0021894466515087e-06
+    },
+    "mimi vs babylm-350m": {
+      "score": 0.6897553390574696,
+      "hsic_std": 3.3727098696988768e-06
+    },
+    "mimi vs babylm-1.3b": {
+      "score": 0.1767819600133347,
+      "hsic_std": 2.3819329075890916e-06
+    },
+    "mimi vs olmo-7b": {
+      "score": 0.29606954887779524,
+      "hsic_std": 8.008979609061922e-07
+    },
+    "mimi vs pythia-160m": {
+      "score": 0.16159582166495473,
+      "hsic_std": 1.096374107834577e-08
+    },
+    "mimi vs pythia-6.9b": {
+      "score": 0.20080123361010707,
+      "hsic_std": 5.63183937428219e-07
+    },
+    "voxtral-3b vs higgs-audio-v2-3b": {
+      "score": 0.21911000984835516,
+      "hsic_std": 2.4783346098878184e-05
+    },
+    "voxtral-3b vs babylm-125m": {
+      "score": 0.4903771801016914,
+      "hsic_std": 8.376875491934512e-06
+    },
+    "voxtral-3b vs opt-125m": {
+      "score": 0.4914569374573236,
+      "hsic_std": 4.039933772189169e-06
+    },
+    "voxtral-3b vs babylm-350m": {
+      "score": 0.4661495448856497,
+      "hsic_std": 9.215972943545995e-06
+    },
+    "voxtral-3b vs babylm-1.3b": {
+      "score": 0.49086207293796746,
+      "hsic_std": 8.75898360556689e-06
+    },
+    "voxtral-3b vs olmo-7b": {
+      "score": 0.5258986667746848,
+      "hsic_std": 2.4514824475724724e-06
+    },
+    "voxtral-3b vs pythia-160m": {
+      "score": 0.42916947856022697,
+      "hsic_std": 5.007309132548675e-08
+    },
+    "voxtral-3b vs pythia-6.9b": {
+      "score": 0.5720968942342919,
+      "hsic_std": 2.3614123103738176e-06
+    },
+    "higgs-audio-v2-3b vs babylm-125m": {
+      "score": 0.12734077212339595,
+      "hsic_std": 4.589161543209693e-05
+    },
+    "higgs-audio-v2-3b vs opt-125m": {
+      "score": 0.16733947662628132,
+      "hsic_std": 2.488771924557089e-05
+    },
+    "higgs-audio-v2-3b vs babylm-350m": {
+      "score": 0.3912082158299033,
+      "hsic_std": 7.931242848709203e-05
+    },
+    "higgs-audio-v2-3b vs babylm-1.3b": {
+      "score": 0.14142166048611646,
+      "hsic_std": 5.5973288468188926e-05
+    },
+    "higgs-audio-v2-3b vs olmo-7b": {
+      "score": 0.2331943977708267,
+      "hsic_std": 2.021611919901659e-05
+    },
+    "higgs-audio-v2-3b vs pythia-160m": {
+      "score": 0.15886969366683135,
+      "hsic_std": 3.156222258836076e-07
+    },
+    "higgs-audio-v2-3b vs pythia-6.9b": {
+      "score": 0.17143017342416855,
+      "hsic_std": 1.553499915385373e-05
+    },
+    "babylm-125m vs opt-125m": {
+      "score": 0.7235343396057042,
+      "hsic_std": 1.602907593179153e-05
+    },
+    "babylm-125m vs babylm-350m": {
+      "score": 0.22165924632574605,
+      "hsic_std": 1.8465855973963212e-05
+    },
+    "babylm-125m vs babylm-1.3b": {
+      "score": 0.8814505854258754,
+      "hsic_std": 3.9535211526328395e-05
+    },
+    "babylm-125m vs olmo-7b": {
+      "score": 0.61658384728757,
+      "hsic_std": 7.790035530119506e-06
+    },
+    "babylm-125m vs pythia-160m": {
+      "score": 0.6468952883602737,
+      "hsic_std": 2.13704509243e-07
+    },
+    "babylm-125m vs pythia-6.9b": {
+      "score": 0.727739037463946,
+      "hsic_std": 8.69229127408355e-06
+    },
+    "opt-125m vs babylm-350m": {
+      "score": 0.2959870851370993,
+      "hsic_std": 1.006471047901159e-05
+    },
+    "opt-125m vs babylm-1.3b": {
+      "score": 0.7167972430077921,
+      "hsic_std": 1.6136941003795223e-05
+    },
+    "opt-125m vs olmo-7b": {
+      "score": 0.6879063986368762,
+      "hsic_std": 4.246791823721222e-06
+    },
+    "opt-125m vs pythia-160m": {
+      "score": 0.7672979589915645,
+      "hsic_std": 1.1644328343515344e-07
+    },
+    "opt-125m vs pythia-6.9b": {
+      "score": 0.7675658756856668,
+      "hsic_std": 4.614666454836632e-06
+    },
+    "babylm-350m vs babylm-1.3b": {
+      "score": 0.2520307961391518,
+      "hsic_std": 2.1781719613386597e-05
+    },
+    "babylm-350m vs olmo-7b": {
+      "score": 0.4427032819161185,
+      "hsic_std": 7.710695946660732e-06
+    },
+    "babylm-350m vs pythia-160m": {
+      "score": 0.26568296011252385,
+      "hsic_std": 1.1984917657968005e-07
+    },
+    "babylm-350m vs pythia-6.9b": {
+      "score": 0.30557318368428804,
+      "hsic_std": 5.92812669804259e-06
+    },
+    "babylm-1.3b vs olmo-7b": {
+      "score": 0.6092615265507938,
+      "hsic_std": 8.054575803078035e-06
+    },
+    "babylm-1.3b vs pythia-160m": {
+      "score": 0.6468093612016501,
+      "hsic_std": 2.1645463698655843e-07
+    },
+    "babylm-1.3b vs pythia-6.9b": {
+      "score": 0.7162043613456626,
+      "hsic_std": 8.819519482022704e-06
+    },
+    "olmo-7b vs pythia-160m": {
+      "score": 0.6172815669917915,
+      "hsic_std": 5.409168729063665e-08
+    },
+    "olmo-7b vs pythia-6.9b": {
+      "score": 0.7746209391064107,
+      "hsic_std": 2.576842786753683e-06
+    },
+    "pythia-160m vs pythia-6.9b": {
+      "score": 0.7199976416091457,
+      "hsic_std": 6.20477223395409e-08
+    }
   },
   "cka_matrix": [
     [
@@ -372,6 +921,8 @@
       0.8728651125686911,
       0.24260748480059835,
       0.7881725860384451,
+      0.7865690603456609,
+      0.5202460886470331,
       0.2931842952385775,
       0.17354496159317487,
       0.22452367856820787,
@@ -391,6 +942,8 @@
       0.21657030247694117,
       0.15328550229455393,
       0.29444474801597975,
+      0.18961704128739457,
+      0.31581368620500244,
       0.10125048699863835,
       0.2317680248583717,
       0.22952529985825976,
@@ -410,6 +963,8 @@
       0.8906226731031863,
       0.24722964112035686,
       0.7870060537134235,
+      0.754956263841881,
+      0.524444241119683,
       0.28735891031082544,
       0.16407624921589656,
       0.21374510733356583,
@@ -429,6 +984,8 @@
       0.1533214119150769,
       0.12980051059294948,
       0.18567928151981986,
+      0.12081846258430409,
+      0.15035918437822945,
       0.08061229179782962,
       0.11039310232810133,
       0.11690112642640967,
@@ -448,6 +1005,8 @@
       0.9431734278698274,
       0.25748979655845183,
       0.803974453874627,
+      0.7850073262078852,
+      0.545118218482571,
       0.29181177384542384,
       0.18892357358876996,
       0.23780173212352185,
@@ -467,6 +1026,8 @@
       0.26371186075353975,
       0.17030609107929204,
       0.25883081714503053,
+      0.2138868264633321,
+      0.17665293680671795,
       0.10465842154556043,
       0.07912412261875472,
       0.0920361527382092,
@@ -486,6 +1047,8 @@
       1.0,
       0.36955117831694323,
       0.7403554535618043,
+      0.7141217772988866,
+      0.5167291766034424,
       0.2642338071399532,
       0.16476948291754928,
       0.20772774141772563,
@@ -505,6 +1068,8 @@
       0.36955117831694323,
       1.0,
       0.22573828808467014,
+      0.17923864044742224,
+      0.3010537629477596,
       0.1038952891996698,
       0.06883923481818419,
       0.08360349371433931,
@@ -524,6 +1089,8 @@
       0.7403554535618043,
       0.22573828808467014,
       1.0,
+      0.7167826694689933,
+      0.6303957481778011,
       0.29847753848812814,
       0.4067360757876265,
       0.4516432742490155,
@@ -532,6 +1099,48 @@
       0.5097215111282175,
       0.38665284307657566,
       0.4654906873082861
+    ],
+    [
+      0.7865690603456609,
+      0.18961704128739457,
+      0.754956263841881,
+      0.12081846258430409,
+      0.7850073262078852,
+      0.2138868264633321,
+      0.7141217772988866,
+      0.17923864044742224,
+      0.7167826694689933,
+      1.0,
+      0.41527253259792235,
+      0.27570747599541845,
+      0.15390964340248,
+      0.20017160957661825,
+      0.6897553390574696,
+      0.1767819600133347,
+      0.29606954887779524,
+      0.16159582166495473,
+      0.20080123361010707
+    ],
+    [
+      0.5202460886470331,
+      0.31581368620500244,
+      0.524444241119683,
+      0.15035918437822945,
+      0.545118218482571,
+      0.17665293680671795,
+      0.5167291766034424,
+      0.3010537629477596,
+      0.6303957481778011,
+      0.41527253259792235,
+      1.0,
+      0.21911000984835516,
+      0.4903771801016914,
+      0.4914569374573236,
+      0.4661495448856497,
+      0.49086207293796746,
+      0.5258986667746848,
+      0.42916947856022697,
+      0.5720968942342919
     ],
     [
       0.2931842952385775,
@@ -543,6 +1152,8 @@
       0.2642338071399532,
       0.1038952891996698,
       0.29847753848812814,
+      0.27570747599541845,
+      0.21911000984835516,
       1.0,
       0.12734077212339595,
       0.16733947662628132,
@@ -562,6 +1173,8 @@
       0.16476948291754928,
       0.06883923481818419,
       0.4067360757876265,
+      0.15390964340248,
+      0.4903771801016914,
       0.12734077212339595,
       1.0,
       0.7235343396057042,
@@ -581,6 +1194,8 @@
       0.20772774141772563,
       0.08360349371433931,
       0.4516432742490155,
+      0.20017160957661825,
+      0.4914569374573236,
       0.16733947662628132,
       0.7235343396057042,
       1.0,
@@ -600,6 +1215,8 @@
       0.6651346382775112,
       0.2381984132004739,
       0.6942318099776315,
+      0.6897553390574696,
+      0.4661495448856497,
       0.3912082158299033,
       0.22165924632574605,
       0.2959870851370993,
@@ -619,6 +1236,8 @@
       0.18648673183339315,
       0.07736976223883232,
       0.4217253096179674,
+      0.1767819600133347,
+      0.49086207293796746,
       0.14142166048611646,
       0.8814505854258754,
       0.7167972430077921,
@@ -638,6 +1257,8 @@
       0.28799973787609734,
       0.126020619460049,
       0.5097215111282175,
+      0.29606954887779524,
+      0.5258986667746848,
       0.2331943977708267,
       0.61658384728757,
       0.6879063986368762,
@@ -657,6 +1278,8 @@
       0.17387414078534247,
       0.07119484485380372,
       0.38665284307657566,
+      0.16159582166495473,
+      0.42916947856022697,
       0.15886969366683135,
       0.6468952883602737,
       0.7672979589915645,
@@ -676,6 +1299,8 @@
       0.21175974064857217,
       0.0899341609108015,
       0.4654906873082861,
+      0.20080123361010707,
+      0.5720968942342919,
       0.17143017342416855,
       0.727739037463946,
       0.7675658756856668,
@@ -1155,6 +1780,110 @@
       0.0023751293774694204,
       0.0023231743834912777
     ],
+    "mimi": [
+      0.48966774344444275,
+      0.08061825484037399,
+      0.07303895056247711,
+      0.06297680735588074,
+      0.042759351432323456,
+      0.0397123321890831,
+      0.02186228707432747,
+      0.01721644215285778,
+      0.014503437094390392,
+      0.01322963647544384,
+      0.011841588653624058,
+      0.011367675848305225,
+      0.010103937238454819,
+      0.00945878867059946,
+      0.008539861999452114,
+      0.007986471056938171,
+      0.007158741820603609,
+      0.006693495903164148,
+      0.006308018695563078,
+      0.005856651812791824,
+      0.005332165397703648,
+      0.005167251918464899,
+      0.0042146374471485615,
+      0.0040853205136954784,
+      0.0036465420853346586,
+      0.0033137761056423187,
+      0.0030869857873767614,
+      0.002789383288472891,
+      0.002505047945305705,
+      0.002301917178556323,
+      0.002277124673128128,
+      0.001930248225107789,
+      0.0017651296220719814,
+      0.0016096567269414663,
+      0.001515361713245511,
+      0.0014014041516929865,
+      0.0013336163247004151,
+      0.001223051338456571,
+      0.001076624495908618,
+      0.0010217390954494476,
+      0.0009695206535980105,
+      0.0009621386416256428,
+      0.0008507247548550367,
+      0.0008105591405183077,
+      0.0007371712126769125,
+      0.0007064696401357651,
+      0.0006903174216859043,
+      0.0006259639048948884,
+      0.0005924931610934436,
+      0.0005570731009356678
+    ],
+    "voxtral-3b": [
+      0.21286174654960632,
+      0.10636642575263977,
+      0.07381690293550491,
+      0.07310371845960617,
+      0.04612253978848457,
+      0.041392773389816284,
+      0.03667756915092468,
+      0.031335510313510895,
+      0.02735310047864914,
+      0.0237638708204031,
+      0.020946014672517776,
+      0.01876860484480858,
+      0.01765509322285652,
+      0.016771286725997925,
+      0.016179190948605537,
+      0.013807949610054493,
+      0.013240274973213673,
+      0.011819874867796898,
+      0.011472244746983051,
+      0.010245497338473797,
+      0.009567257948219776,
+      0.00933010969310999,
+      0.009131968021392822,
+      0.008374041877686977,
+      0.008187206462025642,
+      0.007715829182416201,
+      0.00706018041819334,
+      0.006970563437789679,
+      0.006830372381955385,
+      0.006388634443283081,
+      0.0061920336447656155,
+      0.006112450268119574,
+      0.005880055483430624,
+      0.005807391367852688,
+      0.00548976194113493,
+      0.005432371515780687,
+      0.005319290794432163,
+      0.005063363816589117,
+      0.00498542096465826,
+      0.004817907232791185,
+      0.004733807872980833,
+      0.004600309766829014,
+      0.004387418739497662,
+      0.004312650766223669,
+      0.004185174126178026,
+      0.00412345677614212,
+      0.004003803711384535,
+      0.0039046555757522583,
+      0.00373572064563632,
+      0.0036566471680998802
+    ],
     "higgs-audio-v2-3b": [
       0.6430627107620239,
       0.10164695233106613,
@@ -1582,6 +2311,8 @@
     "whisper-large-enc": 3.64070200920105,
     "whisper-large-dec": 4.6143574714660645,
     "parakeet-ctc-0.6b": 11.978940963745117,
+    "mimi": 9.134838104248047,
+    "voxtral-3b": 23.797922134399414,
     "higgs-audio-v2-3b": 5.1070027351379395,
     "babylm-125m": 34.14122772216797,
     "opt-125m": 29.64822006225586,
