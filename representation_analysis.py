@@ -1838,12 +1838,10 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path,
         for j in range(n):
             val = cka_matrix[i, j]
             text_color = "black" if val < 0.7 else "white"
-            # Show score ± SD across minibatches (SD indicates how consistently
-            # the similarity holds across different subsets of utterances).
             if cka_results is not None and i != j:
                 key = f"{names[min(i,j)]} vs {names[max(i,j)]}"
                 std = cka_results.get(key, {}).get("hsic_std", None)
-                label = f"{val:.3f}\n±{std:.3f}" if std is not None else f"{val:.3f}"
+                label = f"{val:.3f}\n±{std:.2e}" if std is not None else f"{val:.3f}"
             else:
                 label = f"{val:.3f}"
             ax.text(j, i, label, ha="center", va="center",
