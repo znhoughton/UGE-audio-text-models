@@ -1558,10 +1558,9 @@ def minibatch_cka(
     similarity scores in the high-dimensionality regime.
     Minibatch accumulation follows Nguyen, Raghu & Kornblith (2021).
 
-    Returns (cka_score, hsic_xy_std) where hsic_xy_std is the standard
-    deviation of per-minibatch HSIC(X,Y) values — a measure of how
-    consistently the cross-model similarity holds across different subsets
-    of utterances.
+    Returns (cka_score, cka_std) where cka_std is the standard deviation
+    of per-minibatch CKA scores — each batch's own HSIC_xy / sqrt(HSIC_xx *
+    HSIC_yy) — giving a variability estimate on the same scale as the score.
     """
     if X.shape[0] != Y.shape[0]:
         # Row counts can differ when a model skips batches (e.g. OOM, non-finite
@@ -1599,10 +1598,15 @@ def minibatch_cka(
         return score, 0.0
 
     mean_xy = float(np.mean(hsic_xy))
-    std_xy = float(np.std(hsic_xy))
     denom = np.sqrt(max(float(np.mean(hsic_xx)), 0.0) * max(float(np.mean(hsic_yy)), 0.0))
     score = float(mean_xy / denom) if denom > 1e-10 else 0.0
-    return score, std_xy
+    per_batch_cka = [
+        hxy / np.sqrt(max(hxx, 0.0) * max(hyy, 0.0))
+        if np.sqrt(max(hxx, 0.0) * max(hyy, 0.0)) > 1e-10 else 0.0
+        for hxy, hxx, hyy in zip(hsic_xy, hsic_xx, hsic_yy)
+    ]
+    cka_std = float(np.std(per_batch_cka))
+    return score, cka_std
 
 
 def cka_stability_check(
@@ -1841,7 +1845,7 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path,
             if cka_results is not None and i != j:
                 key = f"{names[min(i,j)]} vs {names[max(i,j)]}"
                 std = cka_results.get(key, {}).get("hsic_std", None)
-                label = f"{val:.3f}\n±{std:.2e}" if std is not None else f"{val:.3f}"
+                label = f"{val:.3f}\n±{std:.3f}" if std is not None else f"{val:.3f}"
             else:
                 label = f"{val:.3f}"
             ax.text(j, i, label, ha="center", va="center",

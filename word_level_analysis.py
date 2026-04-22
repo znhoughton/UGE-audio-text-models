@@ -1277,7 +1277,9 @@ def minibatch_cka(
     batch_size: int = MINIBATCH_SIZE,
     seed: int = MINIBATCH_SEED,
 ) -> tuple[float, float]:
-    """Minibatch linear CKA. Returns (cka_score, hsic_xy_std)."""
+    """Minibatch linear CKA. Returns (cka_score, cka_std) where cka_std is
+    the std of per-minibatch CKA scores — each batch's own HSIC_xy /
+    sqrt(HSIC_xx * HSIC_yy) — on the same scale as the score itself."""
     # Filter out zero rows (words with no embedding)
     valid = (np.linalg.norm(X, axis=1) > 1e-10) & (np.linalg.norm(Y, axis=1) > 1e-10)
     X, Y = X[valid], Y[valid]
@@ -1301,10 +1303,15 @@ def minibatch_cka(
         return 0.0, 0.0
 
     mean_xy = float(np.mean(hsic_xy))
-    std_xy  = float(np.std(hsic_xy))
     denom = np.sqrt(max(float(np.mean(hsic_xx)), 0.0) * max(float(np.mean(hsic_yy)), 0.0))
     score = float(mean_xy / denom) if denom > 1e-10 else 0.0
-    return score, std_xy
+    per_batch_cka = [
+        hxy / np.sqrt(max(hxx, 0.0) * max(hyy, 0.0))
+        if np.sqrt(max(hxx, 0.0) * max(hyy, 0.0)) > 1e-10 else 0.0
+        for hxy, hxx, hyy in zip(hsic_xy, hsic_xx, hsic_yy)
+    ]
+    cka_std = float(np.std(per_batch_cka))
+    return score, cka_std
 
 
 # ---------------------------------------------------------------------------
@@ -1370,7 +1377,7 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path,
             if cka_results is not None and i != j:
                 key = f"{names[min(i,j)]} vs {names[max(i,j)]}"
                 std = cka_results.get(key, {}).get("hsic_std", None)
-                label = f"{val:.3f}\n±{std:.2e}" if std is not None else f"{val:.3f}"
+                label = f"{val:.3f}\n±{std:.3f}" if std is not None else f"{val:.3f}"
             else:
                 label = f"{val:.3f}"
             ax.text(j, i, label, ha="center", va="center",
