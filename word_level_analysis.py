@@ -1310,8 +1310,9 @@ def minibatch_cka(
         if np.sqrt(max(hxx, 0.0) * max(hyy, 0.0)) > 1e-10 else 0.0
         for hxy, hxx, hyy in zip(hsic_xy, hsic_xx, hsic_yy)
     ]
-    cka_std = float(np.std(per_batch_cka))
-    return score, cka_std
+    k = len(per_batch_cka)
+    ci95 = 1.96 * float(np.std(per_batch_cka)) / np.sqrt(k) if k > 1 else 0.0
+    return score, ci95
 
 
 # ---------------------------------------------------------------------------
@@ -1376,7 +1377,7 @@ def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path,
             text_color = "black" if val < 0.7 else "white"
             if cka_results is not None and i != j:
                 key = f"{names[min(i,j)]} vs {names[max(i,j)]}"
-                std = cka_results.get(key, {}).get("hsic_std", None)
+                std = cka_results.get(key, {}).get("ci95", None)
                 label = f"{val:.3f}\n±{std:.3f}" if std is not None else f"{val:.3f}"
             else:
                 label = f"{val:.3f}"
@@ -1461,9 +1462,9 @@ def save_summary_tables(cka_matrix: np.ndarray, cka_results: dict,
     path2 = data_dir / "word_cka_minibatch_std.csv"
     with open(path2, "w", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["pair", "cka_score", "hsic_std"])
+        w.writerow(["pair", "cka_score", "ci95"])
         for pair, vals in cka_results.items():
-            w.writerow([pair, f"{vals['score']:.6f}", f"{vals['hsic_std']:.6f}"])
+            w.writerow([pair, f"{vals['score']:.6f}", f"{vals['ci95']:.6f}"])
     logger.info(f"  Saved → {path2}")
 
     path3 = data_dir / "word_pca_summary.csv"
@@ -1741,13 +1742,13 @@ def main():
                     cka_matrix[i, j] = cka_matrix[j, i]
                     continue
                 t0 = time.perf_counter()
-                score, hsic_std = minibatch_cka(embeddings[names[i]], embeddings[names[j]],
+                score, cka_std = minibatch_cka(embeddings[names[i]], embeddings[names[j]],
                                                 batch_size=args.batch_size)
                 cka_matrix[i, j] = score
                 key = f"{names[i]} vs {names[j]}"
-                cka_results[key] = {"score": score, "hsic_std": hsic_std}
+                cka_results[key] = {"score": score, "ci95": cka_std}
                 logger.info(f"  CKA({names[i]}, {names[j]}) = {score:.4f}  "
-                            f"(hsic_std={hsic_std:.4f}, {time.perf_counter()-t0:.1f}s)")
+                            f"(95% CI ±{cka_std:.4f}, {time.perf_counter()-t0:.1f}s)")
                 pair_bar.update(1)
         pair_bar.close()
 
