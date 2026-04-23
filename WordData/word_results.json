@@ -194,547 +194,547 @@
   "cka_scores": {
     "whisper-base-enc vs whisper-small-enc": {
       "score": 0.8255953411681133,
-      "hsic_std": 0.0003115486558454431
+      "ci95": 0.0004036653222579924
     },
     "whisper-base-enc vs whisper-medium-enc": {
       "score": 0.867698500941191,
-      "hsic_std": 0.0003203221020268568
+      "ci95": 0.00035975012027791094
     },
     "whisper-base-enc vs whisper-large-enc": {
       "score": 0.8056259393901846,
-      "hsic_std": 0.0004178865721525446
+      "ci95": 0.0006817154325436475
     },
     "whisper-base-enc vs whisper-base-dec": {
       "score": 0.19952954571032616,
-      "hsic_std": 0.00016958415502563433
+      "ci95": 0.001726418699007548
     },
     "whisper-base-enc vs whisper-small-dec": {
       "score": 0.37545429639158134,
-      "hsic_std": 0.0005794865019865756
+      "ci95": 0.0023399381317804487
     },
     "whisper-base-enc vs whisper-medium-dec": {
       "score": 0.4832318126059559,
-      "hsic_std": 0.00023781807919990617
+      "ci95": 0.0016889536271873856
     },
     "whisper-base-enc vs whisper-large-dec": {
       "score": 0.18345195357764663,
-      "hsic_std": 8.508530454618569e-05
+      "ci95": 0.0012201374567252213
     },
     "whisper-base-enc vs parakeet-ctc-0.6b": {
       "score": 0.1656288317819288,
-      "hsic_std": 4.7685341293443446e-05
+      "ci95": 0.0010173011531565152
     },
     "whisper-base-enc vs mimi": {
       "score": 0.08347639824235085,
-      "hsic_std": 1.4079685640571362e-05
+      "ci95": 0.0016843541044674068
     },
     "whisper-base-enc vs babylm-125m": {
       "score": 0.22412687359675182,
-      "hsic_std": 0.00010651655440625484
+      "ci95": 0.0011677913418146745
     },
     "whisper-base-enc vs opt-125m": {
       "score": 0.23052165410117453,
-      "hsic_std": 0.00014069288242565584
+      "ci95": 0.0014691887717932428
     },
     "whisper-base-enc vs babylm-350m": {
       "score": 0.22267090742282,
-      "hsic_std": 0.00011438032227008663
+      "ci95": 0.0012145947654889325
     },
     "whisper-base-enc vs babylm-1.3b": {
       "score": 0.23042824569180065,
-      "hsic_std": 8.962111084043297e-05
+      "ci95": 0.0012979368709386521
     },
     "whisper-base-enc vs pythia-160m": {
       "score": 0.18671642786782544,
-      "hsic_std": 2.220491651726635e-06
+      "ci95": 0.0016050467924063534
     },
     "whisper-base-enc vs olmo-7b": {
       "score": 0.2347582993654173,
-      "hsic_std": 0.00014357691024799557
+      "ci95": 0.001677840569340837
     },
     "whisper-base-enc vs pythia-6.9b": {
       "score": 0.18184454041817288,
-      "hsic_std": 0.00017896773417969806
+      "ci95": 0.0016467297085433635
     },
     "whisper-small-enc vs whisper-medium-enc": {
       "score": 0.9713065350404708,
-      "hsic_std": 0.000464614020947289
+      "ci95": 0.00010263971638753136
     },
     "whisper-small-enc vs whisper-large-enc": {
       "score": 0.8253755222258226,
-      "hsic_std": 0.0005605648169547105
+      "ci95": 0.0007940742452736619
     },
     "whisper-small-enc vs whisper-base-dec": {
       "score": 0.19487423094123502,
-      "hsic_std": 0.0001891536880313363
+      "ci95": 0.0017173783237410258
     },
     "whisper-small-enc vs whisper-small-dec": {
       "score": 0.39375603865091335,
-      "hsic_std": 0.0006564788812207636
+      "ci95": 0.0022723560489074867
     },
     "whisper-small-enc vs whisper-medium-dec": {
       "score": 0.49739685956565877,
-      "hsic_std": 0.0002904002354528206
+      "ci95": 0.0018294248006078505
     },
     "whisper-small-enc vs whisper-large-dec": {
       "score": 0.1809121168529272,
-      "hsic_std": 9.291060883484277e-05
+      "ci95": 0.001200438816030423
     },
     "whisper-small-enc vs parakeet-ctc-0.6b": {
       "score": 0.14026851490755388,
-      "hsic_std": 5.021256706716167e-05
+      "ci95": 0.001012917324628263
     },
     "whisper-small-enc vs mimi": {
       "score": 0.08134080565467439,
-      "hsic_std": 1.4916165021119337e-05
+      "ci95": 0.0016079412214786283
     },
     "whisper-small-enc vs babylm-125m": {
       "score": 0.20866212093464692,
-      "hsic_std": 0.0001094209385646764
+      "ci95": 0.001062694783800114
     },
     "whisper-small-enc vs opt-125m": {
       "score": 0.22574862555637915,
-      "hsic_std": 0.00015841741939550267
+      "ci95": 0.0014530363898172009
     },
     "whisper-small-enc vs babylm-350m": {
       "score": 0.20650113854184543,
-      "hsic_std": 0.00011620870444816917
+      "ci95": 0.001095007332563575
     },
     "whisper-small-enc vs babylm-1.3b": {
       "score": 0.213635965684537,
-      "hsic_std": 9.13477572979975e-05
+      "ci95": 0.0011794421219972781
     },
     "whisper-small-enc vs pythia-160m": {
       "score": 0.17685944100814766,
-      "hsic_std": 2.4086363113033274e-06
+      "ci95": 0.0015632983207750349
     },
     "whisper-small-enc vs olmo-7b": {
       "score": 0.22711255175558512,
-      "hsic_std": 0.00015745398998508642
+      "ci95": 0.001639147922056953
     },
     "whisper-small-enc vs pythia-6.9b": {
       "score": 0.17047939761365594,
-      "hsic_std": 0.00018366934526324304
+      "ci95": 0.0015188269954367437
     },
     "whisper-medium-enc vs whisper-large-enc": {
       "score": 0.886027850159155,
-      "hsic_std": 0.0005175548185025058
+      "ci95": 0.0005459965297755267
     },
     "whisper-medium-enc vs whisper-base-dec": {
       "score": 0.19514124557246376,
-      "hsic_std": 0.0001579018833283826
+      "ci95": 0.0016235726518752547
     },
     "whisper-medium-enc vs whisper-small-dec": {
       "score": 0.3897972638071502,
-      "hsic_std": 0.0005423886462375367
+      "ci95": 0.0021082467938757345
     },
     "whisper-medium-enc vs whisper-medium-dec": {
       "score": 0.5289004633467979,
-      "hsic_std": 0.0002807561651031797
+      "ci95": 0.00190293854880987
     },
     "whisper-medium-enc vs whisper-large-dec": {
       "score": 0.18494109986122811,
-      "hsic_std": 8.151063504280005e-05
+      "ci95": 0.001193501108173182
     },
     "whisper-medium-enc vs parakeet-ctc-0.6b": {
       "score": 0.14346585347477517,
-      "hsic_std": 4.3473862494605435e-05
+      "ci95": 0.0009935879037777976
     },
     "whisper-medium-enc vs mimi": {
       "score": 0.07804078159772786,
-      "hsic_std": 1.2581263218847884e-05
+      "ci95": 0.001556816689927118
     },
     "whisper-medium-enc vs babylm-125m": {
       "score": 0.210862582618757,
-      "hsic_std": 9.317671352377951e-05
+      "ci95": 0.0010306012750438411
     },
     "whisper-medium-enc vs opt-125m": {
       "score": 0.2289387402757744,
-      "hsic_std": 0.00013700701850706185
+      "ci95": 0.0014306216980816478
     },
     "whisper-medium-enc vs babylm-350m": {
       "score": 0.20851482557322631,
-      "hsic_std": 9.823526293115798e-05
+      "ci95": 0.001054350258562239
     },
     "whisper-medium-enc vs babylm-1.3b": {
       "score": 0.21489034037305113,
-      "hsic_std": 7.758715375174858e-05
+      "ci95": 0.0011340899339668373
     },
     "whisper-medium-enc vs pythia-160m": {
       "score": 0.1789124707897047,
-      "hsic_std": 2.0457439373556003e-06
+      "ci95": 0.0015058559232125081
     },
     "whisper-medium-enc vs olmo-7b": {
       "score": 0.22721943138669903,
-      "hsic_std": 0.00013596649637246332
+      "ci95": 0.0016178868410462726
     },
     "whisper-medium-enc vs pythia-6.9b": {
       "score": 0.17157803459857482,
-      "hsic_std": 0.0001569398136727298
+      "ci95": 0.0014859213631559186
     },
     "whisper-large-enc vs whisper-base-dec": {
       "score": 0.21080097535965225,
-      "hsic_std": 0.00018937519175337239
+      "ci95": 0.0017636175808899434
     },
     "whisper-large-enc vs whisper-small-dec": {
       "score": 0.4132698625371091,
-      "hsic_std": 0.0006269050093629823
+      "ci95": 0.0021278754237665223
     },
     "whisper-large-enc vs whisper-medium-dec": {
       "score": 0.4939661512583484,
-      "hsic_std": 0.00030067682285513445
+      "ci95": 0.0018129323333680788
     },
     "whisper-large-enc vs whisper-large-dec": {
       "score": 0.21662090641980214,
-      "hsic_std": 0.00010199845641519722
+      "ci95": 0.0012967803664768371
     },
     "whisper-large-enc vs parakeet-ctc-0.6b": {
       "score": 0.16089079760469086,
-      "hsic_std": 5.167218423828233e-05
+      "ci95": 0.0010801509950339866
     },
     "whisper-large-enc vs mimi": {
       "score": 0.08463742764725463,
-      "hsic_std": 1.487254719612348e-05
+      "ci95": 0.001687964401915694
     },
     "whisper-large-enc vs babylm-125m": {
       "score": 0.22703152121612252,
-      "hsic_std": 0.00010441292479344828
+      "ci95": 0.001026198045234865
     },
     "whisper-large-enc vs opt-125m": {
       "score": 0.24887463622729222,
-      "hsic_std": 0.00015249815176501748
+      "ci95": 0.0014071945467513745
     },
     "whisper-large-enc vs babylm-350m": {
       "score": 0.2253032601434417,
-      "hsic_std": 0.00011036193761495758
+      "ci95": 0.0010617160949291855
     },
     "whisper-large-enc vs babylm-1.3b": {
       "score": 0.22921880261418487,
-      "hsic_std": 8.550234593776228e-05
+      "ci95": 0.0011140576634500335
     },
     "whisper-large-enc vs pythia-160m": {
       "score": 0.20214260643088855,
-      "hsic_std": 2.4738028088614126e-06
+      "ci95": 0.0016185123254341385
     },
     "whisper-large-enc vs olmo-7b": {
       "score": 0.2549337556001589,
-      "hsic_std": 0.00015512423825254893
+      "ci95": 0.0016135803025466961
     },
     "whisper-large-enc vs pythia-6.9b": {
       "score": 0.19360724854690226,
-      "hsic_std": 0.0001864908729772737
+      "ci95": 0.0015834076234519043
     },
     "whisper-base-dec vs whisper-small-dec": {
       "score": 0.3806436468551329,
-      "hsic_std": 0.0002992533955881497
+      "ci95": 0.002790875127450579
     },
     "whisper-base-dec vs whisper-medium-dec": {
       "score": 0.13711590907101104,
-      "hsic_std": 5.1464944764777994e-05
+      "ci95": 0.0007288806961887359
     },
     "whisper-base-dec vs whisper-large-dec": {
       "score": 0.2137361069524475,
-      "hsic_std": 5.082739791639349e-05
+      "ci95": 0.0012913519038941462
     },
     "whisper-base-dec vs parakeet-ctc-0.6b": {
       "score": 0.2977970093620357,
-      "hsic_std": 3.555390254113542e-05
+      "ci95": 0.0011856022237356938
     },
     "whisper-base-dec vs mimi": {
       "score": 0.1211357221613994,
-      "hsic_std": 1.1401545055643565e-05
+      "ci95": 0.003051709534847116
     },
     "whisper-base-dec vs babylm-125m": {
       "score": 0.3457509836023005,
-      "hsic_std": 6.110155472804031e-05
+      "ci95": 0.0011042723093884206
     },
     "whisper-base-dec vs opt-125m": {
       "score": 0.31180778358205,
-      "hsic_std": 5.984285821025584e-05
+      "ci95": 0.0012302811688590298
     },
     "whisper-base-dec vs babylm-350m": {
       "score": 0.35829921317832514,
-      "hsic_std": 6.676578431410113e-05
+      "ci95": 0.0011149664963705712
     },
     "whisper-base-dec vs babylm-1.3b": {
       "score": 0.335684756465699,
-      "hsic_std": 5.5917324241765714e-05
+      "ci95": 0.001195640822337004
     },
     "whisper-base-dec vs pythia-160m": {
       "score": 0.46676035863854826,
-      "hsic_std": 2.379661495183864e-06
+      "ci95": 0.0025470013150938942
     },
     "whisper-base-dec vs olmo-7b": {
       "score": 0.295140443889331,
-      "hsic_std": 6.718478657203597e-05
+      "ci95": 0.0015285776961026266
     },
     "whisper-base-dec vs pythia-6.9b": {
       "score": 0.3699193114569738,
-      "hsic_std": 0.0001731532567822805
+      "ci95": 0.0027788859431493148
     },
     "whisper-small-dec vs whisper-medium-dec": {
       "score": 0.2406504214842213,
-      "hsic_std": 0.00015445097489338015
+      "ci95": 0.0013138102866721833
     },
     "whisper-small-dec vs whisper-large-dec": {
       "score": 0.2915608868813635,
-      "hsic_std": 0.00010030677357328031
+      "ci95": 0.0015187166314402846
     },
     "whisper-small-dec vs parakeet-ctc-0.6b": {
       "score": 0.1990958852944322,
-      "hsic_std": 7.019223734193957e-05
+      "ci95": 0.0016669733158208829
     },
     "whisper-small-dec vs mimi": {
       "score": 0.17102671775418313,
-      "hsic_std": 2.3233709686896197e-05
+      "ci95": 0.003275052847549387
     },
     "whisper-small-dec vs babylm-125m": {
       "score": 0.25740781086089703,
-      "hsic_std": 0.00010604546049918931
+      "ci95": 0.0009262847370284064
     },
     "whisper-small-dec vs opt-125m": {
       "score": 0.2796786053767998,
-      "hsic_std": 0.00012857177953957754
+      "ci95": 0.0011511113404616884
     },
     "whisper-small-dec vs babylm-350m": {
       "score": 0.26452240772383756,
-      "hsic_std": 0.0001190075550018686
+      "ci95": 0.001042373831214912
     },
     "whisper-small-dec vs babylm-1.3b": {
       "score": 0.2697455857819808,
-      "hsic_std": 0.00010610309530748869
+      "ci95": 0.0011974656856121588
     },
     "whisper-small-dec vs pythia-160m": {
       "score": 0.3438356954515444,
-      "hsic_std": 3.71814243120836e-06
+      "ci95": 0.0026012377696013303
     },
     "whisper-small-dec vs olmo-7b": {
       "score": 0.2986536108394218,
-      "hsic_std": 0.00013939471348358787
+      "ci95": 0.001386823437800545
     },
     "whisper-small-dec vs pythia-6.9b": {
       "score": 0.30410696728717607,
-      "hsic_std": 0.0002645750735167969
+      "ci95": 0.00242741593787024
     },
     "whisper-medium-dec vs whisper-large-dec": {
       "score": 0.4077290530136648,
-      "hsic_std": 0.00011999456113669035
+      "ci95": 0.0016915690465749242
     },
     "whisper-medium-dec vs parakeet-ctc-0.6b": {
       "score": 0.10060002935079308,
-      "hsic_std": 2.229425487916776e-05
+      "ci95": 0.00077676000027677
     },
     "whisper-medium-dec vs mimi": {
       "score": 0.036060428684678444,
-      "hsic_std": 5.0287710154775864e-06
+      "ci95": 0.0009067615528340706
     },
     "whisper-medium-dec vs babylm-125m": {
       "score": 0.18677312393885923,
-      "hsic_std": 7.491785989530163e-05
+      "ci95": 0.0011599395483901872
     },
     "whisper-medium-dec vs opt-125m": {
       "score": 0.21454152496848405,
-      "hsic_std": 9.332413299475519e-05
+      "ci95": 0.0013506268327406923
     },
     "whisper-medium-dec vs babylm-350m": {
       "score": 0.18175555434252494,
-      "hsic_std": 7.550470143420106e-05
+      "ci95": 0.0011426472912874493
     },
     "whisper-medium-dec vs babylm-1.3b": {
       "score": 0.17609232133358724,
-      "hsic_std": 5.6493033440311293e-05
+      "ci95": 0.0011915244797488212
     },
     "whisper-medium-dec vs pythia-160m": {
       "score": 0.1720781435445633,
-      "hsic_std": 9.776295921002594e-07
+      "ci95": 0.001031491713570595
     },
     "whisper-medium-dec vs olmo-7b": {
       "score": 0.23140604142746676,
-      "hsic_std": 9.54914402343154e-05
+      "ci95": 0.001473045262224119
     },
     "whisper-medium-dec vs pythia-6.9b": {
       "score": 0.19483423024141477,
-      "hsic_std": 0.00010415008536711954
+      "ci95": 0.0013316890540762327
     },
     "whisper-large-dec vs parakeet-ctc-0.6b": {
       "score": 0.17064995266246008,
-      "hsic_std": 1.9209695066913776e-05
+      "ci95": 0.0011276137014802547
     },
     "whisper-large-dec vs mimi": {
       "score": 0.04942594292088032,
-      "hsic_std": 3.965213787008265e-06
+      "ci95": 0.001316777563864786
     },
     "whisper-large-dec vs babylm-125m": {
       "score": 0.27838251501340966,
-      "hsic_std": 4.978228514763907e-05
+      "ci95": 0.0012860892521162394
     },
     "whisper-large-dec vs opt-125m": {
       "score": 0.2888315842440982,
-      "hsic_std": 5.287715163497917e-05
+      "ci95": 0.0013031148352373194
     },
     "whisper-large-dec vs babylm-350m": {
       "score": 0.2779505731645128,
-      "hsic_std": 5.2565698531448805e-05
+      "ci95": 0.001320493602638516
     },
     "whisper-large-dec vs babylm-1.3b": {
       "score": 0.2577790729273989,
-      "hsic_std": 3.775097866024318e-05
+      "ci95": 0.0013700384472644057
     },
     "whisper-large-dec vs pythia-160m": {
       "score": 0.3002515150459602,
-      "hsic_std": 8.078121089674285e-07
+      "ci95": 0.001329366662481075
     },
     "whisper-large-dec vs olmo-7b": {
       "score": 0.3341694706965513,
-      "hsic_std": 6.184881832248526e-05
+      "ci95": 0.0016002695191520181
     },
     "whisper-large-dec vs pythia-6.9b": {
       "score": 0.30221423244931395,
-      "hsic_std": 6.885605994650966e-05
+      "ci95": 0.0014509891607704922
     },
     "parakeet-ctc-0.6b vs mimi": {
       "score": 0.07975031991059943,
-      "hsic_std": 3.920298714994602e-06
+      "ci95": 0.0022358116977742614
     },
     "parakeet-ctc-0.6b vs babylm-125m": {
       "score": 0.3564547043660715,
-      "hsic_std": 3.742532090990662e-05
+      "ci95": 0.0013412985417160296
     },
     "parakeet-ctc-0.6b vs opt-125m": {
       "score": 0.2893554439604559,
-      "hsic_std": 2.9658647148233483e-05
+      "ci95": 0.001179718426221325
     },
     "parakeet-ctc-0.6b vs babylm-350m": {
       "score": 0.3661070698513947,
-      "hsic_std": 3.9223372462566276e-05
+      "ci95": 0.001348669038830959
     },
     "parakeet-ctc-0.6b vs babylm-1.3b": {
       "score": 0.34708412707034003,
-      "hsic_std": 2.7852259203270315e-05
+      "ci95": 0.0013442015658263963
     },
     "parakeet-ctc-0.6b vs pythia-160m": {
       "score": 0.3182650134399989,
-      "hsic_std": 5.942318200994264e-07
+      "ci95": 0.0013622008531485323
     },
     "parakeet-ctc-0.6b vs olmo-7b": {
       "score": 0.26220215127513036,
-      "hsic_std": 2.7714993658241445e-05
+      "ci95": 0.001236999533679986
     },
     "parakeet-ctc-0.6b vs pythia-6.9b": {
       "score": 0.273696464490186,
-      "hsic_std": 4.836491491751373e-05
+      "ci95": 0.0016343739487786565
     },
     "mimi vs babylm-125m": {
       "score": 0.04051612598839264,
-      "hsic_std": 3.524913633683769e-06
+      "ci95": 0.0009855058530381542
     },
     "mimi vs opt-125m": {
       "score": 0.04676455187363453,
-      "hsic_std": 4.223009837563225e-06
+      "ci95": 0.0011343405713024983
     },
     "mimi vs babylm-350m": {
       "score": 0.044180582062827586,
-      "hsic_std": 3.948956430672336e-06
+      "ci95": 0.0010746439718915543
     },
     "mimi vs babylm-1.3b": {
       "score": 0.0639364402530411,
-      "hsic_std": 4.251871578079171e-06
+      "ci95": 0.0016544205678242709
     },
     "mimi vs pythia-160m": {
       "score": 0.09529408376989604,
-      "hsic_std": 1.452978312641574e-07
+      "ci95": 0.0026046316845239736
     },
     "mimi vs olmo-7b": {
       "score": 0.0579346446476532,
-      "hsic_std": 4.652831697532226e-06
+      "ci95": 0.0014219680727197356
     },
     "mimi vs pythia-6.9b": {
       "score": 0.1027590567938678,
-      "hsic_std": 1.2325652687777795e-05
+      "ci95": 0.0028133914754923384
     },
     "babylm-125m vs opt-125m": {
       "score": 0.6880688521007647,
-      "hsic_std": 0.00010975825423576524
+      "ci95": 0.001068287715020491
     },
     "babylm-125m vs babylm-350m": {
       "score": 0.8820950068235762,
-      "hsic_std": 0.00012729190946303515
+      "ci95": 0.000576101487298405
     },
     "babylm-125m vs babylm-1.3b": {
       "score": 0.7658145847641129,
-      "hsic_std": 9.301564051986552e-05
+      "ci95": 0.0009926101940464125
     },
     "babylm-125m vs pythia-160m": {
       "score": 0.6233322021979424,
-      "hsic_std": 1.2902396828037448e-06
+      "ci95": 0.001452294123082258
     },
     "babylm-125m vs olmo-7b": {
       "score": 0.6173931066483102,
-      "hsic_std": 0.00010313576871260664
+      "ci95": 0.0013808645229038772
     },
     "babylm-125m vs pythia-6.9b": {
       "score": 0.5589325654382834,
-      "hsic_std": 0.0001233501186558108
+      "ci95": 0.001560298227026926
     },
     "opt-125m vs babylm-350m": {
       "score": 0.6762669774406902,
-      "hsic_std": 0.0001112361787229696
+      "ci95": 0.001064279570957512
     },
     "opt-125m vs babylm-1.3b": {
       "score": 0.6035683918900866,
-      "hsic_std": 8.20481330270314e-05
+      "ci95": 0.001292291103823887
     },
     "opt-125m vs pythia-160m": {
       "score": 0.6727316773013081,
-      "hsic_std": 1.3407515286573144e-06
+      "ci95": 0.0014450356745694642
     },
     "opt-125m vs olmo-7b": {
       "score": 0.7360457937623711,
-      "hsic_std": 0.0001250887042622889
+      "ci95": 0.0010401470991022988
     },
     "opt-125m vs pythia-6.9b": {
       "score": 0.6886100317570886,
-      "hsic_std": 0.0001475437853174707
+      "ci95": 0.0014985012659367181
     },
     "babylm-350m vs babylm-1.3b": {
       "score": 0.7689013594071472,
-      "hsic_std": 9.637937430883326e-05
+      "ci95": 0.0009891913688208312
     },
     "babylm-350m vs pythia-160m": {
       "score": 0.6242563644433895,
-      "hsic_std": 1.3521717603227272e-06
+      "ci95": 0.001403075142144752
     },
     "babylm-350m vs olmo-7b": {
       "score": 0.6021849270487011,
-      "hsic_std": 0.00010271576321276577
+      "ci95": 0.001397498982590011
     },
     "babylm-350m vs pythia-6.9b": {
       "score": 0.5503681831077755,
-      "hsic_std": 0.0001247202443254028
+      "ci95": 0.0014895247392224065
     },
     "babylm-1.3b vs pythia-160m": {
       "score": 0.5558553423237408,
-      "hsic_std": 1.0104883086836287e-06
+      "ci95": 0.0014051146030105099
     },
     "babylm-1.3b vs olmo-7b": {
       "score": 0.5529732134628795,
-      "hsic_std": 7.510560063176358e-05
+      "ci95": 0.001518498497256702
     },
     "babylm-1.3b vs pythia-6.9b": {
       "score": 0.5091425521815433,
-      "hsic_std": 9.086699284900285e-05
+      "ci95": 0.001518966748679404
     },
     "pythia-160m vs olmo-7b": {
       "score": 0.650288092033616,
-      "hsic_std": 1.3293343461001799e-06
+      "ci95": 0.00110445750329249
     },
     "pythia-160m vs pythia-6.9b": {
       "score": 0.7329408978308642,
-      "hsic_std": 2.782392891827751e-06
+      "ci95": 0.001192473366773378
     },
     "olmo-7b vs pythia-6.9b": {
       "score": 0.7898707647979746,
-      "hsic_std": 0.00014659161690708635
+      "ci95": 0.0011802568757655816
     }
   },
   "cka_matrix": [
