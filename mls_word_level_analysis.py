@@ -381,20 +381,14 @@ def download_mls_sample(
         return ds.cast_column("audio", Audio(decode=False))
 
     # ------------------------------------------------------------------ #
-    # Peek at the first sample to verify field names and audio structure  #
+    # Peek at the first sample to confirm schema at runtime              #
     # ------------------------------------------------------------------ #
     ds = _make_ds()
     first = next(iter(ds))
-    logger.info(f"  Sample keys: {list(first.keys())}")
-    audio_field = first.get("audio", {})
-    if isinstance(audio_field, dict):
-        for k, v in audio_field.items():
-            if isinstance(v, (bytes, bytearray)):
-                logger.info(f"  audio[{k!r}]: bytes len={len(v)}")
-            else:
-                logger.info(f"  audio[{k!r}]: {type(v).__name__} = {str(v)[:80]}")
-    text_preview = (first.get("text") or first.get("transcript") or "<missing>")[:80]
-    logger.info(f"  text preview: {text_preview!r}")
+    logger.info(f"Dataset schema — keys: {list(first.keys())}")
+    logger.info(f"  speaker_id={first.get('speaker_id')}  book_id={first.get('book_id')}  "
+                f"begin={first.get('begin_time')}  end={first.get('end_time')}")
+    logger.info(f"  transcript preview: {str(first.get('transcript',''))[:80]!r}")
 
     # ------------------------------------------------------------------ #
     # Reservoir sampling (Algorithm R, Vitter 1985)                       #
@@ -445,9 +439,17 @@ def download_mls_sample(
 
     for sample in tqdm(reservoir, desc="Saving WAVs + .lab files", unit="utt"):
         try:
-            utt_id     = sample["id"]
-            text       = (sample.get("text") or sample.get("transcript") or "").strip().lower()
-            speaker_id = str(sample.get("speaker_id", "unknown"))
+            # parler-tts/mls_eng schema:
+            #   original_path, begin_time, end_time, transcript,
+            #   audio_duration, speaker_id, book_id  — no "id" field.
+            # Build a stable unique ID from speaker + book + timestamps.
+            speaker_id  = str(sample.get("speaker_id", "unknown"))
+            book_id     = str(sample.get("book_id", "unknown"))
+            begin_time  = sample.get("begin_time", 0.0)
+            end_time    = sample.get("end_time", 0.0)
+            # Zero-pad timestamps to 6 decimal places for lexicographic sort
+            utt_id      = f"{speaker_id}_{book_id}_{begin_time:.3f}_{end_time:.3f}".replace(".", "p")
+            text        = (sample.get("transcript") or sample.get("text") or "").strip().lower()
 
             array, sr = _decode_audio(sample["audio"])
 
@@ -496,171 +498,204 @@ def download_mls_sample(
     return mls_dir
 
 
-def run_mfa_alignment(
+def run_ctc_alignment(
     mls_dir: Path,
     textgrid_dir: Path,
-    acoustic_model: str = MFA_ACOUSTIC_MODEL,
-    dictionary:     str = MFA_DICTIONARY,
-    jobs:           int = MFA_JOBS,
+    batch_size: int = 8,
 ) -> Path:
-    """Run MFA on the downloaded MLS sample and produce TextGrid files.
+    """Align MLS utterances using ctc-forced-aligner (pure PyTorch/ONNX, no Kaldi).
 
-    Expects:
-      <mls_dir>/wavs/<utt_id>.wav
-      <mls_dir>/lab/<utt_id>.lab
+    For each utterance, runs the MMS-FA ONNX model to get word-level timestamps,
+    then writes a Praat TextGrid file (words tier only) so the rest of the pipeline
+    — which already knows how to parse TextGrids — works unchanged.
 
-    MFA corpus format: wav + lab files can be in the same directory, or
-    lab files in a separate directory passed as the corpus root.
-    We create a combined corpus directory where each utterance has both
-    .wav and .lab in the same folder (MFA's Prosodylab-aligner format).
+    ctc-forced-aligner operates at 16 kHz; MLS wavs are already 16 kHz so no
+    resampling is needed.  The ONNX model is downloaded automatically on first run
+    (~75 MB) to ~/.cache/ctc_forced_aligner/.
 
-    Output TextGrids land in textgrid_dir.
+    Parameters
+    ----------
+    mls_dir       : directory containing wavs/ and transcripts.json
+    textgrid_dir  : output directory for .TextGrid files (one per utterance)
+    batch_size    : number of utterances to process before clearing GPU cache
     """
-    # Check if TextGrids already exist
-    existing_tg = list(textgrid_dir.rglob("*.TextGrid")) if textgrid_dir.exists() else []
-    if len(existing_tg) > 100:
-        logger.info(f"TextGrids already present ({len(existing_tg):,}) in {textgrid_dir} — skipping MFA")
-        return textgrid_dir
+    # Full skip only if ALL utterances already have TextGrids
+    textgrid_dir.mkdir(parents=True, exist_ok=True)
+    existing_tg = list(textgrid_dir.glob("*.TextGrid")) if textgrid_dir.exists() else []
+    transcripts_path_check = mls_dir / "transcripts.json"
+    if transcripts_path_check.exists():
+        with open(transcripts_path_check) as _f:
+            _n_utts = len(json.load(_f))
+        if len(existing_tg) >= _n_utts * 0.95:
+            logger.info(f"TextGrids already complete ({len(existing_tg):,}/{_n_utts:,}) — skipping alignment")
+            return textgrid_dir
 
-    # Build a flat MFA corpus directory: one folder per speaker, each containing
-    # wav + lab pairs.  MFA's Prosodylab format expects speaker subdirectories.
-    corpus_dir = mls_dir / "mfa_corpus"
-    corpus_dir.mkdir(exist_ok=True)
+    try:
+        import ctc_forced_aligner as cfa
+        import onnxruntime as ort
+    except ImportError:
+        raise RuntimeError(
+            "ctc-forced-aligner is required.\n"
+            "Install with:  pip install ctc-forced-aligner"
+        )
 
     wavs_dir = mls_dir / "wavs"
-    lab_dir  = mls_dir / "lab"
 
-    # Load metainfo to get speaker IDs
-    metainfo_path = mls_dir / "metainfo.json"
-    if metainfo_path.exists():
-        with open(metainfo_path) as f:
-            metainfo = json.load(f)
-    else:
-        metainfo = {}
+    # Load transcripts
+    transcripts_path = mls_dir / "transcripts.json"
+    with open(transcripts_path) as f:
+        transcripts = json.load(f)
 
-    logger.info(f"Building MFA corpus directory at {corpus_dir} ...")
-    n_linked = 0
-    for wav_path in tqdm(sorted(wavs_dir.glob("*.wav")), desc="Linking corpus files", unit="utt"):
-        utt_id    = wav_path.stem
-        lab_path  = lab_dir / f"{utt_id}.lab"
-        if not lab_path.exists():
-            logger.warning(f"Missing .lab for {utt_id}, skipping")
+    utt_ids = list(transcripts.keys())
+    logger.info(f"Aligning {len(utt_ids):,} utterances with ctc-forced-aligner...")
+
+    # Download / locate the ONNX model
+    model_cache = Path.home() / ".cache" / "ctc_forced_aligner"
+    model_path  = model_cache / "model.onnx"
+    model_cache.mkdir(parents=True, exist_ok=True)
+    logger.info(f"Ensuring ONNX alignment model at {model_path} ...")
+    cfa.ensure_onnx_model(str(model_path), cfa.MODEL_URL)
+
+    # Create ONNX session — use GPU execution provider if available
+    providers = (["CUDAExecutionProvider", "CPUExecutionProvider"]
+                 if torch.cuda.is_available() else ["CPUExecutionProvider"])
+    session = ort.InferenceSession(str(model_path), providers=providers)
+    logger.info(f"ONNX session providers: {session.get_providers()}")
+
+    # Tokenizer (same one used internally by ctc-forced-aligner)
+    tokenizer = cfa.Tokenizer()
+
+    # Build set of already-completed utterances so we can resume
+    already_done = {p.stem for p in textgrid_dir.glob("*.TextGrid")}
+    if already_done:
+        logger.info(f"Resuming — {len(already_done):,} TextGrids already exist, skipping those")
+
+    errors   = 0
+    n_done   = len(already_done)
+    pbar     = tqdm(utt_ids, desc="CTC alignment", unit="utt")
+
+    for utt_id in pbar:
+        wav_path = wavs_dir / f"{utt_id}.wav"
+        tg_path  = textgrid_dir / f"{utt_id}.TextGrid"
+
+        if utt_id in already_done or tg_path.exists():
+            n_done += 1
+            continue
+        if not wav_path.exists():
+            errors += 1
+            logger.warning(f"WAV missing for {utt_id}")
             continue
 
-        speaker_id = metainfo.get(utt_id, {}).get("speaker_id", "unknown")
-        spk_dir    = corpus_dir / speaker_id
-        spk_dir.mkdir(exist_ok=True)
+        transcript = transcripts[utt_id].strip().lower()
+        if not transcript:
+            errors += 1
+            continue
 
-        # Symlink (or copy if symlinks not supported) wav + lab into speaker dir
-        dst_wav = spk_dir / wav_path.name
-        dst_lab = spk_dir / lab_path.name
-        for src, dst in [(wav_path, dst_wav), (lab_path, dst_lab)]:
-            if not dst.exists():
-                try:
-                    dst.symlink_to(src.resolve())
-                except (OSError, NotImplementedError):
-                    shutil.copy2(src, dst)
-        n_linked += 1
+        # Normalise transcript to only contain characters in the MMS-FA vocab:
+        #   a-z, apostrophe, space.  Everything else is removed or substituted.
+        # Hyphens between words become spaces (e.g. "well-known" → "well known").
+        # Digits are removed (MLS transcripts shouldn't have them, but just in case).
+        transcript = transcript.replace("-", " ")
+        transcript = re.sub(r"[^a-z' ]", "", transcript)
+        transcript = re.sub(r" +", " ", transcript).strip()
+        if not transcript:
+            errors += 1
+            continue
 
-    logger.info(f"Corpus ready: {n_linked:,} utterances across "
-                f"{len(list(corpus_dir.iterdir()))} speakers")
+        try:
+            # Load audio as float32 numpy array at 16 kHz (already the right SR)
+            audio = cfa.load_audio(str(wav_path), ret_type="np")
+            if audio.ndim > 1:
+                audio = audio.mean(axis=1)
 
-    textgrid_dir.mkdir(parents=True, exist_ok=True)
+            # Generate CTC emissions
+            emissions, stride = cfa.generate_emissions(session, audio)
 
-    # Check if MFA is on PATH
-    mfa_bin = shutil.which("mfa")
-    if mfa_bin is None:
-        raise RuntimeError(
-            "MFA binary not found on PATH.\n"
-            "Make sure MFA is installed and its conda environment is activated:\n"
-            "  conda activate aligner\n"
-            "  mfa --version\n"
-            "See: https://montreal-forced-aligner.readthedocs.io/en/latest/installation.html"
-        )
-    logger.info(f"MFA binary: {mfa_bin}")
-
-    # Download acoustic model + dictionary if not already present
-    # (mfa model download is idempotent)
-    for resource_type, resource_name in [
-        ("acoustic", acoustic_model),
-        ("dictionary", dictionary),
-    ]:
-        logger.info(f"Ensuring MFA {resource_type} '{resource_name}' is available...")
-        result = subprocess.run(
-            ["mfa", "model", "download", resource_type, resource_name],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            # Not fatal — model may already be downloaded, MFA returns non-zero
-            # in that case with some versions
-            logger.debug(f"mfa model download output: {result.stdout} {result.stderr}")
-
-    # ------------------------------------------------------------------ #
-    # Detect MFA invocation style                                         #
-    #   v2/v3:  mfa align <corpus> <dict> <model> <output>               #
-    #   v1.x:   mfa_align <corpus> <dict> <model> <output>  (no subcommand)
-    # We probe by running `mfa align --help`; if that fails we fall back
-    # to the `mfa_align` standalone binary.
-    # ------------------------------------------------------------------ #
-    probe = subprocess.run(
-        [mfa_bin, "align", "--help"],
-        capture_output=True, text=True,
-    )
-    if probe.returncode == 0:
-        # v2/v3 style
-        mfa_cmd = [
-            mfa_bin, "align",
-            "--clean",
-            "--overwrite",
-            "--jobs", str(jobs),
-            str(corpus_dir),
-            dictionary,
-            acoustic_model,
-            str(textgrid_dir),
-        ]
-    else:
-        # v1.x style — look for mfa_align binary next to the mfa binary
-        mfa_align_bin = Path(mfa_bin).parent / "mfa_align"
-        if not mfa_align_bin.exists():
-            mfa_align_bin = shutil.which("mfa_align")
-        if not mfa_align_bin:
-            raise RuntimeError(
-                f"`mfa align` is not a valid subcommand and `mfa_align` binary "
-                f"was not found next to {mfa_bin}.\n"
-                f"Probe output: {probe.stderr.strip()}\n"
-                "Please check your MFA installation:\n"
-                "  mfa --help   (to see available subcommands)"
+            # Tokenise transcript into char-level tokens with <star> markers
+            tokens_starred, text_starred = cfa.preprocess_text(
+                transcript,
+                romanize=False,
+                language="eng",
+                split_size="word",
+                star_frequency="segment",
             )
-        mfa_cmd = [
-            str(mfa_align_bin),
-            str(corpus_dir),
-            dictionary,
-            acoustic_model,
-            str(textgrid_dir),
-            "-j", str(jobs),
-        ]
 
-    logger.info(f"Running MFA: {' '.join(str(x) for x in mfa_cmd)}")
+            # Align
+            segments, scores, blank = cfa.get_alignments(emissions, tokens_starred, tokenizer)
+            spans = cfa.get_spans(tokens_starred, segments, blank)
 
-    with timer("MFA alignment"):
-        result = subprocess.run(mfa_cmd, capture_output=False, text=True)
+            # Get word-level timestamps as list of {"start", "end", "text"}
+            word_stamps = cfa.postprocess_results(text_starred, spans, stride, scores)
 
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"MFA alignment failed (exit code {result.returncode}).\n"
-            "Check the MFA log above for details.\n"
-            "Common issues:\n"
-            "  - Dictionary/acoustic model not downloaded:\n"
-            "      mfa model download acoustic english_us_arpa\n"
-            "      mfa model download dictionary english_us_arpa\n"
-            "  - Conda environment not activated\n"
-            "  - Audio files too short or corrupted\n"
-            f"  - MFA binary used: {mfa_cmd[0]}\n"
-        )
+            # Write TextGrid (words tier only — that's all parse_textgrid needs)
+            _write_textgrid(tg_path, word_stamps, duration=float(len(audio)) / cfa.SAMPLING_FREQ)
+            n_done += 1
 
-    tg_files = list(textgrid_dir.rglob("*.TextGrid"))
-    logger.info(f"MFA produced {len(tg_files):,} TextGrid files → {textgrid_dir}")
+        except Exception as e:
+            errors += 1
+            logger.warning(f"Alignment failed for {utt_id}: {e}")
+
+        if (n_done + errors) % (batch_size * 50) == 0:
+            gc.collect()
+
+    pbar.close()
+    tg_count = len(list(textgrid_dir.glob("*.TextGrid")))
+    logger.info(f"CTC alignment complete: {tg_count:,} TextGrids written, {errors} errors")
+    if errors > 0:
+        logger.warning(f"{errors}/{len(utt_ids)} utterances failed alignment")
     return textgrid_dir
+
+
+def _write_textgrid(path: Path, word_stamps: list, duration: float):
+    """Write a minimal Praat TextGrid with a single words IntervalTier.
+
+    word_stamps: list of {"start": float, "end": float, "text": str}
+    """
+    # Sort by start time and merge any overlapping/gap intervals with silence
+    word_stamps = sorted(word_stamps, key=lambda x: x["start"])
+
+    # Build full interval list including silences between words
+    intervals = []
+    cursor = 0.0
+    for ws in word_stamps:
+        start = round(ws["start"], 6)
+        end   = round(ws["end"],   6)
+        word  = ws["text"].strip()
+        if not word:
+            continue
+        if start > cursor + 1e-6:
+            intervals.append((cursor, start, ""))   # silence gap
+        intervals.append((start, end, word))
+        cursor = end
+    if cursor < duration - 1e-6:
+        intervals.append((cursor, duration, ""))    # trailing silence
+
+    n = len(intervals)
+    lines = [
+        'File type = "ooTextFile"',
+        'Object class = "TextGrid"',
+        "",
+        f"xmin = 0",
+        f"xmax = {duration:.6f}",
+        "tiers? <exists>",
+        "size = 1",
+        "item []:",
+        "    item [1]:",
+        '        class = "IntervalTier"',
+        '        name = "words"',
+        f"        xmin = 0",
+        f"        xmax = {duration:.6f}",
+        f"        intervals: size = {n}",
+    ]
+    for i, (xmin, xmax, label) in enumerate(intervals, 1):
+        lines += [
+            f"        intervals [{i}]:",
+            f"            xmin = {xmin:.6f}",
+            f"            xmax = {xmax:.6f}",
+            f'            text = "{label}"',
+        ]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
 
 
 # ---------------------------------------------------------------------------
@@ -1662,12 +1697,9 @@ def parse_args():
     p.add_argument("--num_cka_runs", default=1, type=int,
                    help="Number of CKA shuffle runs for variability estimation")
     p.add_argument("--cka_base_seed", default=MINIBATCH_SEED, type=int)
-    p.add_argument("--mfa_acoustic_model", default=MFA_ACOUSTIC_MODEL,
-                   help=f"MFA acoustic model name (default: {MFA_ACOUSTIC_MODEL})")
-    p.add_argument("--mfa_dictionary", default=MFA_DICTIONARY,
-                   help=f"MFA dictionary name (default: {MFA_DICTIONARY})")
-    p.add_argument("--mfa_jobs", default=MFA_JOBS, type=int,
-                   help=f"MFA parallel jobs (default: {MFA_JOBS})")
+    p.add_argument("--ctc_batch_size", default=8, type=int,
+                   help="Number of utterances between GPU cache clears during CTC alignment "
+                        "(default: 8; raise if you have lots of VRAM)")
     p.add_argument("--whisper_batch_size",     default=64,  type=int)
     p.add_argument("--whisper_dec_batch_size", default=32,  type=int)
     p.add_argument("--parakeet_batch_size",    default=32,  type=int)
@@ -1716,13 +1748,8 @@ def main():
     # Stage 1: MFA alignment
     # ------------------------------------------------------------------
     if not args.skip_mfa:
-        with timer("MFA forced alignment"):
-            run_mfa_alignment(
-                mls_dir, textgrid_dir,
-                acoustic_model=args.mfa_acoustic_model,
-                dictionary=args.mfa_dictionary,
-                jobs=args.mfa_jobs,
-            )
+        with timer("CTC forced alignment"):
+            run_ctc_alignment(mls_dir, textgrid_dir)
     else:
         logger.info(f"--skip_mfa: using existing TextGrids at {textgrid_dir}")
 
