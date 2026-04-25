@@ -1390,6 +1390,7 @@ def run_cka_multi(embeddings, names, batch_size, num_runs, base_seed=MINIBATCH_S
     n_pairs = n * (n - 1) // 2
     scores_by_run = np.zeros((num_runs, n, n), dtype=np.float64)
 
+    within_ci95 = np.zeros((n, n))
     for run_idx in range(num_runs):
         seed = base_seed + run_idx
         logger.info(f"CKA run {run_idx + 1}/{num_runs}  (seed={seed})")
@@ -1402,15 +1403,17 @@ def run_cka_multi(embeddings, names, batch_size, num_runs, base_seed=MINIBATCH_S
                 if j < i:
                     scores_by_run[run_idx, i, j] = scores_by_run[run_idx, j, i]
                     continue
-                score, _ = minibatch_cka(embeddings[names[i]], embeddings[names[j]],
-                                         batch_size=batch_size, seed=seed)
+                score, ci95 = minibatch_cka(embeddings[names[i]], embeddings[names[j]],
+                                            batch_size=batch_size, seed=seed)
                 scores_by_run[run_idx, i, j] = score
+                if run_idx == 0:
+                    within_ci95[i, j] = within_ci95[j, i] = ci95
                 pair_bar.update(1)
         pair_bar.close()
 
     mean_matrix = scores_by_run.mean(axis=0)
     std_matrix  = scores_by_run.std(axis=0, ddof=1) if num_runs > 1 else np.zeros((n, n))
-    ci95_matrix = 1.96 * std_matrix / np.sqrt(num_runs) if num_runs > 1 else np.zeros((n, n))
+    ci95_matrix = 1.96 * std_matrix / np.sqrt(num_runs) if num_runs > 1 else within_ci95
 
     results_dict = {}
     for i in range(n):
@@ -1916,14 +1919,8 @@ def main():
 
     with timer("CKA plots"):
         if num_runs == 1:
-            within_ci95 = np.zeros((n, n))
-            for i in range(n):
-                for j in range(i + 1, n):
-                    _, wci = minibatch_cka(embeddings[names[i]], embeddings[names[j]],
-                                          batch_size=args.batch_size, seed=args.cka_base_seed)
-                    within_ci95[i, j] = within_ci95[j, i] = wci
             plot_cka_heatmap(mean_matrix, names, plots_dir,
-                             ci95_matrix=within_ci95, filename="mls_word_cka_heatmap.png")
+                             ci95_matrix=ci95_matrix, filename="mls_word_cka_heatmap.png")
         else:
             plot_cka_multi_run(mean_matrix, ci95_matrix, per_run_matrices,
                                names, plots_dir, num_runs)
