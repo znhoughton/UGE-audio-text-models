@@ -1,4 +1,10 @@
 # Large embedding caches
+*.pkl
+MLSData/mls_sample/lab/
+MLSData/mls_sample/mfa_corpus/
+MLSData/mls_sample/wavs/
+MLSData/mls_word_records.json
+MLSData/textgrids/
 Data/*.pkl
 WordData/*.pkl
 WordData/LJSpeech-1.1/
