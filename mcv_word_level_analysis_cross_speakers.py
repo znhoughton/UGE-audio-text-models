@@ -410,24 +410,45 @@ def download_mcv_sample(
     # Step 2: sample rows by word-count target (or utterance count)       #
     # ------------------------------------------------------------------ #
     rng = np.random.default_rng(seed)
-    df = df.sample(frac=1, random_state=int(rng.integers(0, 2**31))).reset_index(drop=True)
+    df["_n_words"] = df["sentence"].str.split().str.len()
 
     if n_utterances is not None:
+        df = df.sample(frac=1, random_state=int(rng.integers(0, 2**31))).reset_index(drop=True)
         if len(df) > n_utterances:
             df = df.iloc[:n_utterances]
             logger.info(f"  Sampled {n_utterances:,} utterances")
         else:
             logger.info(f"  Using all {len(df):,} qualifying rows (< target {n_utterances:,})")
     else:
-        word_counts = df["sentence"].str.split().str.len().cumsum()
-        cutoff = int((word_counts <= n_words).sum())
+        # Balance speakers: cap each speaker at their fair share of the word budget,
+        # then take from the balanced pool until the global target is reached.
+        n_speakers    = df["client_id"].nunique()
+        words_per_spk = max(1, n_words // n_speakers)
+        logger.info(f"  Balancing across {n_speakers:,} speakers "
+                    f"(~{words_per_spk:,} words/speaker budget)")
+
+        balanced_parts = []
+        for _, spk_df in df.groupby("client_id"):
+            spk_df = spk_df.sample(frac=1, random_state=int(rng.integers(0, 2**31)))
+            cutoff = int((spk_df["_n_words"].cumsum() <= words_per_spk).sum())
+            cutoff = max(cutoff, 1)
+            balanced_parts.append(spk_df.iloc[:cutoff])
+
+        df = pd.concat(balanced_parts).sample(
+            frac=1, random_state=int(rng.integers(0, 2**31))
+        ).reset_index(drop=True)
+
+        # Trim to global word target
+        cutoff = int((df["_n_words"].cumsum() <= n_words).sum())
         cutoff = max(cutoff, 1)
         df = df.iloc[:cutoff]
         logger.info(f"  Sampled {len(df):,} utterances to reach word target {n_words:,}")
 
+    df = df.drop(columns=["_n_words"])
     actual_words = int(df["sentence"].str.split().str.len().sum())
     logger.info(f"  Word tokens: {actual_words:,} "
-                f"(avg {actual_words / len(df):.1f} words/utterance)")
+                f"(avg {actual_words / len(df):.1f} words/utterance, "
+                f"{df['client_id'].nunique():,} speakers)")
 
     # ------------------------------------------------------------------ #
     # Step 3: convert MP3 → 16 kHz WAV, write .lab files                 #
