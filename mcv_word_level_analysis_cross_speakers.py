@@ -401,9 +401,6 @@ def download_mcv_sample(
     qualifying = speakers_per_sentence[speakers_per_sentence >= min_speakers].index
     df = df[df["sentence"].isin(qualifying)].reset_index(drop=True)
 
-    logger.info(f"  {len(qualifying):,} sentences with >= {min_speakers} speakers "
-                f"→ {len(df):,} qualifying rows")
-
     if df.empty:
         raise RuntimeError(f"No sentences with >= {min_speakers} speakers found in {tsv_path}")
 
@@ -412,6 +409,10 @@ def download_mcv_sample(
     # ------------------------------------------------------------------ #
     rng = np.random.default_rng(seed)
     df["_n_words"] = df["sentence"].str.split().str.len()
+
+    total_qualifying_words = int(df["_n_words"].sum())
+    logger.info(f"  {len(qualifying):,} sentences with >= {min_speakers} speakers "
+                f"→ {len(df):,} qualifying utterances, {total_qualifying_words:,} total words")
 
     if n_utterances is not None:
         df = df.sample(frac=1, random_state=int(rng.integers(0, 2**31))).reset_index(drop=True)
