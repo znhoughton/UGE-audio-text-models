@@ -420,29 +420,26 @@ def download_mcv_sample(
         else:
             logger.info(f"  Using all {len(df):,} qualifying rows (< target {n_utterances:,})")
     else:
-        # Balance speakers: cap each speaker at their fair share of the word budget,
-        # then take from the balanced pool until the global target is reached.
-        n_speakers    = df["client_id"].nunique()
-        words_per_spk = max(1, n_words // n_speakers)
-        logger.info(f"  Balancing across {n_speakers:,} speakers "
-                    f"(~{words_per_spk:,} words/speaker budget)")
+        # Greedily include sentences from most-shared to least-shared,
+        # taking ALL utterances of each sentence, until n_words is reached.
+        sentence_speaker_counts = df.groupby("sentence")["client_id"].nunique()
+        sentences_by_overlap = sentence_speaker_counts.sort_values(ascending=False).index
 
-        balanced_parts = []
-        for _, spk_df in df.groupby("client_id"):
-            spk_df = spk_df.sample(frac=1, random_state=int(rng.integers(0, 2**31)))
-            cutoff = int((spk_df["_n_words"].cumsum() <= words_per_spk).sum())
-            cutoff = max(cutoff, 1)
-            balanced_parts.append(spk_df.iloc[:cutoff])
+        selected = []
+        total_words = 0
+        for sentence in sentences_by_overlap:
+            rows = df[df["sentence"] == sentence]
+            sentence_words = int(rows["_n_words"].sum())
+            selected.append(rows)
+            total_words += sentence_words
+            if total_words >= n_words:
+                break
 
-        df = pd.concat(balanced_parts).sample(
+        df = pd.concat(selected).sample(
             frac=1, random_state=int(rng.integers(0, 2**31))
         ).reset_index(drop=True)
-
-        # Trim to global word target
-        cutoff = int((df["_n_words"].cumsum() <= n_words).sum())
-        cutoff = max(cutoff, 1)
-        df = df.iloc[:cutoff]
-        logger.info(f"  Sampled {len(df):,} utterances to reach word target {n_words:,}")
+        logger.info(f"  Selected {len(selected):,} sentences "
+                    f"(most-shared first) → {len(df):,} utterances")
 
     df = df.drop(columns=["_n_words"])
     actual_words = int(df["sentence"].str.split().str.len().sum())
