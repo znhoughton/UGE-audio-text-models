@@ -331,6 +331,7 @@ def download_mcv_sample(
     seed: int = 42,
     min_speakers: int = 250,
     tsv_file: str = "validated.tsv",
+    dry_run: bool = False,
 ) -> Path:
     """Prepare an MCV sample from a locally downloaded Common Voice release.
 
@@ -453,6 +454,10 @@ def download_mcv_sample(
     logger.info(f"  Cross-speaker overlap: {multi:,}/{len(spk_per_sent):,} sentences "
                 f"have >=2 speakers in sample "
                 f"(avg {spk_per_sent.mean():.1f}, median {spk_per_sent.median():.0f} speakers/sentence)")
+
+    if dry_run:
+        logger.info("--dry_run: skipping audio conversion")
+        return mcv_dir
 
     # ------------------------------------------------------------------ #
     # Step 3: convert MP3 → 16 kHz WAV, write .lab files                 #
@@ -1759,6 +1764,8 @@ def parse_args():
                    help="Path to local MCV English directory containing validated.tsv and clips/")
     p.add_argument("--tsv_file", default="validated.tsv",
                    help="TSV filename inside mcv_source_dir (default: validated.tsv)")
+    p.add_argument("--dry_run", action="store_true",
+                   help="Run sampling and print stats without converting any audio")
     p.add_argument("--skip_download", action="store_true",
                    help="Skip download stage (mcv_dir must already exist)")
     p.add_argument("--skip_mfa", action="store_true",
@@ -1822,6 +1829,7 @@ def main():
                 seed=args.sample_seed,
                 min_speakers=args.min_speakers,
                 tsv_file=args.tsv_file,
+                dry_run=args.dry_run,
             )
     else:
         logger.info(f"--skip_download: using existing MCV sample at {mcv_dir}")
