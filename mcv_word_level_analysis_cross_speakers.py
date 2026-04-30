@@ -1709,8 +1709,8 @@ def parse_args():
                    help="Number of utterances to sample from MCV (default: 15000)")
     p.add_argument("--sample_seed", default=42, type=int,
                    help="Random seed for sampling")
-    p.add_argument("--min_speakers", default=2, type=int,
-                   help="Minimum number of distinct speakers required per sentence (default: 2)")
+    p.add_argument("--min_speakers", default=50, type=int,
+                   help="Minimum number of distinct speakers required per sentence (default: 50)")
     p.add_argument("--mcv_source_dir", required=True, type=Path,
                    help="Path to local MCV English directory containing validated.tsv and clips/")
     p.add_argument("--tsv_file", default="validated.tsv",
