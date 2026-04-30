@@ -457,7 +457,8 @@ def download_mcv_sample(
     multi = (spk_per_sent >= 2).sum()
     logger.info(f"  Cross-speaker overlap: {multi:,}/{len(spk_per_sent):,} sentences "
                 f"have >=2 speakers in sample "
-                f"(avg {spk_per_sent.mean():.1f}, median {spk_per_sent.median():.0f} speakers/sentence)")
+                f"(min {spk_per_sent.min():.0f}, avg {spk_per_sent.mean():.1f}, "
+                f"median {spk_per_sent.median():.0f}, max {spk_per_sent.max():.0f} speakers/sentence)")
 
     if dry_run:
         logger.info("--dry_run: skipping audio conversion")
