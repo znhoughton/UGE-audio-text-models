@@ -413,6 +413,10 @@ def download_mcv_sample(
     else:
         logger.info(f"  Using all {len(df):,} qualifying rows (< target {n_utterances:,})")
 
+    est_words = int(df["sentence"].str.split().str.len().sum())
+    logger.info(f"  Estimated word tokens: {est_words:,} "
+                f"(avg {est_words / len(df):.1f} words/utterance)")
+
     # ------------------------------------------------------------------ #
     # Step 3: convert MP3 → 16 kHz WAV, write .lab files                 #
     # ------------------------------------------------------------------ #
