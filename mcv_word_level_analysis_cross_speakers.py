@@ -1837,6 +1837,10 @@ def main():
     else:
         logger.info(f"--skip_download: using existing MCV sample at {mcv_dir}")
 
+    if args.dry_run:
+        logger.info("--dry_run: exiting after sampling stage")
+        return
+
     # ------------------------------------------------------------------
     # Stage 1: CTC alignment
     # ------------------------------------------------------------------
