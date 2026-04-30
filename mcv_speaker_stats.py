@@ -40,15 +40,17 @@ def main():
 
     df["n_words"] = df["sentence"].str.split().str.len()
 
-    print(f"{'min_speakers':>14}  {'qualifying_sentences':>22}  {'total_utterances':>18}  {'total_words':>14}")
-    print("-" * 76)
+    print(f"{'min_speakers':>14}  {'qualifying_sentences':>22}  {'total_utterances':>18}  {'total_words':>14}  {'avg_spk/sentence':>18}  {'med_spk/sentence':>18}")
+    print("-" * 112)
     for threshold in THRESHOLDS:
         qualifying_sentences = speakers_per_sentence[speakers_per_sentence >= threshold]
         subset       = df[df["sentence"].isin(qualifying_sentences.index)]
         n_sentences  = len(qualifying_sentences)
         n_utterances = int(subset.shape[0])
         n_words      = int(subset["n_words"].sum())
-        print(f"{threshold:>14,}  {n_sentences:>22,}  {n_utterances:>18,}  {n_words:>14,}")
+        avg_spk      = qualifying_sentences.mean()
+        med_spk      = qualifying_sentences.median()
+        print(f"{threshold:>14,}  {n_sentences:>22,}  {n_utterances:>18,}  {n_words:>14,}  {avg_spk:>18.1f}  {med_spk:>18.1f}")
 
     # Top-10 sentences by speaker count
     top = speakers_per_sentence.sort_values(ascending=False).head(10)

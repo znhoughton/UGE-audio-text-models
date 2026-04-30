@@ -450,6 +450,13 @@ def download_mcv_sample(
                 f"(avg {actual_words / len(df):.1f} words/utterance, "
                 f"{df['client_id'].nunique():,} speakers)")
 
+    # Cross-speaker overlap check
+    spk_per_sent = df.groupby("sentence")["client_id"].nunique()
+    multi = (spk_per_sent >= 2).sum()
+    logger.info(f"  Cross-speaker overlap: {multi:,}/{len(spk_per_sent):,} sentences "
+                f"have >=2 speakers in sample "
+                f"(avg {spk_per_sent.mean():.1f}, median {spk_per_sent.median():.0f} speakers/sentence)")
+
     # ------------------------------------------------------------------ #
     # Step 3: convert MP3 → 16 kHz WAV, write .lab files                 #
     # ------------------------------------------------------------------ #
