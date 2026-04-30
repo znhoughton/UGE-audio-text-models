@@ -421,18 +421,21 @@ def download_mcv_sample(
         else:
             logger.info(f"  Using all {len(df):,} qualifying rows (< target {n_utterances:,})")
     else:
-        # Greedily include sentences from most-shared to least-shared,
-        # taking ALL utterances of each sentence, until n_words is reached.
-        sentence_speaker_counts = df.groupby("sentence")["client_id"].nunique()
-        sentences_by_overlap = sentence_speaker_counts.sort_values(ascending=False).index
+        # Greedily include sentences sorted by length desc, then speaker count
+        # desc. Longest multi-word sentences come first; single-word sentences
+        # ("yes", "nine", ...) are only included if the word target isn't yet met.
+        sent_stats = (
+            df.groupby("sentence")
+            .agg(n_speakers=("client_id", "nunique"), n_words_per_sent=("_n_words", "first"))
+            .sort_values(["n_words_per_sent", "n_speakers"], ascending=[False, False])
+        )
 
         selected = []
         total_words = 0
-        for sentence in sentences_by_overlap:
+        for sentence, row in sent_stats.iterrows():
             rows = df[df["sentence"] == sentence]
-            sentence_words = int(rows["_n_words"].sum())
             selected.append(rows)
-            total_words += sentence_words
+            total_words += int(rows["_n_words"].sum())
             if total_words >= n_words:
                 break
 
@@ -440,7 +443,7 @@ def download_mcv_sample(
             frac=1, random_state=int(rng.integers(0, 2**31))
         ).reset_index(drop=True)
         logger.info(f"  Selected {len(selected):,} sentences "
-                    f"(most-shared first) → {len(df):,} utterances")
+                    f"(longest first, then most-shared) → {len(df):,} utterances")
 
     df = df.drop(columns=["_n_words"])
     actual_words = int(df["sentence"].str.split().str.len().sum())
