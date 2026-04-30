@@ -38,14 +38,17 @@ def main():
     # Count unique speakers per sentence
     speakers_per_sentence = df.groupby("sentence")["client_id"].nunique()
 
-    print(f"{'min_speakers':>14}  {'qualifying_sentences':>22}  {'total_utterances':>18}")
-    print("-" * 60)
+    df["n_words"] = df["sentence"].str.split().str.len()
+
+    print(f"{'min_speakers':>14}  {'qualifying_sentences':>22}  {'total_utterances':>18}  {'total_words':>14}")
+    print("-" * 76)
     for threshold in THRESHOLDS:
         qualifying_sentences = speakers_per_sentence[speakers_per_sentence >= threshold]
+        subset       = df[df["sentence"].isin(qualifying_sentences.index)]
         n_sentences  = len(qualifying_sentences)
-        # total utterances = rows in df whose sentence qualifies
-        n_utterances = int(df[df["sentence"].isin(qualifying_sentences.index)].shape[0])
-        print(f"{threshold:>14,}  {n_sentences:>22,}  {n_utterances:>18,}")
+        n_utterances = int(subset.shape[0])
+        n_words      = int(subset["n_words"].sum())
+        print(f"{threshold:>14,}  {n_sentences:>22,}  {n_utterances:>18,}  {n_words:>14,}")
 
     # Top-10 sentences by speaker count
     top = speakers_per_sentence.sort_values(ascending=False).head(10)
