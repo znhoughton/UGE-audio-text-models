@@ -326,9 +326,10 @@ def _make_utt_id(client_id: str, sentence: str) -> str:
 def download_mcv_sample(
     mcv_source_dir: Path,
     mcv_dir: Path,
-    n_utterances: int = 15_000,
+    n_utterances: int = None,
+    n_words: int = 250_000,
     seed: int = 42,
-    min_speakers: int = 2,
+    min_speakers: int = 250,
     tsv_file: str = "validated.tsv",
 ) -> Path:
     """Prepare an MCV sample from a locally downloaded Common Voice release.
@@ -338,7 +339,8 @@ def download_mcv_sample(
 
     Steps:
       1. Read TSV → find sentences spoken by >= min_speakers unique speakers.
-      2. Reservoir-sample n_utterances rows from qualifying sentences.
+      2. Shuffle and take utterances until n_words word tokens are reached
+         (or n_utterances rows if n_utterances is set instead).
       3. Convert each MP3 to 16 kHz mono WAV and write .lab transcript.
 
     Saves:
@@ -363,10 +365,11 @@ def download_mcv_sample(
 
     if transcripts_path.exists():
         existing = list(wavs_dir.glob("*.wav")) if wavs_dir.exists() else []
-        if len(existing) >= n_utterances:
+        target_label = f"{n_utterances:,} utts" if n_utterances else f"{n_words:,} words"
+        if existing:
             logger.info(f"MCV sample already present ({len(existing):,} wavs) — skipping")
             return mcv_dir
-        logger.info(f"Partial download ({len(existing):,}/{n_utterances}) — re-preparing")
+        logger.info(f"Partial download ({len(existing):,} wavs, target {target_label}) — re-preparing")
 
     mcv_dir.mkdir(parents=True, exist_ok=True)
     wavs_dir.mkdir(exist_ok=True)
@@ -404,18 +407,27 @@ def download_mcv_sample(
         raise RuntimeError(f"No sentences with >= {min_speakers} speakers found in {tsv_path}")
 
     # ------------------------------------------------------------------ #
-    # Step 2: reservoir-sample n_utterances rows                          #
+    # Step 2: sample rows by word-count target (or utterance count)       #
     # ------------------------------------------------------------------ #
     rng = np.random.default_rng(seed)
-    if len(df) > n_utterances:
-        df = df.sample(n=n_utterances, random_state=int(rng.integers(0, 2**31)))
-        logger.info(f"  Sampled {n_utterances:,} rows")
-    else:
-        logger.info(f"  Using all {len(df):,} qualifying rows (< target {n_utterances:,})")
+    df = df.sample(frac=1, random_state=int(rng.integers(0, 2**31))).reset_index(drop=True)
 
-    est_words = int(df["sentence"].str.split().str.len().sum())
-    logger.info(f"  Estimated word tokens: {est_words:,} "
-                f"(avg {est_words / len(df):.1f} words/utterance)")
+    if n_utterances is not None:
+        if len(df) > n_utterances:
+            df = df.iloc[:n_utterances]
+            logger.info(f"  Sampled {n_utterances:,} utterances")
+        else:
+            logger.info(f"  Using all {len(df):,} qualifying rows (< target {n_utterances:,})")
+    else:
+        word_counts = df["sentence"].str.split().str.len().cumsum()
+        cutoff = int((word_counts <= n_words).sum())
+        cutoff = max(cutoff, 1)
+        df = df.iloc[:cutoff]
+        logger.info(f"  Sampled {len(df):,} utterances to reach word target {n_words:,}")
+
+    actual_words = int(df["sentence"].str.split().str.len().sum())
+    logger.info(f"  Word tokens: {actual_words:,} "
+                f"(avg {actual_words / len(df):.1f} words/utterance)")
 
     # ------------------------------------------------------------------ #
     # Step 3: convert MP3 → 16 kHz WAV, write .lab files                 #
@@ -1709,8 +1721,11 @@ def parse_args():
     p.add_argument("--textgrid_dir", default=None, type=Path,
                    help="Path to an existing TextGrid directory. "
                         "If omitted, defaults to <root_dir>/MCVData/textgrids and runs CTC alignment.")
-    p.add_argument("--n_utterances", default=15_000, type=int,
-                   help="Number of utterances to sample from MCV (default: 15000)")
+    p.add_argument("--n_words", default=250_000, type=int,
+                   help="Target number of word tokens to sample (default: 250000). "
+                        "Ignored if --n_utterances is set.")
+    p.add_argument("--n_utterances", default=None, type=int,
+                   help="Sample exactly this many utterances instead of targeting a word count.")
     p.add_argument("--sample_seed", default=42, type=int,
                    help="Random seed for sampling")
     p.add_argument("--min_speakers", default=50, type=int,
@@ -1778,6 +1793,7 @@ def main():
                 mcv_source_dir=args.mcv_source_dir,
                 mcv_dir=mcv_dir,
                 n_utterances=args.n_utterances,
+                n_words=args.n_words,
                 seed=args.sample_seed,
                 min_speakers=args.min_speakers,
                 tsv_file=args.tsv_file,
