@@ -9,9 +9,10 @@ Data/*.pkl
 WordData/*.pkl
 WordData/LJSpeech-1.1/
 WordData/textgrids
+MCVData/*.pkl
 # Logs
 logs/
-
+*.TextGrid
 # Python
 __pycache__/
 *.pyc
