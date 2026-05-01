@@ -1,0 +1,17 @@
+model,params,arch,embedding_dim,effective_rank,var_pc1,var_top5,var_top10
+whisper-base-enc,74M,Whisper encoder,512,24.08,0.1982,0.5346,0.6679
+whisper-small-enc,244M,Whisper encoder,768,20.32,0.2273,0.5979,0.7143
+whisper-medium-enc,769M,Whisper encoder,1024,22.88,0.2369,0.5427,0.6675
+whisper-large-enc,1550M,Whisper encoder,1280,22.53,0.2353,0.5281,0.6838
+whisper-base-dec,74M,Whisper decoder,512,33.91,0.1522,0.3745,0.5198
+whisper-small-dec,244M,Whisper decoder,768,19.43,0.3480,0.5560,0.6696
+whisper-medium-dec,769M,Whisper decoder,1024,24.64,0.1853,0.5167,0.6682
+whisper-large-dec,1550M,Whisper decoder,1280,33.80,0.1492,0.3854,0.5242
+parakeet-ctc-0.6b,600M,FastConformer-CTC,1024,36.38,0.1273,0.3384,0.5039
+babylm-125m,125M,OPT,768,38.24,0.1072,0.3152,0.4745
+opt-125m,125M,OPT,768,35.72,0.1385,0.3493,0.5059
+babylm-350m,350M,OPT,1024,37.66,0.1032,0.3239,0.4858
+babylm-1.3b,1.3B,OPT,2048,40.82,0.0909,0.2885,0.4374
+pythia-160m,160M,GPT-NeoX,768,35.50,0.1149,0.3635,0.5147
+olmo-7b,7B,OLMo-2,4096,26.23,0.2007,0.4764,0.6392
+pythia-6.9b,6.9B,GPT-NeoX,4096,24.55,0.1901,0.5224,0.6595
