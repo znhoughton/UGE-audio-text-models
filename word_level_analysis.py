@@ -1409,6 +1409,7 @@ def plot_similarity_histograms(embeddings, plots_dir, prefix="word_", max_n=3000
     ax.set_xlabel("Dot Product Similarity", fontsize=11)
     ax.set_ylabel("Density", fontsize=11)
     ax.set_title("Off-diagonal dot product similarity — all models", fontsize=11, fontweight="bold")
+    ax.set_xlim(-25, 25)
     ax.legend(fontsize=7, ncol=2, bbox_to_anchor=(1.01, 1), loc="upper left")
     plt.tight_layout()
     path = hist_dir / f"{prefix}all_models_dot_product_sim_overlay.png"
