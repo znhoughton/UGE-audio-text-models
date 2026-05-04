@@ -1357,6 +1357,45 @@ def _apply_style():
     })
 
 
+def plot_similarity_histograms(embeddings, plots_dir, prefix="word_", max_n=3000, seed=42):
+    """Save one cosine-similarity histogram per model (off-diagonal of the NxN sim matrix)."""
+    _apply_style()
+    hist_dir = plots_dir / "similarity_histograms"
+    hist_dir.mkdir(exist_ok=True)
+
+    rng = np.random.default_rng(seed)
+    for model_name, emb in embeddings.items():
+        N = emb.shape[0]
+        X = emb.astype(np.float32)
+        if N > max_n:
+            idx = rng.choice(N, max_n, replace=False)
+            X = X[idx]
+
+        norms = np.linalg.norm(X, axis=1, keepdims=True)
+        X_norm = X / np.maximum(norms, 1e-10)
+        sim = X_norm @ X_norm.T
+        n = sim.shape[0]
+        off_diag = sim[~np.eye(n, dtype=bool)]
+
+        mean_val = float(off_diag.mean())
+        sample_note = f"subsample n={n:,}/{N:,}" if N > max_n else f"n={n:,}"
+
+        _, ax = plt.subplots(figsize=(7, 4.5))
+        ax.hist(off_diag, bins=100, color="#4A90D9", edgecolor="none", alpha=0.85)
+        ax.axvline(mean_val, color="#E53935", linewidth=1.5, linestyle="--",
+                   label=f"mean = {mean_val:.3f}")
+        ax.set_xlabel("Cosine Similarity", fontsize=11)
+        ax.set_ylabel("Count", fontsize=11)
+        ax.set_title(f"{model_name}  —  off-diagonal cosine similarity  ({sample_note})",
+                     fontsize=10)
+        ax.legend(fontsize=9)
+        plt.tight_layout()
+        path = hist_dir / f"{prefix}{model_name}_cosine_sim_hist.png"
+        plt.savefig(path, dpi=150, bbox_inches="tight")
+        plt.close()
+        logger.info(f"  Saved → {path}")
+
+
 def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path,
                      cka_results: dict = None):
     _apply_style()
@@ -1718,6 +1757,9 @@ def main():
     with timer("PCA plots"):
         plot_eigenspectra_overlay(eigenvalues, plots_dir, max_pc=args.pca_plot_max_pc)
         plot_effective_rank_bar(eigenvalues, plots_dir)
+
+    with timer("Similarity histograms"):
+        plot_similarity_histograms(embeddings, plots_dir, prefix="word_")
 
     # ------------------------------------------------------------------
     # 4. Pairwise minibatch CKA
