@@ -1420,7 +1420,7 @@ def plot_similarity_histograms(embeddings, plots_dir, prefix="word_", max_n=3000
     # --- Faceted (one subplot per model) ---
     ncols = min(4, n_models)
     nrows = (n_models + ncols - 1) // ncols
-    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 3.5, nrows * 2.8), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 3.5, nrows * 2.8), squeeze=False, sharex=True, sharey=True)
     axes_flat = axes.flatten()
     for idx, model_name in enumerate(names):
         off_diag, _ = sims[model_name]
