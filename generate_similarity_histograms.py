@@ -16,6 +16,7 @@ Usage
 """
 
 import argparse
+import json
 import pickle
 import re
 from pathlib import Path
@@ -27,7 +28,8 @@ import numpy as np
 ANALYSES = [
     {"data_dir": "WordData", "plots_dir": "WordPlots", "prefix": "word_"},
     {"data_dir": "MLSData",  "plots_dir": "MLSPlots",  "prefix": "mls_"},
-    {"data_dir": "MCVData",  "plots_dir": "MCVPlots",  "prefix": "mcv_"},
+    {"data_dir": "MCVData",  "plots_dir": "MCVPlots",  "prefix": "mcv_",
+     "word_records": "mcv_word_records.json"},
 ]
 
 
@@ -190,8 +192,32 @@ def main():
             print(f"shape={emb.shape}")
             embeddings[model_name] = emb
 
+        # Apply valid_mask (same logic as in the analysis scripts)
+        N = next(iter(embeddings.values())).shape[0]
+        valid_mask = np.ones(N, dtype=bool)
+        for emb in embeddings.values():
+            valid_mask &= np.linalg.norm(emb, axis=1) > 1e-10
+        for name in embeddings:
+            embeddings[name] = embeddings[name][valid_mask]
+
+        # Build word_ids for MCV same-word masking
+        word_ids = None
+        word_records_file = analysis.get("word_records")
+        if word_records_file:
+            wr_path = data_dir / word_records_file
+            if wr_path.exists():
+                with open(wr_path) as f:
+                    word_records = json.load(f)
+                all_words = sorted(set(rec["word"] for rec in word_records))
+                word_to_id = {w: i for i, w in enumerate(all_words)}
+                word_ids = np.array([word_to_id[rec["word"]] for rec in word_records], dtype=np.int32)
+                word_ids = word_ids[valid_mask]
+                print(f"  Word types: {len(all_words):,}")
+            else:
+                print(f"  Warning: {wr_path} not found, skipping word mask")
+
         plots_dir.mkdir(parents=True, exist_ok=True)
-        plot_similarity_histograms(embeddings, plots_dir, prefix=prefix, max_n=args.max_n)
+        plot_similarity_histograms(embeddings, plots_dir, prefix=prefix, max_n=args.max_n, word_ids=word_ids)
 
     print("\nDone.")
 
