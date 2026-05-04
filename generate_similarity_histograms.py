@@ -43,27 +43,35 @@ def _apply_style():
     })
 
 
-def _off_diagonal_sims(embeddings, max_n=3000, seed=42):
+def _off_diagonal_sims(embeddings, max_n=3000, seed=42, word_ids=None):
     rng = np.random.default_rng(seed)
     sims = {}
     for model_name, emb in embeddings.items():
         N = emb.shape[0]
         X = emb.astype(np.float32)
+        wids = word_ids
         if N > max_n:
-            X = X[rng.choice(N, max_n, replace=False)]
+            idx = rng.choice(N, max_n, replace=False)
+            X = X[idx]
+            if wids is not None:
+                wids = wids[idx]
         sim = (X @ X.T) / X.shape[1]
         n = sim.shape[0]
+        if wids is not None:
+            mask = (wids[:, None] == wids[None, :]) & ~np.eye(n, dtype=bool)
+        else:
+            mask = ~np.eye(n, dtype=bool)
         note = f"subsample n={n:,}/{N:,}" if N > max_n else f"n={n:,}"
-        sims[model_name] = (sim[~np.eye(n, dtype=bool)], note)
+        sims[model_name] = (sim[mask], note)
     return sims
 
 
-def plot_similarity_histograms(embeddings, plots_dir, prefix, max_n=3000, seed=42):
+def plot_similarity_histograms(embeddings, plots_dir, prefix, max_n=3000, seed=42, word_ids=None):
     _apply_style()
     hist_dir = plots_dir / "similarity_histograms"
     hist_dir.mkdir(exist_ok=True)
 
-    sims = _off_diagonal_sims(embeddings, max_n=max_n, seed=seed)
+    sims = _off_diagonal_sims(embeddings, max_n=max_n, seed=seed, word_ids=word_ids)
     names = list(sims.keys())
     n_models = len(names)
     colors = plt.cm.tab20(np.linspace(0, 1, max(n_models, 1)))
