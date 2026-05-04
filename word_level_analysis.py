@@ -1371,9 +1371,7 @@ def plot_similarity_histograms(embeddings, plots_dir, prefix="word_", max_n=3000
             idx = rng.choice(N, max_n, replace=False)
             X = X[idx]
 
-        norms = np.linalg.norm(X, axis=1, keepdims=True)
-        X_norm = X / np.maximum(norms, 1e-10)
-        sim = X_norm @ X_norm.T
+        sim = X @ X.T
         n = sim.shape[0]
         off_diag = sim[~np.eye(n, dtype=bool)]
 
@@ -1384,7 +1382,7 @@ def plot_similarity_histograms(embeddings, plots_dir, prefix="word_", max_n=3000
         ax.hist(off_diag, bins=100, color="#4A90D9", edgecolor="none", alpha=0.85)
         ax.axvline(mean_val, color="#E53935", linewidth=1.5, linestyle="--",
                    label=f"mean = {mean_val:.3f}")
-        ax.set_xlabel("Cosine Similarity", fontsize=11)
+        ax.set_xlabel("Dot Product Similarity", fontsize=11)
         ax.set_ylabel("Count", fontsize=11)
         ax.set_title(f"{model_name}  —  off-diagonal cosine similarity  ({sample_note})",
                      fontsize=10)
