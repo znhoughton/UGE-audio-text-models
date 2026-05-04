@@ -49,7 +49,7 @@ def _off_diagonal_sims(embeddings, max_n=3000, seed=42):
         X = emb.astype(np.float32)
         if N > max_n:
             X = X[rng.choice(N, max_n, replace=False)]
-        sim = X @ X.T
+        sim = (X @ X.T) / X.shape[1]
         n = sim.shape[0]
         note = f"subsample n={n:,}/{N:,}" if N > max_n else f"n={n:,}"
         sims[model_name] = (sim[~np.eye(n, dtype=bool)], note)
