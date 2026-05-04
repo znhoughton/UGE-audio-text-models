@@ -1357,41 +1357,86 @@ def _apply_style():
     })
 
 
-def plot_similarity_histograms(embeddings, plots_dir, prefix="word_", max_n=3000, seed=42):
-    """Save one cosine-similarity histogram per model (off-diagonal of the NxN sim matrix)."""
-    _apply_style()
-    hist_dir = plots_dir / "similarity_histograms"
-    hist_dir.mkdir(exist_ok=True)
-
+def _off_diagonal_sims(embeddings, max_n=3000, seed=42):
     rng = np.random.default_rng(seed)
+    sims = {}
     for model_name, emb in embeddings.items():
         N = emb.shape[0]
         X = emb.astype(np.float32)
         if N > max_n:
-            idx = rng.choice(N, max_n, replace=False)
-            X = X[idx]
-
+            X = X[rng.choice(N, max_n, replace=False)]
         sim = X @ X.T
         n = sim.shape[0]
-        off_diag = sim[~np.eye(n, dtype=bool)]
+        note = f"subsample n={n:,}/{N:,}" if N > max_n else f"n={n:,}"
+        sims[model_name] = (sim[~np.eye(n, dtype=bool)], note)
+    return sims
 
+
+def plot_similarity_histograms(embeddings, plots_dir, prefix="word_", max_n=3000, seed=42):
+    """Per-model, faceted, and overlay dot-product similarity histograms."""
+    _apply_style()
+    hist_dir = plots_dir / "similarity_histograms"
+    hist_dir.mkdir(exist_ok=True)
+
+    sims = _off_diagonal_sims(embeddings, max_n=max_n, seed=seed)
+    names = list(sims.keys())
+    n_models = len(names)
+    colors = plt.cm.tab20(np.linspace(0, 1, max(n_models, 1)))
+    color_map = dict(zip(names, colors))
+
+    # --- Individual histograms ---
+    for model_name, (off_diag, note) in sims.items():
         mean_val = float(off_diag.mean())
-        sample_note = f"subsample n={n:,}/{N:,}" if N > max_n else f"n={n:,}"
-
         _, ax = plt.subplots(figsize=(7, 4.5))
-        ax.hist(off_diag, bins=100, color="#4A90D9", edgecolor="none", alpha=0.85)
+        ax.hist(off_diag, bins=100, color=color_map[model_name], edgecolor="none", alpha=0.85)
         ax.axvline(mean_val, color="#E53935", linewidth=1.5, linestyle="--",
                    label=f"mean = {mean_val:.3f}")
         ax.set_xlabel("Dot Product Similarity", fontsize=11)
         ax.set_ylabel("Count", fontsize=11)
-        ax.set_title(f"{model_name}  —  off-diagonal cosine similarity  ({sample_note})",
-                     fontsize=10)
+        ax.set_title(f"{model_name}  —  off-diagonal dot product similarity  ({note})", fontsize=10)
         ax.legend(fontsize=9)
         plt.tight_layout()
-        path = hist_dir / f"{prefix}{model_name}_cosine_sim_hist.png"
+        path = hist_dir / f"{prefix}{model_name}_dot_product_sim_hist.png"
         plt.savefig(path, dpi=150, bbox_inches="tight")
         plt.close()
         logger.info(f"  Saved → {path}")
+
+    # --- Overlay (density-normalised step histogram) ---
+    _, ax = plt.subplots(figsize=(10, 5))
+    for model_name, (off_diag, _) in sims.items():
+        ax.hist(off_diag, bins=80, histtype="step", linewidth=1.5, density=True,
+                color=color_map[model_name], label=model_name)
+    ax.set_xlabel("Dot Product Similarity", fontsize=11)
+    ax.set_ylabel("Density", fontsize=11)
+    ax.set_title("Off-diagonal dot product similarity — all models", fontsize=11, fontweight="bold")
+    ax.legend(fontsize=7, ncol=2, bbox_to_anchor=(1.01, 1), loc="upper left")
+    plt.tight_layout()
+    path = hist_dir / f"{prefix}all_models_dot_product_sim_overlay.png"
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close()
+    logger.info(f"  Saved → {path}")
+
+    # --- Faceted (one subplot per model) ---
+    ncols = min(4, n_models)
+    nrows = (n_models + ncols - 1) // ncols
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols * 3.5, nrows * 2.8), squeeze=False)
+    axes_flat = axes.flatten()
+    for idx, model_name in enumerate(names):
+        off_diag, _ = sims[model_name]
+        ax = axes_flat[idx]
+        ax.hist(off_diag, bins=60, color=color_map[model_name], edgecolor="none", alpha=0.85)
+        ax.set_title(model_name, fontsize=8, fontweight="bold")
+        ax.tick_params(labelsize=7)
+        ax.set_xlabel("Dot Product", fontsize=7)
+        ax.set_ylabel("Count", fontsize=7)
+    for idx in range(n_models, len(axes_flat)):
+        axes_flat[idx].set_visible(False)
+    fig.suptitle("Off-diagonal dot product similarity — per model", fontsize=12, fontweight="bold")
+    plt.tight_layout()
+    path = hist_dir / f"{prefix}all_models_dot_product_sim_faceted.png"
+    plt.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close()
+    logger.info(f"  Saved → {path}")
 
 
 def plot_cka_heatmap(cka_matrix: np.ndarray, names: list, plots_dir: Path,
