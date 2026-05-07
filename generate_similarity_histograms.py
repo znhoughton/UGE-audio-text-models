@@ -102,6 +102,7 @@ def _plot_sim_suite(sims, hist_dir, prefix, file_tag, xlabel, overlay_xlim, colo
         ax.hist(off_diag, bins=100, color=color_map[model_name], edgecolor="none", alpha=0.85)
         ax.axvline(mean_val, color="#E53935", linewidth=1.5, linestyle="--",
                    label=f"mean = {mean_val:.3f}")
+        ax.set_xlim(*overlay_xlim)
         ax.set_xlabel(xlabel, fontsize=11)
         ax.set_ylabel("Count", fontsize=11)
         ax.set_title(f"{model_name}  —  off-diagonal {xlabel.lower()}  ({note})", fontsize=10)
@@ -135,6 +136,7 @@ def _plot_sim_suite(sims, hist_dir, prefix, file_tag, xlabel, overlay_xlim, colo
         off_diag, _ = sims[model_name]
         ax = axes_flat[idx]
         ax.hist(off_diag, bins=60, color=color_map[model_name], edgecolor="none", alpha=0.85)
+        ax.set_xlim(*overlay_xlim)
         ax.set_title(model_name, fontsize=8, fontweight="bold")
         ax.tick_params(labelsize=7)
         ax.set_xlabel(xlabel, fontsize=7)
