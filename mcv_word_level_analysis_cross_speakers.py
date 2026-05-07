@@ -1416,37 +1416,28 @@ def _hsic1_batch(K: np.ndarray, L: np.ndarray) -> float:
 
 
 def minibatch_cka(X, Y, word_ids, batch_size=MINIBATCH_SIZE, seed=MINIBATCH_SEED):
-    """Minibatch linear CKA with word-type mask.
+    """Per-group linear CKA for cross-speaker analysis.
 
-    Only same-word different-speaker pairs drive the HSIC score: within each
-    minibatch the kernel matrices K and L are zeroed out for all (i, j) pairs
-    where word_ids[i] != word_ids[j] before calling the unbiased HSIC estimator.
+    Iterates over each unique (word, sentence, position) group identified by
+    word_ids.  For each group, computes unbiased HSIC over all speakers in
+    that group, then aggregates across groups.  batch_size and seed are
+    unused but kept for API compatibility.
     """
     valid = (np.linalg.norm(X, axis=1) > 1e-10) & (np.linalg.norm(Y, axis=1) > 1e-10)
-    X, Y  = X[valid], Y[valid]
+    X, Y     = X[valid], Y[valid]
     word_ids = word_ids[valid]
-    N     = X.shape[0]
-    rng   = np.random.default_rng(seed)
-    indices = rng.permutation(N)
     hsic_xy, hsic_xx, hsic_yy = [], [], []
 
-    for start in range(0, N - batch_size + 1, batch_size):
-        idx  = indices[start : start + batch_size]
-        Xb   = X[idx].astype(np.float64)
-        Yb   = Y[idx].astype(np.float64)
-        wids = word_ids[idx]
-
-        Xb /= np.linalg.norm(Xb, axis=1, keepdims=True) + 1e-10
-        Yb /= np.linalg.norm(Yb, axis=1, keepdims=True) + 1e-10
-
-        K = Xb @ Xb.T
-        L = Yb @ Yb.T
-
-        # Word-type mask: zero out cross-word pairs
-        mask = wids[:, None] == wids[None, :]
-        K[~mask] = 0.0
-        L[~mask] = 0.0
-
+    for wid in np.unique(word_ids):
+        idx = np.where(word_ids == wid)[0]
+        if len(idx) < 4:
+            continue
+        Xg = X[idx].astype(np.float64)
+        Yg = Y[idx].astype(np.float64)
+        Xg /= np.linalg.norm(Xg, axis=1, keepdims=True) + 1e-10
+        Yg /= np.linalg.norm(Yg, axis=1, keepdims=True) + 1e-10
+        K = Xg @ Xg.T
+        L = Yg @ Yg.T
         hsic_xy.append(_hsic1_batch(K, L))
         hsic_xx.append(_hsic1_batch(K, K))
         hsic_yy.append(_hsic1_batch(L, L))
@@ -1456,13 +1447,13 @@ def minibatch_cka(X, Y, word_ids, batch_size=MINIBATCH_SIZE, seed=MINIBATCH_SEED
     mean_xy = float(np.mean(hsic_xy))
     denom   = np.sqrt(max(float(np.mean(hsic_xx)), 0.0) * max(float(np.mean(hsic_yy)), 0.0))
     score   = float(mean_xy / denom) if denom > 1e-10 else 0.0
-    per_batch_cka = [
+    per_group_cka = [
         hxy / np.sqrt(max(hxx, 0.0) * max(hyy, 0.0))
         if np.sqrt(max(hxx, 0.0) * max(hyy, 0.0)) > 1e-10 else 0.0
         for hxy, hxx, hyy in zip(hsic_xy, hsic_xx, hsic_yy)
     ]
-    k    = len(per_batch_cka)
-    ci95 = 1.96 * float(np.std(per_batch_cka)) / np.sqrt(k) if k > 1 else 0.0
+    k    = len(per_group_cka)
+    ci95 = 1.96 * float(np.std(per_group_cka)) / np.sqrt(k) if k > 1 else 0.0
     return score, ci95
 
 
