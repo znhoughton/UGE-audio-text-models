@@ -43,27 +43,34 @@ def _apply_style():
     })
 
 
-def _off_diagonal_sims(embeddings, max_n=3000, seed=42, word_ids=None, normalize=False):
+def _off_diagonal_sims(embeddings, max_n=3000, seed=42, word_ids=None, speaker_ids=None, normalize=False):
     rng = np.random.default_rng(seed)
     sims = {}
     for model_name, emb in embeddings.items():
         N = emb.shape[0]
         X = emb.astype(np.float32)
         wids = word_ids
+        sids = speaker_ids
         if N > max_n:
             idx = rng.choice(N, max_n, replace=False)
             X = X[idx]
             if wids is not None:
                 wids = wids[idx]
+            if sids is not None:
+                sids = sids[idx]
         if normalize:
             norms = np.linalg.norm(X, axis=1, keepdims=True)
             X = X / np.maximum(norms, 1e-10)
         sim = X @ X.T if normalize else (X @ X.T) / X.shape[1]
         n = sim.shape[0]
-        if wids is not None:
-            mask = (wids[:, None] == wids[None, :]) & ~np.eye(n, dtype=bool)
+        diag = ~np.eye(n, dtype=bool)
+        if wids is not None and sids is not None:
+            # same word+sentence+position, different speaker
+            mask = (wids[:, None] == wids[None, :]) & (sids[:, None] != sids[None, :]) & diag
+        elif wids is not None:
+            mask = (wids[:, None] == wids[None, :]) & diag
         else:
-            mask = ~np.eye(n, dtype=bool)
+            mask = diag
         note = f"subsample n={n:,}/{N:,}" if N > max_n else f"n={n:,}"
         sims[model_name] = (sim[mask], note)
     return sims
@@ -152,7 +159,7 @@ def _plot_sim_suite(sims, hist_dir, prefix, file_tag, xlabel, overlay_xlim, colo
     print(f"  Saved → {path}")
 
 
-def plot_similarity_histograms(embeddings, plots_dir, prefix, max_n=3000, seed=42, word_ids=None):
+def plot_similarity_histograms(embeddings, plots_dir, prefix, max_n=3000, seed=42, word_ids=None, speaker_ids=None):
     _apply_style()
     hist_dir = plots_dir / "similarity_histograms"
     hist_dir.mkdir(exist_ok=True)
@@ -163,11 +170,11 @@ def plot_similarity_histograms(embeddings, plots_dir, prefix, max_n=3000, seed=4
     color_map = dict(zip(names, colors))
 
     _plot_sim_suite(
-        _off_diagonal_sims(embeddings, max_n=max_n, seed=seed, word_ids=word_ids),
+        _off_diagonal_sims(embeddings, max_n=max_n, seed=seed, word_ids=word_ids, speaker_ids=speaker_ids),
         hist_dir, prefix, "dot_product_sim", "Dot Product Similarity", (-10, 10), color_map,
     )
     _plot_sim_suite(
-        _off_diagonal_sims(embeddings, max_n=max_n, seed=seed, word_ids=word_ids, normalize=True),
+        _off_diagonal_sims(embeddings, max_n=max_n, seed=seed, word_ids=word_ids, speaker_ids=speaker_ids, normalize=True),
         hist_dir, prefix, "cosine_sim", "Cosine Similarity", (-1, 1), color_map,
     )
 
@@ -219,24 +226,45 @@ def main():
         for name in embeddings:
             embeddings[name] = embeddings[name][valid_mask]
 
-        # Build word_ids for MCV same-word masking
-        word_ids = None
+        # Build word_ids and speaker_ids for same-word/cross-speaker masking
+        word_ids    = None
+        speaker_ids = None
         word_records_file = analysis.get("word_records")
         if word_records_file:
             wr_path = data_dir / word_records_file
             if wr_path.exists():
                 with open(wr_path) as f:
                     word_records = json.load(f)
-                all_words = sorted(set(rec["word"] for rec in word_records))
-                word_to_id = {w: i for i, w in enumerate(all_words)}
-                word_ids = np.array([word_to_id[rec["word"]] for rec in word_records], dtype=np.int32)
-                word_ids = word_ids[valid_mask]
-                print(f"  Word types: {len(all_words):,}")
+
+                # word_ids: (word, sentence, occurrence_index) — matches build_word_type_ids
+                occurrence_count: dict = {}
+                all_types: dict = {}
+                ids = []
+                for rec in word_records:
+                    key = (rec["word"], rec["sentence"])
+                    occ = occurrence_count.get(key, 0)
+                    occurrence_count[key] = occ + 1
+                    full_key = (rec["word"], rec["sentence"], occ)
+                    if full_key not in all_types:
+                        all_types[full_key] = len(all_types)
+                    ids.append(all_types[full_key])
+                word_ids = np.array(ids, dtype=np.int32)[valid_mask]
+
+                # speaker_ids: integer per unique speaker
+                all_speakers = sorted(set(rec.get("speaker_id", "unknown") for rec in word_records))
+                spk_to_id = {s: i for i, s in enumerate(all_speakers)}
+                speaker_ids = np.array(
+                    [spk_to_id[rec.get("speaker_id", "unknown")] for rec in word_records],
+                    dtype=np.int32
+                )[valid_mask]
+
+                print(f"  Word types (word+sentence+pos): {len(all_types):,}, speakers: {len(all_speakers):,}")
             else:
-                print(f"  Warning: {wr_path} not found, skipping word mask")
+                print(f"  Warning: {wr_path} not found, skipping word/speaker mask")
 
         plots_dir.mkdir(parents=True, exist_ok=True)
-        plot_similarity_histograms(embeddings, plots_dir, prefix=prefix, max_n=args.max_n, word_ids=word_ids)
+        plot_similarity_histograms(embeddings, plots_dir, prefix=prefix, max_n=args.max_n,
+                                   word_ids=word_ids, speaker_ids=speaker_ids)
 
     print("\nDone.")
 
