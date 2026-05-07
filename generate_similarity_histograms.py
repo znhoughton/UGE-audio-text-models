@@ -252,15 +252,11 @@ def main():
                 with open(wr_path) as f:
                     word_records = json.load(f)
 
-                # word_ids: (word, sentence, occurrence_index) — matches build_word_type_ids
-                occurrence_count: dict = {}
+                # word_ids: (word, sentence, char_start) — matches build_word_type_ids
                 all_types: dict = {}
                 ids = []
                 for rec in word_records:
-                    key = (rec["word"], rec["sentence"])
-                    occ = occurrence_count.get(key, 0)
-                    occurrence_count[key] = occ + 1
-                    full_key = (rec["word"], rec["sentence"], occ)
+                    full_key = (rec["word"], rec["sentence"], rec["char_start"])
                     if full_key not in all_types:
                         all_types[full_key] = len(all_types)
                     ids.append(all_types[full_key])

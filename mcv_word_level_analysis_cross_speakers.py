@@ -905,19 +905,16 @@ def build_word_type_ids(word_records: list) -> np.ndarray:
     Same word type = same integer, enabling efficient mask construction in
     minibatch_cka via broadcasting: mask = wids[:, None] == wids[None, :].
     """
-    occurrence_count: dict = {}
+    # Key: (word, sentence, char_start) — char_start is derived from the text
+    # so it is identical for the same word position across all speakers,
+    # correctly grouping cross-speaker tokens of the same word together.
+    all_types: dict = {}
     ids = []
-    all_types = {}
-    
     for rec in word_records:
-        key = (rec["word"], rec["sentence"])
-        occ = occurrence_count.get(key, 0)
-        occurrence_count[key] = occ + 1
-        full_key = (rec["word"], rec["sentence"], occ)
+        full_key = (rec["word"], rec["sentence"], rec["char_start"])
         if full_key not in all_types:
             all_types[full_key] = len(all_types)
         ids.append(all_types[full_key])
-    
     return np.array(ids, dtype=np.int32)
 
 
