@@ -44,35 +44,51 @@ def _apply_style():
 
 
 def _off_diagonal_sims(embeddings, max_n=3000, seed=42, word_ids=None, speaker_ids=None, normalize=False):
-    rng = np.random.default_rng(seed)
     sims = {}
     for model_name, emb in embeddings.items():
         N = emb.shape[0]
         X = emb.astype(np.float32)
-        wids = word_ids
-        sids = speaker_ids
-        if N > max_n:
-            idx = rng.choice(N, max_n, replace=False)
-            X = X[idx]
-            if wids is not None:
-                wids = wids[idx]
-            if sids is not None:
-                sids = sids[idx]
-        if normalize:
-            norms = np.linalg.norm(X, axis=1, keepdims=True)
-            X = X / np.maximum(norms, 1e-10)
-        sim = X @ X.T if normalize else (X @ X.T) / X.shape[1]
-        n = sim.shape[0]
-        diag = ~np.eye(n, dtype=bool)
-        if wids is not None and sids is not None:
-            # same word+sentence+position, different speaker
-            mask = (wids[:, None] == wids[None, :]) & (sids[:, None] != sids[None, :]) & diag
-        elif wids is not None:
-            mask = (wids[:, None] == wids[None, :]) & diag
+
+        if word_ids is not None and speaker_ids is not None:
+            # Group by (word, sentence, position) key and compute all
+            # cross-speaker pairs within each group — no subsampling needed.
+            if normalize:
+                norms = np.linalg.norm(X, axis=1, keepdims=True)
+                X = X / np.maximum(norms, 1e-10)
+            else:
+                X = X / X.shape[1]
+
+            all_vals = []
+            for wid in np.unique(word_ids):
+                group_idx = np.where(word_ids == wid)[0]
+                if len(group_idx) < 2:
+                    continue
+                Xg  = X[group_idx]
+                sids_g = speaker_ids[group_idx]
+                sim_g = Xg @ Xg.T
+                n_g = len(group_idx)
+                cross_spk = sids_g[:, None] != sids_g[None, :]
+                off_diag  = ~np.eye(n_g, dtype=bool)
+                mask = cross_spk & off_diag
+                all_vals.append(sim_g[mask])
+
+            vals = np.concatenate(all_vals) if all_vals else np.array([])
+            note = f"n={N:,} (all cross-speaker pairs)"
         else:
-            mask = diag
-        note = f"subsample n={n:,}/{N:,}" if N > max_n else f"n={n:,}"
-        sims[model_name] = (sim[mask], note)
+            # Fallback: random subsample + full off-diagonal
+            rng = np.random.default_rng(seed)
+            if N > max_n:
+                idx = rng.choice(N, max_n, replace=False)
+                X = X[idx]
+                N = max_n
+            if normalize:
+                norms = np.linalg.norm(X, axis=1, keepdims=True)
+                X = X / np.maximum(norms, 1e-10)
+            sim = X @ X.T if normalize else (X @ X.T) / X.shape[1]
+            vals = sim[~np.eye(N, dtype=bool)]
+            note = f"n={N:,}"
+
+        sims[model_name] = (vals, note)
     return sims
 
 
