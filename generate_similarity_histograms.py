@@ -98,8 +98,9 @@ def _plot_sim_suite(sims, hist_dir, prefix, file_tag, xlabel, overlay_xlim, colo
 
     for model_name, (off_diag, note) in sims.items():
         mean_val = float(off_diag.mean())
+        plot_vals = np.clip(off_diag, overlay_xlim[0], overlay_xlim[1])
         _, ax = plt.subplots(figsize=(7, 4.5))
-        ax.hist(off_diag, bins=100, color=color_map[model_name], edgecolor="none", alpha=0.85)
+        ax.hist(plot_vals, bins=100, range=overlay_xlim, color=color_map[model_name], edgecolor="none", alpha=0.85)
         ax.axvline(mean_val, color="#E53935", linewidth=1.5, linestyle="--",
                    label=f"mean = {mean_val:.3f}")
         ax.set_xlim(*overlay_xlim)
@@ -135,7 +136,8 @@ def _plot_sim_suite(sims, hist_dir, prefix, file_tag, xlabel, overlay_xlim, colo
     for idx, model_name in enumerate(names):
         off_diag, _ = sims[model_name]
         ax = axes_flat[idx]
-        ax.hist(off_diag, bins=60, color=color_map[model_name], edgecolor="none", alpha=0.85)
+        ax.hist(np.clip(off_diag, overlay_xlim[0], overlay_xlim[1]), bins=60, range=overlay_xlim,
+                color=color_map[model_name], edgecolor="none", alpha=0.85)
         ax.set_xlim(*overlay_xlim)
         ax.set_title(model_name, fontsize=8, fontweight="bold")
         ax.tick_params(labelsize=7)
