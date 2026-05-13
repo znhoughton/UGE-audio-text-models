@@ -3,10 +3,14 @@ whisper-base-enc,74M,Whisper encoder,512,22.38,0.1616,0.5434,0.7258
 whisper-small-enc,244M,Whisper encoder,768,18.79,0.1715,0.6304,0.7758
 whisper-medium-enc,769M,Whisper encoder,1024,19.01,0.1902,0.6214,0.7455
 whisper-large-enc,1550M,Whisper encoder,1280,18.07,0.1992,0.6299,0.7711
+whisper-large-v2-enc,1550M,Whisper encoder,1280,30.62,0.1372,0.4187,0.5868
+whisper-large-v1-enc,1550M,Whisper encoder,1280,21.40,0.1911,0.5781,0.7146
 whisper-base-dec,74M,Whisper decoder,512,32.38,0.1599,0.4066,0.5413
 whisper-small-dec,244M,Whisper decoder,768,22.22,0.2365,0.5453,0.6560
 whisper-medium-dec,769M,Whisper decoder,1024,19.24,0.2925,0.5637,0.7175
 whisper-large-dec,1550M,Whisper decoder,1280,32.62,0.1482,0.3926,0.5293
+whisper-large-v2-dec,1550M,Whisper decoder,1280,15.73,0.3699,0.6401,0.7359
+whisper-large-v1-dec,1550M,Whisper decoder,1280,22.15,0.2523,0.5319,0.6925
 parakeet-ctc-0.6b,600M,FastConformer-CTC,1024,35.22,0.1321,0.3618,0.5145
 mimi,~85M,Conv+Transformer codec,512,22.85,0.2424,0.5185,0.6623
 babylm-125m,125M,OPT,768,37.62,0.1119,0.3232,0.4859
