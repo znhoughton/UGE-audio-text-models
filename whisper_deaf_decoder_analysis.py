@@ -176,17 +176,25 @@ def load_utterances(loader: str, data_dir: Path, audio_subdir: str) -> dict:
             with open(mp) as f:
                 metainfo = json.load(f)
         utterances = _load_wav_dir(sample_dir / "wavs", transcripts, metainfo)
-    else:  # ljspeech
-        metadata_path = sample_dir / "metadata.csv"
+    else:  # ljspeech — handle both flat and nested (LJSpeech-1.1/LJSpeech-1.1/) layouts
+        lj_root = sample_dir
+        if not (lj_root / "metadata.csv").exists():
+            nested = sample_dir / "LJSpeech-1.1"
+            if (nested / "metadata.csv").exists():
+                lj_root = nested
+            else:
+                raise FileNotFoundError(
+                    f"metadata.csv not found under {sample_dir}"
+                )
         transcripts = {}
-        with open(metadata_path, encoding="utf-8") as f:
+        with open(lj_root / "metadata.csv", encoding="utf-8") as f:
             for line in f:
                 parts = line.rstrip("\n").split("|")
                 if len(parts) >= 2:
                     utt_id = parts[0]
                     text   = parts[2] if len(parts) >= 3 and parts[2] else parts[1]
                     transcripts[utt_id] = text.lower()
-        utterances = _load_wav_dir(sample_dir / "wavs", transcripts, None)
+        utterances = _load_wav_dir(lj_root / "wavs", transcripts, None)
     logger.info(f"Loaded {len(utterances):,} utterances")
     return utterances
 
