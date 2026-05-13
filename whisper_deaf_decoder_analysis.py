@@ -83,6 +83,7 @@ DATASET_CONFIGS = {
         "data_dir":       "MCVData",
         "plots_dir":      "MCVPlots",
         "prefix":         "mcv_",
+        "pkl_prefix":     "mcv_",     # MCVData/mcv_word_embeddings_*.pkl
         "audio_subdir":   "mcv_sample",
         "word_records":   "mcv_word_records.json",
         "loader":         "mcv",
@@ -92,6 +93,7 @@ DATASET_CONFIGS = {
         "data_dir":       "WordData",
         "plots_dir":      "WordPlots",
         "prefix":         "word_",
+        "pkl_prefix":     "",         # WordData/word_embeddings_*.pkl (no double prefix)
         "audio_subdir":   "LJSpeech-1.1",
         "word_records":   "word_records.json",
         "loader":         "ljspeech",
@@ -518,7 +520,8 @@ def main():
     data_dir  = root / cfg["data_dir"]
     plots_dir = root / cfg["plots_dir"] / "deaf_decoder_cka"
     plots_dir.mkdir(parents=True, exist_ok=True)
-    prefix = cfg["prefix"]
+    prefix     = cfg["prefix"]
+    pkl_prefix = cfg["pkl_prefix"]
 
     # ── Load word records ─────────────────────────────────────────────────────
     wr_path = data_dir / cfg["word_records"]
@@ -542,8 +545,8 @@ def main():
 
     # ── Load existing cached embeddings ───────────────────────────────────────
     embeddings: dict[str, np.ndarray] = {}
-    pkl_pattern = re.compile(rf"^{re.escape(prefix)}word_embeddings_(.+)\.pkl$")
-    for pkl_path in sorted(data_dir.glob(f"{prefix}word_embeddings_*.pkl")):
+    pkl_pattern = re.compile(rf"^{re.escape(pkl_prefix)}word_embeddings_(.+)\.pkl$")
+    for pkl_path in sorted(data_dir.glob(f"{pkl_prefix}word_embeddings_*.pkl")):
         m = pkl_pattern.match(pkl_path.name)
         if not m:
             continue
@@ -578,7 +581,7 @@ def main():
     # ── Extract / load deaf decoder embeddings ────────────────────────────────
     for base_name in deaf_needed:
         deaf_name  = f"{base_name}-deaf"
-        cache_path = data_dir / f"{prefix}word_embeddings_{deaf_name}.pkl"
+        cache_path = data_dir / f"{pkl_prefix}word_embeddings_{deaf_name}.pkl"
 
         if cache_path.exists():
             logger.info(f"Loading cached deaf decoder: {deaf_name}")
