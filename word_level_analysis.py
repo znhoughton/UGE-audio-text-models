@@ -68,6 +68,8 @@ from transformers import (
     AutoTokenizer,
     MimiModel,
     ParakeetForCTC,
+    Wav2Vec2FeatureExtractor,
+    Wav2Vec2Model,
     WhisperModel,
     WhisperProcessor,
 )
@@ -84,6 +86,8 @@ MIMI_SR          = 24000    # Mimi target sample rate
 WHISPER_ENC_FPS  = 50.0     # Whisper encoder: 10ms mel hop × 2x conv = 20ms/frame
 PARAKEET_FPS     = 12.5     # FastConformer: 10ms shift × 8x subsampling = 80ms/frame
 MIMI_FPS         = 12.5     # Mimi encoder: 80ms/frame at 24kHz
+WAV2VEC2_FPS     = 50.0     # wav2vec2: CNN stride 320 at 16kHz → 20ms/frame
+KALDI_FPS        = 100.0    # Kaldi chain model: 10ms frame shift → 100 Hz at last hidden layer
 
 MIN_WORD_DUR     = 0.05     # seconds — skip words shorter than this (< 1 Whisper frame)
 MAX_WORD_DUR     = 3.0      # seconds — skip implausibly long words
@@ -189,6 +193,28 @@ MODELS = {
         "params": "~85M", "arch": "Conv+Transformer codec", "corpus": "Moshi training set",
         "fps": MIMI_FPS, "target_sr": MIMI_SR,
     },
+    # Kaldi TDNN-F chain acoustic model.
+    # Training objective: LF-MMI on context-dependent phone states (senones).
+    # No language model component anywhere in the training pipeline.
+    # hf_id is None — path is set at runtime via --kaldi_model_dir.
+    "kaldi-librispeech": {
+        "hf_id": None,
+        "modality": "audio-kaldi",
+        "params": "~18M", "arch": "TDNN-F chain (LF-MMI)",
+        "corpus": "LibriSpeech 960h — phone-state targets, no LM",
+        "fps": KALDI_FPS, "target_sr": WHISPER_SR,
+    },
+    # Pre-trained wav2vec2: purely acoustic self-supervised model.
+    # Training objective is contrastive prediction of quantized audio codes — no
+    # text, phone, or linguistic labels of any kind.  Use Wav2Vec2Model (not
+    # Wav2Vec2ForCTC) to get raw transformer hidden states, not text logits.
+    "wav2vec2-base": {
+        "hf_id": "facebook/wav2vec2-base",
+        "modality": "audio-wav2vec2",
+        "params": "95M", "arch": "Wav2Vec2 (pre-trained only)",
+        "corpus": "LibriSpeech 960h (self-supervised, no labels)",
+        "fps": WAV2VEC2_FPS, "target_sr": WHISPER_SR,
+    },
     # ── Text LLMs ─────────────────────────────────────────────────────────
     "babylm-125m": {
         "hf_id": "znhoughton/opt-babylm-125m-20eps-seed964",
@@ -220,7 +246,7 @@ MODELS = {
     },
 }
 
-AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi"}
+AUDIO_MODALITIES = {"audio-whisper-enc", "audio-whisper-dec", "audio-parakeet", "audio-mimi", "audio-wav2vec2", "audio-kaldi"}
 # Note: tts-qwen3 (Qwen3-TTS) was removed — its architecture requires the custom
 # qwen-tts package and does not expose hidden states via a standard forward() call.
 
@@ -239,6 +265,8 @@ MODEL_COLORS = {
     "whisper-large-v1-dec": "#004D40",
     "parakeet-ctc-0.6b":   "#880E4F",
     "mimi":                "#D84315",
+    "wav2vec2-base":       "#558B2F",
+    "kaldi-librispeech":   "#6D4C41",
     "babylm-125m":         "#E65100",
     "opt-125m":            "#FFCCBC",
     "babylm-350m":         "#FB8C00",
@@ -1131,6 +1159,84 @@ def extract_mimi_word_embeddings(
 
 
 # ---------------------------------------------------------------------------
+# wav2vec2 (pre-trained only) word-level extraction
+# ---------------------------------------------------------------------------
+
+def extract_wav2vec2_word_embeddings(
+    model_name: str,
+    model_id: str,
+    word_records: list[dict],
+    utterances: dict,
+    device: torch.device,
+    fps: float = WAV2VEC2_FPS,
+    target_sr: int = WHISPER_SR,
+    batch_size: int = 64,
+    checkpoint_dir: Path = None,
+) -> np.ndarray:
+    """Extract word-level embeddings from wav2vec2 (pre-trained, acoustic-only).
+
+    Uses Wav2Vec2Model — NOT Wav2Vec2ForCTC — so there is no CTC projection
+    head and no text supervision at any point.  The model was pre-trained with
+    a contrastive loss over quantized audio codes (wav2vec 2.0 objective);
+    the quantisation targets are derived entirely from the audio waveform.
+
+    Frame rate: CNN stride 320 at 16 kHz → 50 Hz, identical to the Whisper
+    encoder, so the shared _run_batch_audio / _slice_frames pipeline requires
+    no special-casing.
+    """
+    logger.info(f"Loading wav2vec2 (pre-trained only, no text supervision): {model_id}")
+    log_gpu_memory(f"before {model_name} load")
+
+    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained(model_id)
+    # Wav2Vec2Model returns transformer hidden states; Wav2Vec2ForCTC would add
+    # a CTC head trained to predict characters — explicitly avoid that class.
+    model = Wav2Vec2Model.from_pretrained(model_id, torch_dtype=torch.float32)
+    model = model.to(device).eval()
+    log_gpu_memory(f"after {model_name} load")
+
+    utt_to_words = _group_by_utt(word_records)
+    utt_ids = list(utt_to_words.keys())
+    audio_key = _resample_utterances(utterances, utt_ids, target_sr)
+
+    checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
+    start_utt, word_embeddings_list = _load_checkpoint(checkpoint_path, model_name)
+    completed_words = {idx for idx, _ in word_embeddings_list}
+
+    def encode(audio_arrays):
+        inputs = feature_extractor(
+            audio_arrays,
+            sampling_rate=target_sr,
+            return_tensors="pt",
+            padding=True,
+            return_attention_mask=True,
+        )
+        input_values = inputs["input_values"].to(device)
+        attention_mask = inputs.get("attention_mask")
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(device)
+        with torch.no_grad():
+            out = model(
+                input_values,
+                attention_mask=attention_mask,
+                output_hidden_states=False,
+            )
+        return out.last_hidden_state.float().cpu().numpy()  # (B, T, D=768)
+
+    errors = _run_batch_audio(
+        model_name, utt_ids, start_utt, batch_size,
+        word_records, utterances, utt_to_words, completed_words,
+        word_embeddings_list, encode, fps, checkpoint_path, audio_key,
+    )
+
+    del model
+    release_vram(model_name)
+    _remove_checkpoint(checkpoint_path)
+    if errors:
+        logger.warning(f"{model_name}: {errors} word-level errors")
+    return _sort_embeddings(word_embeddings_list, len(word_records))
+
+
+# ---------------------------------------------------------------------------
 # Text LM word-level extraction
 # ---------------------------------------------------------------------------
 
@@ -1243,6 +1349,183 @@ def extract_lm_word_embeddings(
     if errors:
         logger.warning(f"{model_name}: {errors} word-level errors")
 
+    return _sort_embeddings(word_embeddings_list, len(word_records))
+
+
+# ---------------------------------------------------------------------------
+# Kaldi nnet3 acoustic model word-level extraction
+# ---------------------------------------------------------------------------
+
+def _kaldi_mfcc(audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
+    """40-dim MFCC matching the LibriSpeech chain model's conf/mfcc_hires.conf.
+
+    torchaudio.compliance.kaldi implements the same algorithm as Kaldi's
+    compute-mfcc-feats, so these features are accepted directly by nnet3-compute
+    without going through a separate Kaldi feature extraction step.
+    """
+    waveform = torch.from_numpy(audio).float().unsqueeze(0)
+    feats = torchaudio.compliance.kaldi.mfcc(
+        waveform,
+        sample_frequency=float(sample_rate),
+        num_ceps=40,
+        num_mel_bins=40,
+        low_freq=20.0,
+        high_freq=-400.0,   # Kaldi convention: negative = Nyquist - |value| = 7600 Hz
+        frame_length=25.0,
+        frame_shift=10.0,
+        dither=0.0,
+        snip_edges=True,
+        use_energy=False,
+    )
+    return feats.numpy().astype(np.float32)  # (T, 40)
+
+
+def _kaldi_cmvn(feats: np.ndarray) -> np.ndarray:
+    """Per-utterance mean subtraction matching apply-cmvn with per-utt stats."""
+    return (feats - feats.mean(axis=0, keepdims=True)).astype(np.float32)
+
+
+def extract_kaldi_word_embeddings(
+    model_name: str,
+    kaldi_model_dir: Path,
+    kaldi_bin_dir: Path,
+    output_node: str,
+    word_records: list[dict],
+    utterances: dict,
+    fps: float = KALDI_FPS,
+    target_sr: int = WHISPER_SR,
+    ivector_dim: int = 100,
+    batch_size: int = 500,
+    checkpoint_dir: Path = None,
+) -> np.ndarray:
+    """Extract word-level embeddings from a Kaldi nnet3 chain acoustic model.
+
+    Training objective: LF-MMI on context-dependent phone states (senones).
+    No language model is involved at any point — purely acoustic-phonetic.
+
+    MFCC features are computed in Python (torchaudio.compliance.kaldi) and
+    written to a temp ark file. nnet3-compute is invoked once per batch via
+    subprocess. Hidden states are read back with kaldiio.
+
+    Finding <output_node>:
+        <kaldi_bin_dir>/nnet3-info <kaldi_model_dir>/final.mdl | grep component-node
+    The last component before "output.affine" is the last hidden layer —
+    typically "prefinal-chain.affine" in the LibriSpeech TDNN-F chain model.
+
+    iVectors: zero vectors are used (iVectors are mean-centred in training, so
+    zero ≈ average speaker — appropriate for single-speaker LJSpeech). For
+    multi-speaker data, replace with per-utterance ivector-extract-online2 output.
+
+    FPS: the last hidden layer runs at the full 100 Hz frame rate (10 ms/frame).
+    The chain output layer uses 3× subsampling, but intermediate nodes do not.
+    Verify: count output rows for a known-length utterance and divide by duration.
+    """
+    try:
+        import kaldiio
+    except ImportError:
+        raise ImportError("Run: pip install kaldiio")
+
+    model_path = Path(kaldi_model_dir) / "final.mdl"
+    nnet3_bin  = Path(kaldi_bin_dir) / "nnet3-compute"
+    for p in [model_path, nnet3_bin]:
+        if not p.exists():
+            raise FileNotFoundError(p)
+
+    utt_to_words = _group_by_utt(word_records)
+    utt_ids      = list(utt_to_words.keys())
+    N_utt        = len(utt_ids)
+    audio_key    = _resample_utterances(utterances, utt_ids, target_sr)
+
+    checkpoint_path = checkpoint_dir / f"{model_name}_checkpoint.pkl" if checkpoint_dir else None
+    start_utt, word_embeddings_list = _load_checkpoint(checkpoint_path, model_name)
+    completed_words = {idx for idx, _ in word_embeddings_list}
+
+    errors = 0
+    pbar = tqdm(
+        range(start_utt, N_utt, batch_size), desc=model_name,
+        unit="batch", total=(N_utt - start_utt + batch_size - 1) // batch_size,
+    )
+
+    IVEC_PERIOD = 10  # frames between iVector samples (matches Kaldi default)
+
+    with tempfile.TemporaryDirectory(prefix="kaldi_emb_") as tmpdir:
+        tmpdir = Path(tmpdir)
+
+        for batch_start in pbar:
+            batch_ids = utt_ids[batch_start: batch_start + batch_size]
+            mfcc_ark = tmpdir / "mfcc.ark"
+            mfcc_scp = tmpdir / "mfcc.scp"
+            ivec_ark = tmpdir / "ivec.ark"
+            ivec_scp = tmpdir / "ivec.scp"
+            hidden_ark = tmpdir / "hidden.ark"
+
+            try:
+                # 1. Compute MFCC + CMVN in Python (no Kaldi binary needed for features)
+                mfcc_dict = {}
+                for uid in batch_ids:
+                    mfcc_dict[uid] = _kaldi_cmvn(
+                        _kaldi_mfcc(utterances[uid][audio_key], target_sr)
+                    )
+                kaldiio.save_ark(f"ark,scp:{mfcc_ark},{mfcc_scp}", mfcc_dict)
+
+                # 2. Zero iVectors shaped (n_chunks, ivector_dim) per utterance.
+                # iVectors are mean-centred at training time, so zero = average speaker.
+                ivec_dict = {
+                    uid: np.zeros(
+                        ((mfcc_dict[uid].shape[0] + IVEC_PERIOD - 1) // IVEC_PERIOD,
+                         ivector_dim),
+                        dtype=np.float32,
+                    )
+                    for uid in batch_ids
+                }
+                kaldiio.save_ark(f"ark,scp:{ivec_ark},{ivec_scp}", ivec_dict)
+
+                # 3. Run nnet3-compute (Kaldi reads features; Python reads output)
+                cmd = [
+                    str(nnet3_bin),
+                    "--use-gpu=no",
+                    f"--online-ivectors=scp:{ivec_scp}",
+                    f"--online-ivector-period={IVEC_PERIOD}",
+                    f"--output-node={output_node}",
+                    "--apply-exp=false",
+                    str(model_path),
+                    f"scp:{mfcc_scp}",
+                    f"ark:{hidden_ark}",
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+                if result.returncode != 0:
+                    raise RuntimeError(f"nnet3-compute failed:\n{result.stderr[-2000:]}")
+
+                # 4. Slice hidden states by word boundaries
+                hidden_dict = dict(kaldiio.load_ark(str(hidden_ark)))
+                for uid in batch_ids:
+                    if uid not in hidden_dict:
+                        errors += len(utt_to_words[uid])
+                        logger.warning(f"nnet3-compute produced no output for {uid}")
+                        continue
+                    hidden = hidden_dict[uid]  # (T, D)
+                    for word_idx in utt_to_words[uid]:
+                        if word_idx in completed_words:
+                            continue
+                        rec = word_records[word_idx]
+                        emb = _slice_frames(hidden, rec["start"], rec["end"], fps)
+                        if emb is None:
+                            errors += 1
+                            continue
+                        word_embeddings_list.append((word_idx, emb))
+                        completed_words.add(word_idx)
+
+            except Exception as e:
+                errors += len(batch_ids)
+                logger.warning(f"Kaldi batch at utt {batch_start} failed: {e}")
+
+            next_utt = batch_start + batch_size
+            if next_utt % (CHECKPOINT_EVERY * batch_size) < batch_size:
+                _save_checkpoint(checkpoint_path, word_embeddings_list, next_utt)
+
+    _remove_checkpoint(checkpoint_path)
+    if errors:
+        logger.warning(f"{model_name}: {errors} word-level errors")
     return _sort_embeddings(word_embeddings_list, len(word_records))
 
 
@@ -1656,6 +1939,19 @@ def parse_args():
                    help="Number of utterances per batch for Parakeet extraction")
     p.add_argument("--mimi_batch_size", default=64, type=int,
                    help="Number of utterances per batch for Mimi extraction")
+    p.add_argument("--wav2vec2_batch_size", default=64, type=int,
+                   help="Number of utterances per batch for wav2vec2 extraction")
+    p.add_argument("--kaldi_bin_dir", default=None, type=Path,
+                   help="Path to Kaldi bin dir, e.g. /path/to/kaldi/src/nnet3bin")
+    p.add_argument("--kaldi_model_dir", default=None, type=Path,
+                   help="Path to Kaldi model dir containing final.mdl")
+    p.add_argument("--kaldi_output_node", default="prefinal-chain.affine", type=str,
+                   help="nnet3 node name for the last hidden layer "
+                        "(run: nnet3-info final.mdl | grep component-node)")
+    p.add_argument("--kaldi_ivector_dim", default=100, type=int,
+                   help="iVector dimension expected by the Kaldi model (default: 100)")
+    p.add_argument("--kaldi_batch_size", default=500, type=int,
+                   help="Number of utterances per nnet3-compute call")
     p.add_argument("--lm_batch_size", default=32, type=int,
                    help="Number of utterances per batch for LM extraction")
     p.add_argument("--skip_extraction", action="store_true",
@@ -1785,6 +2081,33 @@ def main():
                         cfg["hf_id"], word_records, utterances,
                         device, fps=cfg["fps"], target_sr=cfg["target_sr"],
                         batch_size=args.mimi_batch_size,
+                        checkpoint_dir=data_dir,
+                    )
+                elif modality == "audio-wav2vec2":
+                    emb = extract_wav2vec2_word_embeddings(
+                        model_name, cfg["hf_id"], word_records, utterances,
+                        device, fps=cfg["fps"], target_sr=cfg["target_sr"],
+                        batch_size=args.wav2vec2_batch_size,
+                        checkpoint_dir=data_dir,
+                    )
+                elif modality == "audio-kaldi":
+                    if not args.kaldi_model_dir or not args.kaldi_bin_dir:
+                        logger.warning(
+                            f"Skipping {model_name}: --kaldi_model_dir and "
+                            "--kaldi_bin_dir are required for audio-kaldi models."
+                        )
+                        continue
+                    emb = extract_kaldi_word_embeddings(
+                        model_name,
+                        kaldi_model_dir=args.kaldi_model_dir,
+                        kaldi_bin_dir=args.kaldi_bin_dir,
+                        output_node=args.kaldi_output_node,
+                        word_records=word_records,
+                        utterances=utterances,
+                        fps=cfg["fps"],
+                        target_sr=cfg["target_sr"],
+                        ivector_dim=args.kaldi_ivector_dim,
+                        batch_size=args.kaldi_batch_size,
                         checkpoint_dir=data_dir,
                     )
                 else:  # text
