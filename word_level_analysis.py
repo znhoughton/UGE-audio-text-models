@@ -87,7 +87,7 @@ WHISPER_ENC_FPS  = 50.0     # Whisper encoder: 10ms mel hop × 2x conv = 20ms/fr
 PARAKEET_FPS     = 12.5     # FastConformer: 10ms shift × 8x subsampling = 80ms/frame
 MIMI_FPS         = 12.5     # Mimi encoder: 80ms/frame at 24kHz
 WAV2VEC2_FPS     = 50.0     # wav2vec2: CNN stride 320 at 16kHz → 20ms/frame
-KALDI_FPS        = 100.0    # Kaldi chain model: 10ms frame shift → 100 Hz at last hidden layer
+KALDI_FPS        = 99.0     # Kaldi chain model last hidden layer: ~99 Hz (snip_edges truncation)
 
 MIN_WORD_DUR     = 0.05     # seconds — skip words shorter than this (< 1 Whisper frame)
 MAX_WORD_DUR     = 3.0      # seconds — skip implausibly long words
@@ -1389,7 +1389,6 @@ def extract_kaldi_word_embeddings(
     model_name: str,
     kaldi_model_dir: Path,
     kaldi_bin_dir: Path,
-    output_node: str,
     word_records: list[dict],
     utterances: dict,
     fps: float = KALDI_FPS,
@@ -1403,29 +1402,27 @@ def extract_kaldi_word_embeddings(
     Training objective: LF-MMI on context-dependent phone states (senones).
     No language model is involved at any point — purely acoustic-phonetic.
 
+    Requires final_hidden.mdl in kaldi_model_dir — a version of the model
+    with its output-node redirected to the last hidden layer
+    (prefinal-chain.batchnorm2, dim=256) via text-format editing. See
+    test_kaldi.py docstring for the one-time setup commands.
+
     MFCC features are computed in Python (torchaudio.compliance.kaldi) and
     written to a temp ark file. nnet3-compute is invoked once per batch via
     subprocess. Hidden states are read back with kaldiio.
 
-    Finding <output_node>:
-        <kaldi_bin_dir>/nnet3-info <kaldi_model_dir>/final.mdl | grep component-node
-    The last component before "output.affine" is the last hidden layer —
-    typically "prefinal-chain.affine" in the LibriSpeech TDNN-F chain model.
-
     iVectors: zero vectors are used (iVectors are mean-centred in training, so
-    zero ≈ average speaker — appropriate for single-speaker LJSpeech). For
-    multi-speaker data, replace with per-utterance ivector-extract-online2 output.
+    zero ≈ average speaker — appropriate for single-speaker LJSpeech).
 
-    FPS: the last hidden layer runs at the full 100 Hz frame rate (10 ms/frame).
-    The chain output layer uses 3× subsampling, but intermediate nodes do not.
-    Verify: count output rows for a known-length utterance and divide by duration.
+    FPS: ~99 Hz (10ms frame shift with snip_edges=True on 2s audio gives 198
+    frames; verified empirically).
     """
     try:
         import kaldiio
     except ImportError:
         raise ImportError("Run: pip install kaldiio")
 
-    model_path = Path(kaldi_model_dir) / "final.mdl"
+    model_path = Path(kaldi_model_dir) / "final_hidden.mdl"
     nnet3_bin  = Path(kaldi_bin_dir) / "nnet3-compute"
     for p in [model_path, nnet3_bin]:
         if not p.exists():
@@ -1490,7 +1487,6 @@ def extract_kaldi_word_embeddings(
                     "--use-gpu=no",
                     f"--online-ivectors=scp:{ivec_scp}",
                     f"--online-ivector-period={IVEC_PERIOD}",
-                    f"--output-node={output_node}",
                     "--apply-exp=false",
                     str(model_path),
                     f"scp:{mfcc_scp}",
@@ -1949,9 +1945,6 @@ def parse_args():
                    help="Path to Kaldi bin dir, e.g. /path/to/kaldi/src/nnet3bin")
     p.add_argument("--kaldi_model_dir", default=None, type=Path,
                    help="Path to Kaldi model dir containing final.mdl")
-    p.add_argument("--kaldi_output_node", default="prefinal-chain.batchnorm2", type=str,
-                   help="nnet3 node name for the last hidden layer "
-                        "(run: nnet3-info final.mdl | grep component-node)")
     p.add_argument("--kaldi_ivector_dim", default=100, type=int,
                    help="iVector dimension expected by the Kaldi model (default: 100)")
     p.add_argument("--kaldi_batch_size", default=500, type=int,
@@ -2105,7 +2098,6 @@ def main():
                         model_name,
                         kaldi_model_dir=args.kaldi_model_dir,
                         kaldi_bin_dir=args.kaldi_bin_dir,
-                        output_node=args.kaldi_output_node,
                         word_records=word_records,
                         utterances=utterances,
                         fps=cfg["fps"],

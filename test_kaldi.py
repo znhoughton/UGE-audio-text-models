@@ -6,13 +6,33 @@ Verifies that:
   1. torchaudio.compliance.kaldi computes MFCC features without error
   2. nnet3-compute runs successfully via subprocess
   3. kaldiio reads the output ark correctly
-  4. The output shape and FPS match expectations (~199 frames, ~100 Hz for 2s audio)
+  4. The output shape and FPS match expectations (~198 frames, ~99 Hz for 2s audio)
+
+Setup (one-time, on the Linux server):
+  # 1. Dump model to text and redirect output node to last hidden layer
+  /opt/kaldi/src/nnet3bin/nnet3-copy --binary=false \\
+    exp/chain_cleaned/tdnn_1d_sp/final.mdl \\
+    exp/chain_cleaned/tdnn_1d_sp/final_text.mdl
+
+  python3 - <<'EOF'
+  import re
+  with open('exp/chain_cleaned/tdnn_1d_sp/final_text.mdl') as f:
+      text = f.read()
+  text = re.sub(r'(output-node name=output input=)\\S+',
+                r'\\1prefinal-chain.batchnorm2', text)
+  with open('exp/chain_cleaned/tdnn_1d_sp/final_hidden_text.mdl', 'w') as f:
+      f.write(text)
+  EOF
+
+  # 2. Convert back to binary
+  /opt/kaldi/src/nnet3bin/nnet3-copy \\
+    exp/chain_cleaned/tdnn_1d_sp/final_hidden_text.mdl \\
+    exp/chain_cleaned/tdnn_1d_sp/final_hidden.mdl
 
 Usage:
-  python test_kaldi.py \
-    --kaldi_bin /opt/modeling/nsharma/kaldi/src/nnet3bin \
-    --model_dir exp/chain_cleaned/tdnn_1d_sp \
-    --output_node prefinal-chain.batchnorm2
+  python test_kaldi.py \\
+    --kaldi_bin /opt/kaldi/src/nnet3bin \\
+    --model_dir exp/chain_cleaned/tdnn_1d_sp
 """
 
 import argparse
@@ -27,15 +47,18 @@ from pathlib import Path
 
 def main():
     p = argparse.ArgumentParser()
-    p.add_argument("--kaldi_bin", default="/opt/modeling/nsharma/kaldi/src/nnet3bin", type=Path)
-    p.add_argument("--model_dir", default="exp/chain_cleaned/tdnn_1d_sp", type=Path)
-    p.add_argument("--output_node", default="prefinal-chain.batchnorm2", type=str)
+    p.add_argument("--kaldi_bin", default="/opt/kaldi/src/nnet3bin", type=Path,
+                   help="Path to directory containing nnet3-compute")
+    p.add_argument("--model_dir", default="exp/chain_cleaned/tdnn_1d_sp", type=Path,
+                   help="Path to model directory containing final_hidden.mdl")
     p.add_argument("--ivector_dim", default=100, type=int)
     p.add_argument("--duration_s", default=2.0, type=float,
                    help="Duration of synthetic test audio in seconds")
     args = p.parse_args()
 
-    model_path = args.model_dir / "final.mdl"
+    # final_hidden.mdl is the model with output redirected to prefinal-chain.batchnorm2
+    # (created during setup via nnet3-copy + text editing, see module docstring)
+    model_path = args.model_dir / "final_hidden.mdl"
     nnet3_bin  = args.kaldi_bin / "nnet3-compute"
 
     for path in [model_path, nnet3_bin]:
@@ -47,7 +70,6 @@ def main():
     audio = (np.random.randn(n_samples) * 0.01).astype(np.float32)
     print(f"Test audio: {args.duration_s}s @ {sample_rate} Hz ({n_samples} samples)")
 
-    # MFCC features (matches Kaldi's conf/mfcc_hires.conf for chain models)
     waveform = torch.from_numpy(audio).unsqueeze(0)
     feats = torchaudio.compliance.kaldi.mfcc(
         waveform,
@@ -81,7 +103,6 @@ def main():
             "--use-gpu=no",
             f"--online-ivectors=scp:{tmp}/ivec.scp",
             f"--online-ivector-period={IVEC_PERIOD}",
-            f"--output-node={args.output_node}",
             "--apply-exp=false",
             str(model_path),
             f"scp:{tmp}/mfcc.scp",
@@ -104,10 +125,9 @@ def main():
         fps = hidden.shape[0] / args.duration_s
         print(f"SUCCESS")
         print(f"  Output shape : {hidden.shape}  (expect ~{n_samples // 160}, 256)")
-        print(f"  FPS          : {fps:.1f}  (expect ~100.0)")
-        print(f"  Output node  : {args.output_node}")
-        if abs(fps - 100.0) > 5:
-            print(f"  WARNING: FPS {fps:.1f} is far from 100 — check --output_node or "
+        print(f"  FPS          : {fps:.1f}  (expect ~99.0)")
+        if abs(fps - 99.0) > 5:
+            print(f"  WARNING: FPS {fps:.1f} is far from 99 — "
                   "update KALDI_FPS constant in word_level_analysis.py")
 
 
