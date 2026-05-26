@@ -1945,7 +1945,7 @@ def parse_args():
                    help="Path to Kaldi bin dir, e.g. /path/to/kaldi/src/nnet3bin")
     p.add_argument("--kaldi_model_dir", default=None, type=Path,
                    help="Path to Kaldi model dir containing final.mdl")
-    p.add_argument("--kaldi_output_node", default="prefinal-chain.affine", type=str,
+    p.add_argument("--kaldi_output_node", default="prefinal-chain.batchnorm2", type=str,
                    help="nnet3 node name for the last hidden layer "
                         "(run: nnet3-info final.mdl | grep component-node)")
     p.add_argument("--kaldi_ivector_dim", default=100, type=int,
