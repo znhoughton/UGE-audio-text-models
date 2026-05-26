@@ -71,8 +71,10 @@ def main():
 
     with tempfile.TemporaryDirectory(prefix="kaldi_test_") as tmp:
         tmp = Path(tmp)
-        kaldiio.save_ark(f"ark,scp:{tmp}/mfcc.ark,{tmp}/mfcc.scp", {"utt1": feats})
-        kaldiio.save_ark(f"ark,scp:{tmp}/ivec.ark,{tmp}/ivec.scp", {"utt1": ivec})
+        with kaldiio.WriteHelper(f"ark,scp:{tmp}/mfcc.ark,{tmp}/mfcc.scp") as w:
+            w["utt1"] = feats
+        with kaldiio.WriteHelper(f"ark,scp:{tmp}/ivec.ark,{tmp}/ivec.scp") as w:
+            w["utt1"] = ivec
 
         cmd = [
             str(nnet3_bin),

@@ -1466,7 +1466,9 @@ def extract_kaldi_word_embeddings(
                     mfcc_dict[uid] = _kaldi_cmvn(
                         _kaldi_mfcc(utterances[uid][audio_key], target_sr)
                     )
-                kaldiio.save_ark(f"ark,scp:{mfcc_ark},{mfcc_scp}", mfcc_dict)
+                with kaldiio.WriteHelper(f"ark,scp:{mfcc_ark},{mfcc_scp}") as w:
+                    for uid, mat in mfcc_dict.items():
+                        w[uid] = mat
 
                 # 2. Zero iVectors shaped (n_chunks, ivector_dim) per utterance.
                 # iVectors are mean-centred at training time, so zero = average speaker.
@@ -1478,7 +1480,9 @@ def extract_kaldi_word_embeddings(
                     )
                     for uid in batch_ids
                 }
-                kaldiio.save_ark(f"ark,scp:{ivec_ark},{ivec_scp}", ivec_dict)
+                with kaldiio.WriteHelper(f"ark,scp:{ivec_ark},{ivec_scp}") as w:
+                    for uid, mat in ivec_dict.items():
+                        w[uid] = mat
 
                 # 3. Run nnet3-compute (Kaldi reads features; Python reads output)
                 cmd = [
