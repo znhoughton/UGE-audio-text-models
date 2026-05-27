@@ -13,6 +13,7 @@ whisper-large-v2-dec,1550M,Whisper decoder,1280,16.84,0.3135,0.6295,0.7479
 whisper-large-v1-dec,1550M,Whisper decoder,1280,22.30,0.1995,0.5524,0.6969
 parakeet-ctc-0.6b,600M,FastConformer-CTC,1024,35.48,0.1031,0.3571,0.5227
 mimi,~85M,Conv+Transformer codec,512,18.97,0.2567,0.5879,0.7326
+wav2vec2-base,95M,Wav2Vec2 (pre-trained only),768,16.06,0.3058,0.6275,0.7832
 babylm-125m,125M,OPT,768,35.51,0.1334,0.3585,0.5099
 opt-125m,125M,OPT,768,33.48,0.1522,0.3809,0.5337
 babylm-350m,350M,OPT,1024,35.42,0.1285,0.3607,0.5130
