@@ -1,36 +1,61 @@
-# Large embedding caches
-*.pkl
-MLSData/mls_sample/lab/
-MLSData/mls_sample/mfa_corpus/
-MLSData/mls_sample/wavs/
-MLSData/mls_word_records.json
-MLSData/textgrids/
-Data/*.pkl
-WordData/*.pkl
-WordData/LJSpeech-1.1/
-WordData/textgrids
-MCVData/*.pkl
-# Logs
-logs/
-*.TextGrid
-# Python
+# ── Python ────────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
 .env
 
-# HuggingFace cache if it ended up here
-huggingface_cache/
-
-# Jupyter
+# ── Jupyter ───────────────────────────────────────────────────────────────────
 .ipynb_checkpoints/
-Data/texts_*.json
-exp/
-*.tar.gz
 
-# Kaldi model artifacts
+# ── Logs ──────────────────────────────────────────────────────────────────────
+logs/
+
+# ── Large embedding / array caches ───────────────────────────────────────────
+*.pkl
+*.npy
+*.npz
+
+# ── Audio / speech data ───────────────────────────────────────────────────────
+*.wav
+*.flac
+*.mp3
+*.ogg
+*.opus
+*.TextGrid
+# Dataset-specific paths (belt-and-suspenders for the above)
+WordData/LJSpeech-1.1/
+WordData/textgrids/
+MLSData/mls_sample/lab/
+MLSData/mls_sample/mfa_corpus/
+MLSData/mls_sample/wavs/
+MLSData/mls_word_records.json
+MLSData/textgrids/
+
+# ── HuggingFace model weights ─────────────────────────────────────────────────
+huggingface_cache/
+*.safetensors
+pytorch_model*.bin
+model.bin
+
+# ── Kaldi artifacts ───────────────────────────────────────────────────────────
+# exp/ is the standard Kaldi experiment directory (models, logs, decode dirs)
 exp/
+# Binary file types produced by Kaldi tools
 *.mdl
 *.fst
+*.ark
+*.scp
+*.ie
+*.ubm
+*.dubm
+*.trans_mdl
+
+# ── Archives / compressed files ───────────────────────────────────────────────
 *.tar.gz
+*.tar.bz2
 *.gz
+*.zip
+*.bz2
+
+# ── Misc generated outputs ────────────────────────────────────────────────────
+Data/texts_*.json
