@@ -25,3 +25,5 @@ huggingface_cache/
 # Jupyter
 .ipynb_checkpoints/
 Data/texts_*.json
+exp/
+*.tar.gz
