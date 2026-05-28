@@ -1397,6 +1397,7 @@ def extract_kaldi_word_embeddings(
     ivector_dim: int = 100,
     batch_size: int = 500,
     checkpoint_dir: Path = None,
+    use_gpu: str = "no",
 ) -> np.ndarray:
     """Extract word-level embeddings from a Kaldi nnet3 chain acoustic model.
 
@@ -1485,7 +1486,7 @@ def extract_kaldi_word_embeddings(
                 # 3. Run nnet3-compute (Kaldi reads features; Python reads output)
                 cmd = [
                     str(nnet3_bin),
-                    "--use-gpu=no",
+                    f"--use-gpu={use_gpu}",
                     f"--online-ivectors=scp:{ivec_scp}",
                     f"--online-ivector-period={IVEC_PERIOD}",
                     "--apply-exp=false",
@@ -1949,6 +1950,8 @@ def parse_args():
                    help="iVector dimension expected by the Kaldi model (default: 100)")
     p.add_argument("--kaldi_batch_size", default=500, type=int,
                    help="Number of utterances per nnet3-compute call")
+    p.add_argument("--kaldi_use_gpu", default="no", choices=["no", "yes", "wait"],
+                   help="GPU mode for nnet3-compute: no=CPU, yes=require GPU, wait=use GPU if available")
     p.add_argument("--lm_batch_size", default=32, type=int,
                    help="Number of utterances per batch for LM extraction")
     p.add_argument("--skip_extraction", action="store_true",
@@ -2105,6 +2108,7 @@ def main():
                         ivector_dim=args.kaldi_ivector_dim,
                         batch_size=args.kaldi_batch_size,
                         checkpoint_dir=data_dir,
+                        use_gpu=args.kaldi_use_gpu,
                     )
                 else:  # text
                     emb = extract_lm_word_embeddings(
