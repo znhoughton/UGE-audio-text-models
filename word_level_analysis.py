@@ -1521,8 +1521,7 @@ def extract_kaldi_word_embeddings(
                 logger.warning(f"Kaldi batch at utt {batch_start} failed: {e}")
 
             next_utt = batch_start + batch_size
-            if next_utt % (CHECKPOINT_EVERY * batch_size) < batch_size:
-                _save_checkpoint(checkpoint_path, word_embeddings_list, next_utt)
+            _save_checkpoint(checkpoint_path, word_embeddings_list, next_utt)
 
     _remove_checkpoint(checkpoint_path)
     if errors:
@@ -1945,7 +1944,7 @@ def parse_args():
     p.add_argument("--kaldi_bin_dir", default=None, type=Path,
                    help="Path to Kaldi bin dir, e.g. /path/to/kaldi/src/nnet3bin")
     p.add_argument("--kaldi_model_dir", default=None, type=Path,
-                   help="Path to Kaldi model dir containing final.mdl")
+                   help="Path to Kaldi model dir containing final_hidden.mdl")
     p.add_argument("--kaldi_ivector_dim", default=100, type=int,
                    help="iVector dimension expected by the Kaldi model (default: 100)")
     p.add_argument("--kaldi_batch_size", default=500, type=int,
