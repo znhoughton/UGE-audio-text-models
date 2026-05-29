@@ -194,16 +194,36 @@ MODELS = {
         "params": "~85M", "arch": "Conv+Transformer codec", "corpus": "Moshi training set",
         "fps": MIMI_FPS, "target_sr": MIMI_SR,
     },
-    # Kaldi TDNN-F chain acoustic model.
+    # Kaldi TDNN-F chain acoustic model — three layers extracted.
     # Training objective: LF-MMI on context-dependent phone states (senones).
     # No language model component anywhere in the training pipeline.
     # hf_id is None — path is set at runtime via --kaldi_model_dir.
+    # Network suffix before output.affine (6024 senones):
+    #   prefinal-l (256) → prefinal-chain.affine → relu → batchnorm1 (1536)
+    #                    → prefinal-chain.linear → batchnorm2 (256) → output.affine
     "kaldi-librispeech": {
         "hf_id": None,
         "modality": "audio-kaldi",
-        "params": "~18M", "arch": "TDNN-F chain (LF-MMI)",
+        "params": "~18M", "arch": "TDNN-F chain (LF-MMI) — prefinal-chain.batchnorm2",
         "corpus": "LibriSpeech 960h — phone-state targets, no LM",
         "fps": KALDI_FPS, "target_sr": WHISPER_SR,
+        "kaldi_model_file": "final_hidden.mdl",
+    },
+    "kaldi-librispeech-bn1": {
+        "hf_id": None,
+        "modality": "audio-kaldi",
+        "params": "~18M", "arch": "TDNN-F chain (LF-MMI) — prefinal-chain.batchnorm1",
+        "corpus": "LibriSpeech 960h — phone-state targets, no LM",
+        "fps": KALDI_FPS, "target_sr": WHISPER_SR,
+        "kaldi_model_file": "final_hidden_bn1.mdl",
+    },
+    "kaldi-librispeech-pfl": {
+        "hf_id": None,
+        "modality": "audio-kaldi",
+        "params": "~18M", "arch": "TDNN-F chain (LF-MMI) — prefinal-l",
+        "corpus": "LibriSpeech 960h — phone-state targets, no LM",
+        "fps": KALDI_FPS, "target_sr": WHISPER_SR,
+        "kaldi_model_file": "final_hidden_pfl.mdl",
     },
     # Pre-trained wav2vec2: purely acoustic self-supervised model.
     # Training objective is contrastive prediction of quantized audio codes — no
@@ -266,8 +286,10 @@ MODEL_COLORS = {
     "whisper-large-v1-dec": "#004D40",
     "parakeet-ctc-0.6b":   "#880E4F",
     "mimi":                "#D84315",
-    "wav2vec2-base":       "#558B2F",
-    "kaldi-librispeech":   "#6D4C41",
+    "wav2vec2-base":           "#558B2F",
+    "kaldi-librispeech":       "#6D4C41",
+    "kaldi-librispeech-bn1":   "#A1887F",
+    "kaldi-librispeech-pfl":   "#D7CCC8",
     "babylm-125m":         "#E65100",
     "opt-125m":            "#FFCCBC",
     "babylm-350m":         "#FB8C00",
@@ -1398,6 +1420,7 @@ def extract_kaldi_word_embeddings(
     batch_size: int = 500,
     checkpoint_dir: Path = None,
     use_gpu: str = "no",
+    model_filename: str = "final_hidden.mdl",
 ) -> np.ndarray:
     """Extract word-level embeddings from a Kaldi nnet3 chain acoustic model.
 
@@ -1424,7 +1447,7 @@ def extract_kaldi_word_embeddings(
     except ImportError:
         raise ImportError("Run: pip install kaldiio")
 
-    model_path = Path(kaldi_model_dir) / "final_hidden.mdl"
+    model_path = Path(kaldi_model_dir) / model_filename
     nnet3_bin  = Path(kaldi_bin_dir) / "nnet3-compute"
     for p in [model_path, nnet3_bin]:
         if not p.exists():
@@ -2109,6 +2132,7 @@ def main():
                         batch_size=args.kaldi_batch_size,
                         checkpoint_dir=data_dir,
                         use_gpu=args.kaldi_use_gpu,
+                        model_filename=cfg.get("kaldi_model_file", "final_hidden.mdl"),
                     )
                 else:  # text
                     emb = extract_lm_word_embeddings(
