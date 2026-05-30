@@ -13,6 +13,8 @@ whisper-base-enc vs whisper-large-v1-dec,0.268300,0.001503
 whisper-base-enc vs parakeet-ctc-0.6b,0.165629,0.001017
 whisper-base-enc vs mimi,0.083476,0.001684
 whisper-base-enc vs kaldi-librispeech,0.110531,0.000586
+whisper-base-enc vs kaldi-librispeech-bn1,0.098090,0.000523
+whisper-base-enc vs kaldi-librispeech-pfl,0.071520,0.000519
 whisper-base-enc vs wav2vec2-base,0.138494,0.001386
 whisper-base-enc vs babylm-125m,0.224127,0.001168
 whisper-base-enc vs opt-125m,0.230522,0.001469
@@ -34,6 +36,8 @@ whisper-small-enc vs whisper-large-v1-dec,0.261930,0.001554
 whisper-small-enc vs parakeet-ctc-0.6b,0.140269,0.001013
 whisper-small-enc vs mimi,0.081341,0.001608
 whisper-small-enc vs kaldi-librispeech,0.081147,0.000512
+whisper-small-enc vs kaldi-librispeech-bn1,0.072510,0.000476
+whisper-small-enc vs kaldi-librispeech-pfl,0.052723,0.000454
 whisper-small-enc vs wav2vec2-base,0.124293,0.001427
 whisper-small-enc vs babylm-125m,0.208662,0.001063
 whisper-small-enc vs opt-125m,0.225749,0.001453
@@ -54,6 +58,8 @@ whisper-medium-enc vs whisper-large-v1-dec,0.280993,0.001642
 whisper-medium-enc vs parakeet-ctc-0.6b,0.143466,0.000994
 whisper-medium-enc vs mimi,0.078041,0.001557
 whisper-medium-enc vs kaldi-librispeech,0.076760,0.000500
+whisper-medium-enc vs kaldi-librispeech-bn1,0.068330,0.000462
+whisper-medium-enc vs kaldi-librispeech-pfl,0.049983,0.000428
 whisper-medium-enc vs wav2vec2-base,0.127016,0.001411
 whisper-medium-enc vs babylm-125m,0.210863,0.001031
 whisper-medium-enc vs opt-125m,0.228939,0.001431
@@ -73,6 +79,8 @@ whisper-large-enc vs whisper-large-v1-dec,0.295169,0.001656
 whisper-large-enc vs parakeet-ctc-0.6b,0.160891,0.001080
 whisper-large-enc vs mimi,0.084637,0.001688
 whisper-large-enc vs kaldi-librispeech,0.093045,0.000617
+whisper-large-enc vs kaldi-librispeech-bn1,0.084109,0.000587
+whisper-large-enc vs kaldi-librispeech-pfl,0.061419,0.000511
 whisper-large-enc vs wav2vec2-base,0.137656,0.001428
 whisper-large-enc vs babylm-125m,0.227032,0.001026
 whisper-large-enc vs opt-125m,0.248875,0.001407
@@ -91,6 +99,8 @@ whisper-large-v2-enc vs whisper-large-v1-dec,0.315974,0.001512
 whisper-large-v2-enc vs parakeet-ctc-0.6b,0.297959,0.001298
 whisper-large-v2-enc vs mimi,0.110596,0.002354
 whisper-large-v2-enc vs kaldi-librispeech,0.182417,0.000912
+whisper-large-v2-enc vs kaldi-librispeech-bn1,0.162600,0.000827
+whisper-large-v2-enc vs kaldi-librispeech-pfl,0.119649,0.000768
 whisper-large-v2-enc vs wav2vec2-base,0.165411,0.001388
 whisper-large-v2-enc vs babylm-125m,0.372000,0.001290
 whisper-large-v2-enc vs opt-125m,0.352586,0.001522
@@ -108,6 +118,8 @@ whisper-large-v1-enc vs whisper-large-v1-dec,0.285261,0.001552
 whisper-large-v1-enc vs parakeet-ctc-0.6b,0.175571,0.001114
 whisper-large-v1-enc vs mimi,0.089487,0.001811
 whisper-large-v1-enc vs kaldi-librispeech,0.096323,0.000601
+whisper-large-v1-enc vs kaldi-librispeech-bn1,0.085705,0.000544
+whisper-large-v1-enc vs kaldi-librispeech-pfl,0.062405,0.000508
 whisper-large-v1-enc vs wav2vec2-base,0.135748,0.001437
 whisper-large-v1-enc vs babylm-125m,0.238759,0.001067
 whisper-large-v1-enc vs opt-125m,0.253200,0.001443
@@ -124,6 +136,8 @@ whisper-base-dec vs whisper-large-v1-dec,0.171101,0.001213
 whisper-base-dec vs parakeet-ctc-0.6b,0.297797,0.001186
 whisper-base-dec vs mimi,0.121136,0.003052
 whisper-base-dec vs kaldi-librispeech,0.092975,0.000755
+whisper-base-dec vs kaldi-librispeech-bn1,0.082489,0.000684
+whisper-base-dec vs kaldi-librispeech-pfl,0.064790,0.000804
 whisper-base-dec vs wav2vec2-base,0.082824,0.001297
 whisper-base-dec vs babylm-125m,0.345751,0.001104
 whisper-base-dec vs opt-125m,0.311808,0.001230
@@ -139,6 +153,8 @@ whisper-small-dec vs whisper-large-v1-dec,0.244493,0.001617
 whisper-small-dec vs parakeet-ctc-0.6b,0.199096,0.001667
 whisper-small-dec vs mimi,0.171027,0.003275
 whisper-small-dec vs kaldi-librispeech,0.044904,0.000710
+whisper-small-dec vs kaldi-librispeech-bn1,0.040209,0.000606
+whisper-small-dec vs kaldi-librispeech-pfl,0.033347,0.000629
 whisper-small-dec vs wav2vec2-base,0.125238,0.002537
 whisper-small-dec vs babylm-125m,0.257408,0.000926
 whisper-small-dec vs opt-125m,0.279679,0.001151
@@ -153,6 +169,8 @@ whisper-medium-dec vs whisper-large-v1-dec,0.468699,0.001708
 whisper-medium-dec vs parakeet-ctc-0.6b,0.100600,0.000777
 whisper-medium-dec vs mimi,0.036060,0.000907
 whisper-medium-dec vs kaldi-librispeech,0.033747,0.000397
+whisper-medium-dec vs kaldi-librispeech-bn1,0.029792,0.000373
+whisper-medium-dec vs kaldi-librispeech-pfl,0.024348,0.000406
 whisper-medium-dec vs wav2vec2-base,0.094000,0.001247
 whisper-medium-dec vs babylm-125m,0.186773,0.001160
 whisper-medium-dec vs opt-125m,0.214542,0.001351
@@ -166,6 +184,8 @@ whisper-large-dec vs whisper-large-v1-dec,0.463239,0.001606
 whisper-large-dec vs parakeet-ctc-0.6b,0.170650,0.001128
 whisper-large-dec vs mimi,0.049426,0.001317
 whisper-large-dec vs kaldi-librispeech,0.062427,0.000654
+whisper-large-dec vs kaldi-librispeech-bn1,0.056711,0.000628
+whisper-large-dec vs kaldi-librispeech-pfl,0.046303,0.000679
 whisper-large-dec vs wav2vec2-base,0.062979,0.000810
 whisper-large-dec vs babylm-125m,0.278383,0.001286
 whisper-large-dec vs opt-125m,0.288832,0.001303
@@ -178,6 +198,8 @@ whisper-large-v2-dec vs whisper-large-v1-dec,0.348014,0.001937
 whisper-large-v2-dec vs parakeet-ctc-0.6b,0.127865,0.001495
 whisper-large-v2-dec vs mimi,0.098628,0.002108
 whisper-large-v2-dec vs kaldi-librispeech,0.036460,0.000558
+whisper-large-v2-dec vs kaldi-librispeech-bn1,0.033413,0.000500
+whisper-large-v2-dec vs kaldi-librispeech-pfl,0.027115,0.000511
 whisper-large-v2-dec vs wav2vec2-base,0.118058,0.002153
 whisper-large-v2-dec vs babylm-125m,0.199026,0.001014
 whisper-large-v2-dec vs opt-125m,0.228885,0.001256
@@ -189,6 +211,8 @@ whisper-large-v2-dec vs pythia-6.9b,0.227046,0.001876
 whisper-large-v1-dec vs parakeet-ctc-0.6b,0.129484,0.000946
 whisper-large-v1-dec vs mimi,0.040026,0.001073
 whisper-large-v1-dec vs kaldi-librispeech,0.050690,0.000583
+whisper-large-v1-dec vs kaldi-librispeech-bn1,0.044956,0.000513
+whisper-large-v1-dec vs kaldi-librispeech-pfl,0.036619,0.000507
 whisper-large-v1-dec vs wav2vec2-base,0.066006,0.000964
 whisper-large-v1-dec vs babylm-125m,0.242179,0.001468
 whisper-large-v1-dec vs opt-125m,0.262878,0.001602
@@ -199,6 +223,8 @@ whisper-large-v1-dec vs olmo-7b,0.289545,0.001749
 whisper-large-v1-dec vs pythia-6.9b,0.258557,0.001561
 parakeet-ctc-0.6b vs mimi,0.079750,0.002236
 parakeet-ctc-0.6b vs kaldi-librispeech,0.201241,0.000916
+parakeet-ctc-0.6b vs kaldi-librispeech-bn1,0.179697,0.000855
+parakeet-ctc-0.6b vs kaldi-librispeech-pfl,0.134908,0.000980
 parakeet-ctc-0.6b vs wav2vec2-base,0.119866,0.000792
 parakeet-ctc-0.6b vs babylm-125m,0.356455,0.001341
 parakeet-ctc-0.6b vs opt-125m,0.289355,0.001180
@@ -208,6 +234,8 @@ parakeet-ctc-0.6b vs pythia-160m,0.318265,0.001362
 parakeet-ctc-0.6b vs olmo-7b,0.262202,0.001237
 parakeet-ctc-0.6b vs pythia-6.9b,0.273696,0.001634
 mimi vs kaldi-librispeech,0.028697,0.000937
+mimi vs kaldi-librispeech-bn1,0.024155,0.000790
+mimi vs kaldi-librispeech-pfl,0.023891,0.000825
 mimi vs wav2vec2-base,0.035633,0.001217
 mimi vs babylm-125m,0.040516,0.000986
 mimi vs opt-125m,0.046765,0.001134
@@ -216,6 +244,8 @@ mimi vs babylm-1.3b,0.063936,0.001654
 mimi vs pythia-160m,0.095294,0.002605
 mimi vs olmo-7b,0.057935,0.001422
 mimi vs pythia-6.9b,0.102759,0.002813
+kaldi-librispeech vs kaldi-librispeech-bn1,0.913606,0.000360
+kaldi-librispeech vs kaldi-librispeech-pfl,0.693287,0.001012
 kaldi-librispeech vs wav2vec2-base,0.169410,0.000960
 kaldi-librispeech vs babylm-125m,0.114192,0.000833
 kaldi-librispeech vs opt-125m,0.089621,0.000737
@@ -224,6 +254,23 @@ kaldi-librispeech vs babylm-1.3b,0.117272,0.000917
 kaldi-librispeech vs pythia-160m,0.089788,0.000823
 kaldi-librispeech vs olmo-7b,0.088251,0.000785
 kaldi-librispeech vs pythia-6.9b,0.080950,0.000877
+kaldi-librispeech-bn1 vs kaldi-librispeech-pfl,0.815380,0.000789
+kaldi-librispeech-bn1 vs wav2vec2-base,0.150064,0.000877
+kaldi-librispeech-bn1 vs babylm-125m,0.098430,0.000700
+kaldi-librispeech-bn1 vs opt-125m,0.077937,0.000647
+kaldi-librispeech-bn1 vs babylm-350m,0.098474,0.000719
+kaldi-librispeech-bn1 vs babylm-1.3b,0.100989,0.000754
+kaldi-librispeech-bn1 vs pythia-160m,0.079743,0.000731
+kaldi-librispeech-bn1 vs olmo-7b,0.078664,0.000729
+kaldi-librispeech-bn1 vs pythia-6.9b,0.071410,0.000790
+kaldi-librispeech-pfl vs wav2vec2-base,0.097030,0.000842
+kaldi-librispeech-pfl vs babylm-125m,0.076389,0.000810
+kaldi-librispeech-pfl vs opt-125m,0.063640,0.000770
+kaldi-librispeech-pfl vs babylm-350m,0.076840,0.000849
+kaldi-librispeech-pfl vs babylm-1.3b,0.078835,0.000827
+kaldi-librispeech-pfl vs pythia-160m,0.071759,0.000933
+kaldi-librispeech-pfl vs olmo-7b,0.069208,0.000908
+kaldi-librispeech-pfl vs pythia-6.9b,0.066302,0.001027
 wav2vec2-base vs babylm-125m,0.080437,0.000800
 wav2vec2-base vs opt-125m,0.083317,0.000942
 wav2vec2-base vs babylm-350m,0.081578,0.000819
