@@ -209,7 +209,7 @@ MODELS = {
         "fps": KALDI_FPS, "target_sr": WHISPER_SR,
         "kaldi_model_file": "final_hidden.mdl",
     },
-    "kaldi-librispeech-bn1": {
+    "kaldi-librispeech-penult": {
         "hf_id": None,
         "modality": "audio-kaldi",
         "params": "~18M", "arch": "TDNN-F chain (LF-MMI) — prefinal-chain.batchnorm1",
@@ -217,7 +217,7 @@ MODELS = {
         "fps": KALDI_FPS, "target_sr": WHISPER_SR,
         "kaldi_model_file": "final_hidden_bn1.mdl",
     },
-    "kaldi-librispeech-pfl": {
+    "kaldi-librispeech-antepen": {
         "hf_id": None,
         "modality": "audio-kaldi",
         "params": "~18M", "arch": "TDNN-F chain (LF-MMI) — prefinal-l",
@@ -288,8 +288,8 @@ MODEL_COLORS = {
     "mimi":                "#D84315",
     "wav2vec2-base":           "#558B2F",
     "kaldi-librispeech":       "#6D4C41",
-    "kaldi-librispeech-bn1":   "#A1887F",
-    "kaldi-librispeech-pfl":   "#D7CCC8",
+    "kaldi-librispeech-penult":   "#A1887F",
+    "kaldi-librispeech-antepen":  "#D7CCC8",
     "babylm-125m":         "#E65100",
     "opt-125m":            "#FFCCBC",
     "babylm-350m":         "#FB8C00",
