@@ -1,0 +1,13 @@
+model,acoustic,textual,interaction,residual
+whisper-base-enc,0.6436,0.2216,0.0420,0.0928
+whisper-small-enc,0.6691,0.1853,0.0359,0.1097
+whisper-medium-enc,0.6339,0.1704,0.0441,0.1516
+whisper-large-v1-enc,0.5784,0.1864,0.0481,0.1871
+whisper-large-v2-enc,0.5475,0.1648,0.0732,0.2145
+whisper-large-enc,0.7059,0.1111,0.0362,0.1468
+whisper-base-dec,0.4989,0.2059,0.0811,0.2142
+whisper-small-dec,0.5219,0.1291,0.0568,0.2923
+whisper-medium-dec,0.5392,0.1087,0.0541,0.2980
+whisper-large-v1-dec,0.4887,0.1049,0.0494,0.3569
+whisper-large-v2-dec,0.5655,0.1024,0.0458,0.2862
+whisper-large-dec,0.3649,0.1205,0.0626,0.4521
