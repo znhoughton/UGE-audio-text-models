@@ -161,6 +161,12 @@ def variance_fraction(X: np.ndarray, U: np.ndarray) -> float:
 # Decomposition
 # ---------------------------------------------------------------------------
 
+def _orth_basis(*Us: np.ndarray) -> np.ndarray:
+    """Orthonormal basis for the union of column spaces of Us, via thin SVD."""
+    Q, s, _ = np.linalg.svd(np.hstack(Us), full_matrices=False)
+    return Q[:, s > 1e-10 * s[0]]
+
+
 def _decompose_core(
     X: np.ndarray, K: np.ndarray, T: np.ndarray,
     k: int, k_int_a: int, k_int_t: int, seed: int,
@@ -194,6 +200,82 @@ def _decompose_core(
         "sv_acoustic":    sv_K.tolist(),
         "sv_textual":     sv_T.tolist(),
         "sv_interaction": sv_AT.tolist(),
+    }
+
+
+def shapley_decompose(
+    X: np.ndarray,
+    K: np.ndarray,
+    T: np.ndarray,
+    k: int       = K_COMPONENTS,
+    k_int_a: int = K_INTERACT_A,
+    k_int_t: int = K_INTERACT_T,
+    seed: int    = SEED,
+) -> dict:
+    """
+    Shapley-value variance decomposition for acoustic (A), textual (T),
+    and interaction (AT) components.
+
+    Direction matrices are found WITHOUT sequential projection, so the
+    subspaces for A, T, and AT may overlap. Coalition values v(S) use the
+    orthonormal basis of the union of their subspaces, avoiding double-
+    counting within each coalition.
+
+    Returns:
+      - Shapley value for each component (average marginal contribution
+        across all 6 orderings — symmetric, order-invariant allocation)
+      - interaction_upper_bound: v({AT}), the raw interaction variance with
+        no projection — an upper bound on the interaction fraction
+      - interaction_type3: v({A,T,AT}) - v({A,T}), the unique contribution
+        of AT after both main effects are already in the model (Type III SS)
+
+    Note: phi_A + phi_T + phi_AT = v({A,T,AT}) by Shapley efficiency.
+    Whatever extra phi_AT gains vs. the sequential lower bound is taken
+    directly from phi_A and phi_T, not created from nothing.
+    """
+    k_a = min(k_int_a, K.shape[1])
+    k_t = min(k_int_t, T.shape[1])
+    K_r = PCA(n_components=k_a, random_state=seed).fit_transform(K)
+    T_r = PCA(n_components=k_t, random_state=seed).fit_transform(T)
+    AT  = (K_r[:, :, None] * T_r[:, None, :]).reshape(len(X), -1)
+
+    # Raw direction matrices — no sequential projection
+    U_A,  _ = cross_cov_directions(X, K,  k)
+    U_T,  _ = cross_cov_directions(X, T,  min(k, T.shape[1] - 1))
+    U_AT, _ = cross_cov_directions(X, AT, min(k, AT.shape[1] - 1))
+
+    # All 7 coalition variance fractions v(S) for S ⊆ {A, T, AT}
+    vA    = variance_fraction(X, U_A)
+    vT    = variance_fraction(X, U_T)
+    vAT   = variance_fraction(X, U_AT)
+    vA_T  = variance_fraction(X, _orth_basis(U_A, U_T))
+    vA_AT = variance_fraction(X, _orth_basis(U_A, U_AT))
+    vT_AT = variance_fraction(X, _orth_basis(U_T, U_AT))
+    vFull = variance_fraction(X, _orth_basis(U_A, U_T, U_AT))
+
+    # 3-player Shapley values (exact formula: average marginal contribution
+    # over all orderings, weighted by |S|!(|N|-|S|-1)!/|N|!)
+    phi_A  = vA/3 + (vA_T - vT)/6  + (vA_AT - vAT)/6 + (vFull - vT_AT)/3
+    phi_T  = vT/3 + (vA_T - vA)/6  + (vT_AT - vAT)/6 + (vFull - vA_AT)/3
+    phi_AT = vAT/3 + (vA_AT - vA)/6 + (vT_AT - vT)/6 + (vFull - vA_T)/3
+
+    log.info(f"      Shapley acoustic:    {phi_A:.3f}")
+    log.info(f"      Shapley textual:     {phi_T:.3f}")
+    log.info(f"      Shapley interaction: {phi_AT:.3f}  "
+             f"[lower={vFull - vA_T:.3f} (type3), upper={vAT:.3f}]")
+
+    return {
+        "shapley_acoustic":        float(phi_A),
+        "shapley_textual":         float(phi_T),
+        "shapley_interaction":     float(phi_AT),
+        "shapley_residual":        float(max(0.0, 1.0 - phi_A - phi_T - phi_AT)),
+        "interaction_upper_bound": float(vAT),
+        "interaction_type3":       float(vFull - vA_T),
+        "coalition_values": {
+            "A": float(vA), "T": float(vT), "AT": float(vAT),
+            "A_T": float(vA_T), "A_AT": float(vA_AT),
+            "T_AT": float(vT_AT), "full": float(vFull),
+        },
     }
 
 
@@ -416,6 +498,8 @@ def main():
                         help="Bootstrap resamples for CIs (0 = skip)")
     parser.add_argument("--boot_size",      type=int,  default=BOOT_SIZE,
                         help="Tokens per bootstrap resample")
+    parser.add_argument("--shapley",        action="store_true",
+                        help="Compute Shapley values, upper bound, and Type III interaction")
     parser.add_argument("--whisper_models", nargs="+",
                         default=WHISPER_ENC_MODELS + WHISPER_DEC_MODELS)
     args = parser.parse_args()
@@ -444,8 +528,9 @@ def main():
         log.error(f"Textual reference '{args.textual}' not found. Available: {available}")
         return
 
-    all_results = {}
-    all_cis     = {}
+    all_results  = {}
+    all_cis      = {}
+    all_shapley  = {}
 
     for model_name in args.whisper_models:
         log.info(f"\n{'=' * 60}")
@@ -473,6 +558,24 @@ def main():
         log.info(f"  Textual:     {result['textual']:.3f}")
         log.info(f"  Interaction: {result['interaction']:.3f}")
         log.info(f"  Residual:    {result['residual']:.3f}")
+
+        if args.shapley:
+            log.info("  Computing Shapley decomposition ...")
+            rng_sub = np.random.default_rng(SEED)
+            Xm, Km, Tm = X[mask], K_emb[mask], T_emb[mask]
+            N_valid = len(Xm)
+            if N_valid > args.max_samples:
+                idx = rng_sub.choice(N_valid, size=args.max_samples, replace=False)
+                Xm, Km, Tm = Xm[idx], Km[idx], Tm[idx]
+            Xm = (Xm - Xm.mean(0)).astype(np.float64)
+            Km = (Km - Km.mean(0)).astype(np.float64)
+            Tm = (Tm - Tm.mean(0)).astype(np.float64)
+            all_shapley[model_name] = shapley_decompose(
+                Xm, Km, Tm,
+                k=args.k,
+                k_int_a=args.k_interact_a,
+                k_int_t=args.k_interact_t,
+            )
 
         if args.n_bootstrap > 0:
             # Bootstrap on the same (possibly subsampled) token pool
@@ -508,13 +611,19 @@ def main():
             "boot_size":    args.boot_size,
             "results":      all_results,
             "bootstrap_cis": all_cis,
+            "shapley":      all_shapley,
         }, f, indent=2)
     log.info(f"\nSaved → {out_json}")
 
     out_csv = args.results_dir / "decomposition_summary.csv"
     with open(out_csv, "w") as f:
-        has_ci = bool(all_cis)
-        header = "model,acoustic,textual,interaction,residual"
+        has_ci      = bool(all_cis)
+        has_shapley = bool(all_shapley)
+        header = "model,acoustic,textual,interaction_lower,residual"
+        if has_shapley:
+            header += (",interaction_upper,interaction_type3"
+                       ",shapley_acoustic,shapley_textual"
+                       ",shapley_interaction,shapley_residual")
         if has_ci:
             header += (",interaction_ci_lo,interaction_ci_hi"
                        ",acoustic_ci_lo,acoustic_ci_hi"
@@ -523,6 +632,14 @@ def main():
         for model_name, res in all_results.items():
             row = (f"{model_name},{res['acoustic']:.4f},{res['textual']:.4f},"
                    f"{res['interaction']:.4f},{res['residual']:.4f}")
+            if has_shapley and model_name in all_shapley:
+                sh = all_shapley[model_name]
+                row += (f",{sh['interaction_upper_bound']:.4f}"
+                        f",{sh['interaction_type3']:.4f}"
+                        f",{sh['shapley_acoustic']:.4f}"
+                        f",{sh['shapley_textual']:.4f}"
+                        f",{sh['shapley_interaction']:.4f}"
+                        f",{sh['shapley_residual']:.4f}")
             if has_ci and model_name in all_cis:
                 ci = all_cis[model_name]
                 row += (f",{ci['interaction']['ci_lo']:.4f},{ci['interaction']['ci_hi']:.4f}"
