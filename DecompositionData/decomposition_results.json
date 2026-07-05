@@ -1953,5 +1953,211 @@
       ]
     }
   },
-  "bootstrap_cis": {}
+  "bootstrap_cis": {},
+  "shapley": {
+    "whisper-base-enc": {
+      "shapley_acoustic": 0.2607303810445879,
+      "shapley_textual": 0.33319526464806737,
+      "shapley_interaction": 0.30425419952345306,
+      "shapley_residual": 0.10182015478389167,
+      "interaction_upper_bound": 0.735725458767178,
+      "interaction_type3": 0.042509997434938884,
+      "coalition_values": {
+        "A": 0.6435623854706257,
+        "T": 0.7729470705801995,
+        "AT": 0.735725458767178,
+        "A_T": 0.8556698477811694,
+        "A_AT": 0.8350093293449625,
+        "T_AT": 0.8505544114423476,
+        "full": 0.8981798452161083
+      }
+    },
+    "whisper-small-enc": {
+      "shapley_acoustic": 0.2607723607083194,
+      "shapley_textual": 0.3230326874069663,
+      "shapley_interaction": 0.3003563757054006,
+      "shapley_residual": 0.1158385761793137,
+      "interaction_upper_bound": 0.75301165664155,
+      "interaction_type3": 0.035283099611221,
+      "coalition_values": {
+        "A": 0.6690551444074829,
+        "T": 0.7807433261475567,
+        "AT": 0.75301165664155,
+        "A_T": 0.8488783242094653,
+        "A_AT": 0.8312573703123406,
+        "T_AT": 0.8440898419695606,
+        "full": 0.8841614238206863
+      }
+    },
+    "whisper-medium-enc": {
+      "shapley_acoustic": 0.2529948828981567,
+      "shapley_textual": 0.3073335650551409,
+      "shapley_interaction": 0.2811008450229361,
+      "shapley_residual": 0.15857070702376624,
+      "interaction_upper_bound": 0.6950753724026267,
+      "interaction_type3": 0.04005006746008155,
+      "coalition_values": {
+        "A": 0.6338951875443757,
+        "T": 0.7257008550037558,
+        "AT": 0.6950753724026267,
+        "A_T": 0.8013792255161521,
+        "A_AT": 0.7795392680528714,
+        "T_AT": 0.7964109649074598,
+        "full": 0.8414292929762337
+      }
+    },
+    "whisper-large-v1-enc": {
+      "shapley_acoustic": 0.239527232101542,
+      "shapley_textual": 0.2987971998731635,
+      "shapley_interaction": 0.26866769211777747,
+      "shapley_residual": 0.193007875907517,
+      "interaction_upper_bound": 0.6431799893594917,
+      "interaction_type3": 0.04512835579429664,
+      "coalition_values": {
+        "A": 0.5783726478249317,
+        "T": 0.677552491435515,
+        "AT": 0.6431799893594917,
+        "A_T": 0.7618637682981864,
+        "A_AT": 0.7359772548634376,
+        "T_AT": 0.7553373467960973,
+        "full": 0.806992124092483
+      }
+    },
+    "whisper-large-v2-enc": {
+      "shapley_acoustic": 0.24053144153021486,
+      "shapley_textual": 0.2767293312077725,
+      "shapley_interaction": 0.2514196880432559,
+      "shapley_residual": 0.23131953921875675,
+      "interaction_upper_bound": 0.5758435047370346,
+      "interaction_type3": 0.059626937142666536,
+      "coalition_values": {
+        "A": 0.5474772732879007,
+        "T": 0.6047304366543707,
+        "AT": 0.5758435047370346,
+        "A_T": 0.7090535236385767,
+        "A_AT": 0.6873211692268794,
+        "T_AT": 0.7024637852155248,
+        "full": 0.7686804607812432
+      }
+    },
+    "whisper-large-enc": {
+      "shapley_acoustic": 0.2706925619736788,
+      "shapley_textual": 0.2980778345319989,
+      "shapley_interaction": 0.2799668616643656,
+      "shapley_residual": 0.1512627418299567,
+      "interaction_upper_bound": 0.7298936497452935,
+      "interaction_type3": 0.03330205761145444,
+      "coalition_values": {
+        "A": 0.7059455561234939,
+        "T": 0.7504534116418122,
+        "AT": 0.7298936497452935,
+        "A_T": 0.8154352005585889,
+        "A_AT": 0.799773016719841,
+        "T_AT": 0.8100357063181628,
+        "full": 0.8487372581700433
+      }
+    },
+    "whisper-base-dec": {
+      "shapley_acoustic": 0.2396593185840814,
+      "shapley_textual": 0.287323823443574,
+      "shapley_interaction": 0.24602006413147348,
+      "shapley_residual": 0.22699679384087112,
+      "interaction_upper_bound": 0.5190162100313687,
+      "interaction_type3": 0.07888375466872577,
+      "coalition_values": {
+        "A": 0.49886995538794915,
+        "T": 0.5678407406120218,
+        "AT": 0.5190162100313687,
+        "A_T": 0.6941194514904031,
+        "A_AT": 0.6603364634468553,
+        "T_AT": 0.6866946879417678,
+        "full": 0.7730032061591289
+      }
+    },
+    "whisper-small-dec": {
+      "shapley_acoustic": 0.22254964388467954,
+      "shapley_textual": 0.25337069654211436,
+      "shapley_interaction": 0.22574362717137259,
+      "shapley_residual": 0.29833603240183343,
+      "interaction_upper_bound": 0.5353237779148408,
+      "interaction_type3": 0.054330903773639916,
+      "coalition_values": {
+        "A": 0.5218882621252587,
+        "T": 0.5650020718517389,
+        "AT": 0.5353237779148408,
+        "A_T": 0.6473330638245266,
+        "A_AT": 0.6217572190199412,
+        "T_AT": 0.6402855146083306,
+        "full": 0.7016639675981665
+      }
+    },
+    "whisper-medium-dec": {
+      "shapley_acoustic": 0.2234459399737994,
+      "shapley_textual": 0.23989822104438155,
+      "shapley_interaction": 0.23087388637144016,
+      "shapley_residual": 0.305781952610379,
+      "interaction_upper_bound": 0.5576465610858676,
+      "interaction_type3": 0.0489080611382442,
+      "coalition_values": {
+        "A": 0.539222621744854,
+        "T": 0.565597787765544,
+        "AT": 0.5576465610858676,
+        "A_T": 0.6453099862513769,
+        "A_AT": 0.6352125435851705,
+        "T_AT": 0.6417419397056447,
+        "full": 0.6942180473896211
+      }
+    },
+    "whisper-large-v1-dec": {
+      "shapley_acoustic": 0.20392074168449312,
+      "shapley_textual": 0.2250362035298899,
+      "shapley_interaction": 0.20838654644191076,
+      "shapley_residual": 0.3626565083437061,
+      "interaction_upper_bound": 0.5027080540218559,
+      "interaction_type3": 0.045591122202291445,
+      "coalition_values": {
+        "A": 0.4886898986566803,
+        "T": 0.5213910407725615,
+        "AT": 0.5027080540218559,
+        "A_T": 0.5917523694540023,
+        "A_AT": 0.5771360420287497,
+        "T_AT": 0.5866658236036619,
+        "full": 0.6373434916562938
+      }
+    },
+    "whisper-large-v2-dec": {
+      "shapley_acoustic": 0.227449343185197,
+      "shapley_textual": 0.24939020031239276,
+      "shapley_interaction": 0.2316909738334495,
+      "shapley_residual": 0.2914694826689608,
+      "interaction_upper_bound": 0.579237556754508,
+      "interaction_type3": 0.04247883216862358,
+      "coalition_values": {
+        "A": 0.565546812176322,
+        "T": 0.598630221352292,
+        "AT": 0.579237556754508,
+        "A_T": 0.6660516851624156,
+        "A_AT": 0.6500458968023131,
+        "T_AT": 0.6608442018807346,
+        "full": 0.7085305173310392
+      }
+    },
+    "whisper-large-dec": {
+      "shapley_acoustic": 0.18068932863760012,
+      "shapley_textual": 0.18806690549583807,
+      "shapley_interaction": 0.17166711449156755,
+      "shapley_residual": 0.45957665137499426,
+      "interaction_upper_bound": 0.3607974948151801,
+      "interaction_type3": 0.0585072139853296,
+      "coalition_values": {
+        "A": 0.3648823080110649,
+        "T": 0.3773766835289777,
+        "AT": 0.3607974948151801,
+        "A_T": 0.48191613463967614,
+        "A_AT": 0.46569574134493275,
+        "T_AT": 0.46795651954349576,
+        "full": 0.5404233486250057
+      }
+    }
+  }
 }
