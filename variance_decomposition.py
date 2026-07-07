@@ -392,17 +392,6 @@ def plot_cka_heatmap(
     plt.savefig(output_path, dpi=150, bbox_inches="tight")
     plt.close()
     log.info(f"Saved CKA heatmap → {output_path}")
-    ax.set_xticks(range(n)); ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
-    ax.set_yticks(range(n)); ax.set_yticklabels(labels, fontsize=9)
-    for i in range(n):
-        for j in range(n):
-            ax.text(j, i, f"{grid[i,j]:.2f}", ha="center", va="center",
-                    fontsize=8, color="white" if grid[i, j] > 0.5 else "black")
-    ax.set_title(f"Linear CKA — {model_name}", fontsize=11)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    plt.close()
-    log.info(f"Saved CKA heatmap → {output_path}")
 
 
 # ---------------------------------------------------------------------------
