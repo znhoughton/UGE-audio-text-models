@@ -279,6 +279,61 @@ def shapley_decompose(
     }
 
 
+def subspace_overlap(
+    X: np.ndarray,
+    K: np.ndarray,
+    T: np.ndarray,
+    k: int = K_COMPONENTS,
+) -> dict:
+    """
+    Measure the overlap between Whisper's raw acoustic and textual subspaces.
+
+    Tests UGE's orthogonality assumption: are the Whisper directions that
+    covary with Kaldi orthogonal to those that covary with the LLM?
+
+    Neither subspace is projected out of X before the other is computed —
+    both are "raw." Principal angles between U_A and U_T_raw are found via
+    SVD of U_A^T @ U_T_raw; the k singular values are cos(θ_i). If the
+    subspaces are orthogonal all cosines ≈ 0; if they share directions
+    some cosines ≈ 1.
+
+    overlap_variance = v(A) + v(T_raw) - v(A∪T)
+      = the variance double-counted when the two subspaces are treated as
+        independent. Equals zero iff U_A ⊥ U_T_raw.
+      = v(T_raw) − sequential_textual  (a useful sanity check)
+    """
+    U_A,     _ = cross_cov_directions(X, K, k)
+    U_T_raw, _ = cross_cov_directions(X, T, min(k, T.shape[1] - 1))
+
+    # Principal angle cosines = singular values of U_A^T U_T_raw
+    cos_angles = np.linalg.svd(U_A.T @ U_T_raw, compute_uv=False)
+    cos_angles = np.clip(cos_angles, 0.0, 1.0)
+
+    vA     = variance_fraction(X, U_A)
+    vT_raw = variance_fraction(X, U_T_raw)
+    vJoint = variance_fraction(X, _orth_basis(U_A, U_T_raw))
+    overlap = vA + vT_raw - vJoint
+
+    log.info(f"      v(acoustic):          {vA:.3f}")
+    log.info(f"      v(textual raw):        {vT_raw:.3f}")
+    log.info(f"      v(acoustic ∪ textual): {vJoint:.3f}")
+    log.info(f"      overlap variance:      {overlap:.3f}  "
+             f"(= v(T_raw) - seq_textual if seq was run)")
+    log.info(f"      principal cos — mean:  {cos_angles.mean():.3f}  "
+             f"max: {cos_angles[0]:.3f}  "
+             f"(0 = orthogonal, 1 = identical direction)")
+
+    return {
+        "v_acoustic":         float(vA),
+        "v_textual_raw":      float(vT_raw),
+        "v_joint":            float(vJoint),
+        "overlap_variance":   float(overlap),
+        "mean_principal_cos": float(cos_angles.mean()),
+        "max_principal_cos":  float(cos_angles[0]),
+        "principal_cosines":  cos_angles.tolist(),
+    }
+
+
 def bootstrap_cis(
     X: np.ndarray, K: np.ndarray, T: np.ndarray,
     k: int       = K_COMPONENTS,
@@ -500,6 +555,9 @@ def main():
                         help="Tokens per bootstrap resample")
     parser.add_argument("--shapley",        action="store_true",
                         help="Compute Shapley values, upper bound, and Type III interaction")
+    parser.add_argument("--overlap",        action="store_true",
+                        help="Measure overlap between raw acoustic and textual subspaces "
+                             "(principal angles + overlap variance); tests UGE orthogonality")
     parser.add_argument("--whisper_models", nargs="+",
                         default=WHISPER_ENC_MODELS + WHISPER_DEC_MODELS)
     args = parser.parse_args()
@@ -531,6 +589,7 @@ def main():
     all_results  = {}
     all_cis      = {}
     all_shapley  = {}
+    all_overlap  = {}
 
     for model_name in args.whisper_models:
         log.info(f"\n{'=' * 60}")
@@ -558,6 +617,19 @@ def main():
         log.info(f"  Textual:     {result['textual']:.3f}")
         log.info(f"  Interaction: {result['interaction']:.3f}")
         log.info(f"  Residual:    {result['residual']:.3f}")
+
+        if args.overlap:
+            log.info("  Computing subspace overlap ...")
+            rng_sub = np.random.default_rng(SEED)
+            Xm, Km, Tm = X[mask], K_emb[mask], T_emb[mask]
+            N_valid = len(Xm)
+            if N_valid > args.max_samples:
+                idx = rng_sub.choice(N_valid, size=args.max_samples, replace=False)
+                Xm, Km, Tm = Xm[idx], Km[idx], Tm[idx]
+            Xm = (Xm - Xm.mean(0)).astype(np.float64)
+            Km = (Km - Km.mean(0)).astype(np.float64)
+            Tm = (Tm - Tm.mean(0)).astype(np.float64)
+            all_overlap[model_name] = subspace_overlap(Xm, Km, Tm, k=args.k)
 
         if args.shapley:
             log.info("  Computing Shapley decomposition ...")
@@ -612,6 +684,7 @@ def main():
             "results":      all_results,
             "bootstrap_cis": all_cis,
             "shapley":      all_shapley,
+            "overlap":      all_overlap,
         }, f, indent=2)
     log.info(f"\nSaved → {out_json}")
 
@@ -619,11 +692,15 @@ def main():
     with open(out_csv, "w") as f:
         has_ci      = bool(all_cis)
         has_shapley = bool(all_shapley)
+        has_overlap = bool(all_overlap)
         header = "model,acoustic,textual,interaction_lower,residual"
         if has_shapley:
             header += (",interaction_upper,interaction_type3"
                        ",shapley_acoustic,shapley_textual"
                        ",shapley_interaction,shapley_residual")
+        if has_overlap:
+            header += (",v_textual_raw,overlap_variance"
+                       ",mean_principal_cos,max_principal_cos")
         if has_ci:
             header += (",interaction_ci_lo,interaction_ci_hi"
                        ",acoustic_ci_lo,acoustic_ci_hi"
@@ -640,6 +717,12 @@ def main():
                         f",{sh['shapley_textual']:.4f}"
                         f",{sh['shapley_interaction']:.4f}"
                         f",{sh['shapley_residual']:.4f}")
+            if has_overlap and model_name in all_overlap:
+                ov = all_overlap[model_name]
+                row += (f",{ov['v_textual_raw']:.4f}"
+                        f",{ov['overlap_variance']:.4f}"
+                        f",{ov['mean_principal_cos']:.4f}"
+                        f",{ov['max_principal_cos']:.4f}")
             if has_ci and model_name in all_cis:
                 ci = all_cis[model_name]
                 row += (f",{ci['interaction']['ci_lo']:.4f},{ci['interaction']['ci_hi']:.4f}"
