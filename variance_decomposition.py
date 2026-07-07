@@ -178,7 +178,7 @@ def linear_cka(X: np.ndarray, Y: np.ndarray) -> float:
     )
 
 
-CKA_OVERLAP_THRESHOLD = 0.5   # principal angle cosine threshold for shared vs. unique split
+CKA_OVERLAP_THRESHOLD = 0.95  # principal angle cosine threshold for shared vs. unique split
 
 
 def compute_cka_matrix(
