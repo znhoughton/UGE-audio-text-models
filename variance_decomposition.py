@@ -139,6 +139,30 @@ def cross_cov_directions(A: np.ndarray, B: np.ndarray, k: int) -> tuple[np.ndarr
     return U, s
 
 
+def choose_k(A: np.ndarray, B: np.ndarray, threshold: float) -> tuple[int, float]:
+    """
+    Find the minimum k such that the top-k squared singular values of A^T B
+    account for at least `threshold` of the total squared singular value energy.
+
+    Uses full SVD so the complete spectrum is available.
+
+    Returns
+    -------
+    k        : int    — chosen number of components
+    achieved : float  — actual cumulative fraction at the chosen k
+    """
+    C = A.T @ B
+    _, s, _ = np.linalg.svd(C, full_matrices=False)
+    s2 = s ** 2
+    total = s2.sum()
+    if total == 0:
+        return 1, 0.0
+    cum_frac = np.cumsum(s2) / total
+    k = int(np.searchsorted(cum_frac, threshold)) + 1
+    k = min(k, len(s))
+    return k, float(cum_frac[k - 1])
+
+
 def project_out(X: np.ndarray, U: np.ndarray) -> np.ndarray:
     """
     Remove the subspace spanned by U (D × k, orthonormal cols) from X (N × D).
@@ -394,16 +418,25 @@ def _orth_basis(*Us: np.ndarray) -> np.ndarray:
 def _decompose_core(
     X: np.ndarray, K: np.ndarray, T: np.ndarray,
     k: int, k_int_a: int, k_int_t: int, seed: int,
+    k_acoustic: int | None = None,
+    k_textual:  int | None = None,
 ) -> dict:
     """
     Inner decomposition on already-subsampled data. No logging, no subsampling.
     Assumes X, K, T are already centered and float64.
+
+    k_acoustic / k_textual override k for the acoustic and textual SVDs
+    respectively (used when adaptive-k thresholding is enabled). The
+    interaction SVD always uses k.
     """
-    U_K, sv_K = cross_cov_directions(X, K, k)
+    ka = k_acoustic if k_acoustic is not None else k
+    kt = k_textual  if k_textual  is not None else min(k, T.shape[1] - 1)
+
+    U_K, sv_K = cross_cov_directions(X, K, ka)
     frac_acoustic = variance_fraction(X, U_K)
 
     X_perp_K = project_out(X, U_K)
-    U_T, sv_T = cross_cov_directions(X_perp_K, T, min(k, T.shape[1] - 1))
+    U_T, sv_T = cross_cov_directions(X_perp_K, T, kt)
     frac_textual = variance_fraction(X, U_T)
 
     X_perp_KT = project_out(X_perp_K, U_T)
@@ -421,6 +454,8 @@ def _decompose_core(
         "textual":        frac_textual,
         "interaction":    frac_interaction,
         "residual":       frac_residual,
+        "k_acoustic_used": ka,
+        "k_textual_used":  kt,
         "sv_acoustic":    sv_K.tolist(),
         "sv_textual":     sv_T.tolist(),
         "sv_interaction": sv_AT.tolist(),
@@ -566,6 +601,8 @@ def bootstrap_cis(
     n_bootstrap: int = N_BOOTSTRAP,
     boot_size: int   = BOOT_SIZE,
     seed: int        = SEED,
+    k_acoustic: int | None = None,
+    k_textual:  int | None = None,
 ) -> dict:
     """
     Non-parametric bootstrap CIs for each variance fraction.
@@ -589,7 +626,8 @@ def bootstrap_cis(
         Xb = (X[idx] - X[idx].mean(0)).astype(np.float64)
         Kb = (K[idx] - K[idx].mean(0)).astype(np.float64)
         Tb = (T[idx] - T[idx].mean(0)).astype(np.float64)
-        res = _decompose_core(Xb, Kb, Tb, k, k_int_a, k_int_t, seed=seed + i)
+        res = _decompose_core(Xb, Kb, Tb, k, k_int_a, k_int_t, seed=seed + i,
+                              k_acoustic=k_acoustic, k_textual=k_textual)
         for c in COMPS:
             samples[c].append(res[c])
 
@@ -618,6 +656,8 @@ def decompose(
     k_int_t: int = K_INTERACT_T,
     max_samples: int = MAX_SAMPLES,
     seed: int    = SEED,
+    k_acoustic_thresh: float | None = None,
+    k_textual_thresh:  float | None = None,
 ) -> dict:
     """
     Decompose X's variance into four orthogonal components.
@@ -646,14 +686,44 @@ def decompose(
     K = (K - K.mean(axis=0)).astype(np.float64)
     T = (T - T.mean(axis=0)).astype(np.float64)
 
+    # Adaptive k: use full SVD of X^T K / X^T T to find the minimum k that
+    # captures the requested fraction of cross-covariance energy, separately
+    # for acoustic and textual. The chosen k values are passed to _decompose_core
+    # and recorded in the result.
+    k_acoustic: int | None = None
+    k_textual:  int | None = None
+    k_acoustic_frac: float | None = None
+    k_textual_frac:  float | None = None
+
+    if k_acoustic_thresh is not None:
+        k_acoustic, k_acoustic_frac = choose_k(X, K, k_acoustic_thresh)
+        log.info(f"    Adaptive k_acoustic = {k_acoustic}  "
+                 f"(captures {k_acoustic_frac:.4f} of X^T K SV² energy, "
+                 f"threshold {k_acoustic_thresh})")
+
+    if k_textual_thresh is not None:
+        k_textual, k_textual_frac = choose_k(X, T, k_textual_thresh)
+        k_textual = min(k_textual, T.shape[1] - 1)
+        log.info(f"    Adaptive k_textual  = {k_textual}  "
+                 f"(captures {k_textual_frac:.4f} of X^T T SV² energy, "
+                 f"threshold {k_textual_thresh})")
+
     log.info("    Finding acoustic subspace ...")
     log.info("    Finding textual subspace ...")
     log.info("    Finding interaction subspace ...")
 
-    result = _decompose_core(X, K, T, k, k_int_a, k_int_t, seed)
+    result = _decompose_core(X, K, T, k, k_int_a, k_int_t, seed,
+                             k_acoustic=k_acoustic, k_textual=k_textual)
 
-    log.info(f"      Acoustic:    {result['acoustic']:.3f}  (top sv: {result['sv_acoustic'][0]:.2f})")
-    log.info(f"      Textual:     {result['textual']:.3f}  (top sv: {result['sv_textual'][0]:.2f})")
+    if k_acoustic_frac is not None:
+        result["k_acoustic_frac"] = k_acoustic_frac
+    if k_textual_frac is not None:
+        result["k_textual_frac"] = k_textual_frac
+
+    log.info(f"      Acoustic:    {result['acoustic']:.3f}  "
+             f"(k={result['k_acoustic_used']}, top sv: {result['sv_acoustic'][0]:.2f})")
+    log.info(f"      Textual:     {result['textual']:.3f}  "
+             f"(k={result['k_textual_used']}, top sv: {result['sv_textual'][0]:.2f})")
     log.info(f"      Interaction: {result['interaction']:.3f}  (top sv: {result['sv_interaction'][0]:.2f})")
     log.info(f"      Residual:    {result['residual']:.3f}")
 
@@ -788,6 +858,17 @@ def main():
     parser.add_argument("--overlap_threshold", type=float, default=CKA_OVERLAP_THRESHOLD,
                         help="Principal angle cosine threshold for shared vs. unique split "
                              "in CKA decomposition (default: %(default)s)")
+    parser.add_argument("--adaptive_k",       action="store_true",
+                        help="Choose k_acoustic and k_textual per model based on cumulative "
+                             "cross-covariance energy thresholds instead of a fixed k. "
+                             "Uses full SVD of X^T K and X^T T to find the minimum k "
+                             "satisfying --k_acoustic_thresh and --k_textual_thresh.")
+    parser.add_argument("--k_acoustic_thresh", type=float, default=0.95,
+                        help="Fraction of X^T K SV² energy to capture when --adaptive_k "
+                             "is set (default: %(default)s)")
+    parser.add_argument("--k_textual_thresh",  type=float, default=0.95,
+                        help="Fraction of X^T T SV² energy to capture when --adaptive_k "
+                             "is set (default: %(default)s)")
     parser.add_argument("--whisper_models", nargs="+",
                         default=WHISPER_ENC_MODELS + WHISPER_DEC_MODELS)
     args = parser.parse_args()
@@ -841,6 +922,8 @@ def main():
             k_int_a=args.k_interact_a,
             k_int_t=args.k_interact_t,
             max_samples=args.max_samples,
+            k_acoustic_thresh=args.k_acoustic_thresh if args.adaptive_k else None,
+            k_textual_thresh=args.k_textual_thresh   if args.adaptive_k else None,
         )
         all_results[model_name] = result
 
@@ -912,6 +995,8 @@ def main():
                 k_int_t=args.k_interact_t,
                 n_bootstrap=args.n_bootstrap,
                 boot_size=args.boot_size,
+                k_acoustic=result.get("k_acoustic_used"),
+                k_textual=result.get("k_textual_used"),
             )
 
     if not all_results:
@@ -926,6 +1011,9 @@ def main():
             "k":            args.k,
             "k_interact_a": args.k_interact_a,
             "k_interact_t": args.k_interact_t,
+            "adaptive_k":   args.adaptive_k,
+            "k_acoustic_thresh": args.k_acoustic_thresh if args.adaptive_k else None,
+            "k_textual_thresh":  args.k_textual_thresh  if args.adaptive_k else None,
             "max_samples":  args.max_samples,
             "n_bootstrap":  args.n_bootstrap,
             "boot_size":    args.boot_size,
@@ -939,10 +1027,13 @@ def main():
 
     out_csv = args.results_dir / "decomposition_summary.csv"
     with open(out_csv, "w") as f:
-        has_ci      = bool(all_cis)
-        has_shapley = bool(all_shapley)
-        has_overlap = bool(all_overlap)
-        header = "model,acoustic,textual,interaction_lower,residual"
+        has_ci        = bool(all_cis)
+        has_shapley   = bool(all_shapley)
+        has_overlap   = bool(all_overlap)
+        has_adaptive  = args.adaptive_k
+        header = "model,acoustic,textual,interaction_lower,residual,k_acoustic_used,k_textual_used"
+        if has_adaptive:
+            header += ",k_acoustic_frac,k_textual_frac"
         if has_shapley:
             header += (",interaction_upper,interaction_type3"
                        ",shapley_acoustic,shapley_textual"
@@ -957,7 +1048,11 @@ def main():
         f.write(header + "\n")
         for model_name, res in all_results.items():
             row = (f"{model_name},{res['acoustic']:.4f},{res['textual']:.4f},"
-                   f"{res['interaction']:.4f},{res['residual']:.4f}")
+                   f"{res['interaction']:.4f},{res['residual']:.4f},"
+                   f"{res['k_acoustic_used']},{res['k_textual_used']}")
+            if has_adaptive:
+                row += (f",{res.get('k_acoustic_frac', float('nan')):.4f}"
+                        f",{res.get('k_textual_frac', float('nan')):.4f}")
             if has_shapley and model_name in all_shapley:
                 sh = all_shapley[model_name]
                 row += (f",{sh['interaction_upper_bound']:.4f}"
