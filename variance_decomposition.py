@@ -158,6 +158,119 @@ def variance_fraction(X: np.ndarray, U: np.ndarray) -> float:
 
 
 # ---------------------------------------------------------------------------
+# CKA
+# ---------------------------------------------------------------------------
+
+def linear_cka(X: np.ndarray, Y: np.ndarray) -> float:
+    """
+    Linear CKA (Kornblith et al. 2019) between two representation matrices.
+
+    CKA(X, Y) = ||X_c^T Y_c||²_F / (||X_c^T X_c||_F · ||Y_c^T Y_c||_F)
+
+    Invariant to orthogonal transforms and isotropic scaling. Measures
+    whether pairwise similarity structure is preserved across representations.
+    """
+    X = X - X.mean(0)
+    Y = Y - Y.mean(0)
+    return float(
+        np.sum((X.T @ Y) ** 2) /
+        (np.linalg.norm(X.T @ X, "fro") * np.linalg.norm(Y.T @ Y, "fro"))
+    )
+
+
+def compute_cka_matrix(
+    X: np.ndarray,
+    K: np.ndarray,
+    T: np.ndarray,
+    k: int = K_COMPONENTS,
+) -> dict:
+    """
+    Compute pairwise linear CKA between six representations:
+      - whisper:       full Whisper embeddings
+      - acoustic_proj: Whisper projected onto acoustic subspace  (X @ U_A)
+      - textual_proj:  Whisper projected onto raw textual subspace (X @ U_T)
+      - overlap_proj:  Whisper projected onto shared subspace (X @ U_A @ P)
+                       where P = left singular vectors of U_A^T U_T — the
+                       directions within U_A most aligned with U_T
+      - kaldi:         Kaldi embeddings
+      - llm:           LLM embeddings
+
+    overlap_proj isolates the part of Whisper that is simultaneously most
+    acoustic AND most textual. High CKA with both Kaldi and LLM would
+    indicate a joint "word identity" subspace.
+    """
+    U_A,     _ = cross_cov_directions(X, K, k)
+    U_T_raw, _ = cross_cov_directions(X, T, min(k, T.shape[1] - 1))
+
+    # Overlap subspace: directions within U_A's span most aligned with U_T
+    P, _, _ = np.linalg.svd(U_A.T @ U_T_raw, full_matrices=False)
+    U_overlap = U_A @ P  # (D_w, k) — orthonormal, lives inside U_A's column space
+
+    X_A       = X @ U_A
+    X_T       = X @ U_T_raw
+    X_overlap = X @ U_overlap
+
+    reps = {
+        "whisper":       X,
+        "acoustic_proj": X_A,
+        "textual_proj":  X_T,
+        "overlap_proj":  X_overlap,
+        "kaldi":         K,
+        "llm":           T,
+    }
+
+    names = list(reps.keys())
+    matrix = {}
+    for i, n1 in enumerate(names):
+        for j, n2 in enumerate(names):
+            if j >= i:
+                val = linear_cka(reps[n1], reps[n2])
+                matrix[f"{n1}_vs_{n2}"] = float(val)
+                if i != j:
+                    matrix[f"{n2}_vs_{n1}"] = float(val)
+
+    for n in names:
+        log.info(f"      CKA({n:15s}, kaldi):  {matrix.get(f'{n}_vs_kaldi', matrix.get(f'kaldi_vs_{n}', '—')):.3f}  "
+                 f"llm: {matrix.get(f'{n}_vs_llm', matrix.get(f'llm_vs_{n}', '—')):.3f}")
+
+    return {"names": names, "matrix": matrix}
+
+
+def plot_cka_heatmap(
+    cka_results: dict,
+    model_name: str,
+    output_path: "Path",
+) -> None:
+    """Save a heatmap of the 6×6 pairwise CKA matrix for one model."""
+    names  = cka_results["names"]
+    matrix = cka_results["matrix"]
+    n      = len(names)
+    grid   = np.zeros((n, n))
+    for i, n1 in enumerate(names):
+        for j, n2 in enumerate(names):
+            grid[i, j] = matrix.get(f"{n1}_vs_{n2}", matrix.get(f"{n2}_vs_{n1}", 0.0))
+
+    labels = [
+        "Whisper (full)", "Acoustic proj.", "Textual proj.",
+        "Overlap proj.", "Kaldi", "LLM",
+    ]
+    fig, ax = plt.subplots(figsize=(7, 6))
+    im = ax.imshow(grid, vmin=0, vmax=1, cmap="Blues")
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_xticks(range(n)); ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
+    ax.set_yticks(range(n)); ax.set_yticklabels(labels, fontsize=9)
+    for i in range(n):
+        for j in range(n):
+            ax.text(j, i, f"{grid[i,j]:.2f}", ha="center", va="center",
+                    fontsize=8, color="white" if grid[i, j] > 0.5 else "black")
+    ax.set_title(f"Linear CKA — {model_name}", fontsize=11)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    log.info(f"Saved CKA heatmap → {output_path}")
+
+
+# ---------------------------------------------------------------------------
 # Decomposition
 # ---------------------------------------------------------------------------
 
@@ -558,6 +671,10 @@ def main():
     parser.add_argument("--overlap",        action="store_true",
                         help="Measure overlap between raw acoustic and textual subspaces "
                              "(principal angles + overlap variance); tests UGE orthogonality")
+    parser.add_argument("--cka",            action="store_true",
+                        help="Compute pairwise linear CKA matrix between Whisper (full), "
+                             "acoustic projection, textual projection, overlap projection, "
+                             "Kaldi, and LLM")
     parser.add_argument("--whisper_models", nargs="+",
                         default=WHISPER_ENC_MODELS + WHISPER_DEC_MODELS)
     args = parser.parse_args()
@@ -590,6 +707,7 @@ def main():
     all_cis      = {}
     all_shapley  = {}
     all_overlap  = {}
+    all_cka      = {}
 
     for model_name in args.whisper_models:
         log.info(f"\n{'=' * 60}")
@@ -617,6 +735,22 @@ def main():
         log.info(f"  Textual:     {result['textual']:.3f}")
         log.info(f"  Interaction: {result['interaction']:.3f}")
         log.info(f"  Residual:    {result['residual']:.3f}")
+
+        if args.cka:
+            log.info("  Computing CKA matrix ...")
+            rng_sub = np.random.default_rng(SEED)
+            Xm, Km, Tm = X[mask], K_emb[mask], T_emb[mask]
+            N_valid = len(Xm)
+            if N_valid > args.max_samples:
+                idx = rng_sub.choice(N_valid, size=args.max_samples, replace=False)
+                Xm, Km, Tm = Xm[idx], Km[idx], Tm[idx]
+            Xm = (Xm - Xm.mean(0)).astype(np.float64)
+            Km = (Km - Km.mean(0)).astype(np.float64)
+            Tm = (Tm - Tm.mean(0)).astype(np.float64)
+            cka_result = compute_cka_matrix(Xm, Km, Tm, k=args.k)
+            all_cka[model_name] = cka_result
+            heatmap_path = args.plots_dir / f"cka_{model_name}.png"
+            plot_cka_heatmap(cka_result, model_name, heatmap_path)
 
         if args.overlap:
             log.info("  Computing subspace overlap ...")
@@ -685,6 +819,7 @@ def main():
             "bootstrap_cis": all_cis,
             "shapley":      all_shapley,
             "overlap":      all_overlap,
+            "cka":          all_cka,
         }, f, indent=2)
     log.info(f"\nSaved → {out_json}")
 
