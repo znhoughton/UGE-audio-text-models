@@ -178,46 +178,72 @@ def linear_cka(X: np.ndarray, Y: np.ndarray) -> float:
     )
 
 
+CKA_OVERLAP_THRESHOLD = 0.5   # principal angle cosine threshold for shared vs. unique split
+
+
 def compute_cka_matrix(
     X: np.ndarray,
     K: np.ndarray,
     T: np.ndarray,
     k: int = K_COMPONENTS,
+    overlap_threshold: float = CKA_OVERLAP_THRESHOLD,
 ) -> dict:
     """
-    Compute pairwise linear CKA between six representations:
-      - whisper:       full Whisper embeddings
-      - acoustic_proj: Whisper projected onto acoustic subspace  (X @ U_A)
-      - textual_proj:  Whisper projected onto raw textual subspace (X @ U_T)
-      - overlap_proj:  Whisper projected onto shared subspace (X @ U_A @ P)
-                       where P = left singular vectors of U_A^T U_T — the
-                       directions within U_A most aligned with U_T
-      - kaldi:         Kaldi embeddings
-      - llm:           LLM embeddings
+    Compute pairwise linear CKA between eight representations:
 
-    overlap_proj isolates the part of Whisper that is simultaneously most
-    acoustic AND most textual. High CKA with both Kaldi and LLM would
-    indicate a joint "word identity" subspace.
+      Whisper projections
+      ───────────────────
+      whisper          Full Whisper embeddings
+      acoustic_proj    X @ U_A  (all acoustic directions)
+      acoustic_unique  X @ U_A_unique  (acoustic minus shared)
+      textual_proj     X @ U_T_raw  (all raw textual directions)
+      textual_unique   X @ U_T_unique  (textual minus shared)
+      overlap_proj     X @ U_A_T  (directions shared by U_A and U_T,
+                                   principal cos > overlap_threshold)
+
+      Reference embeddings
+      ────────────────────
+      kaldi            Kaldi embeddings
+      llm              LLM embeddings
+
+    The shared/unique split uses the SVD of U_A^T @ U_T_raw.  Singular
+    values are cosines of principal angles; directions with cosine >
+    overlap_threshold are assigned to the shared subspace U_A_T, the
+    rest to U_A_unique / U_T_unique.
+
+    Predictions under a "word identity" subspace hypothesis:
+      overlap_proj  → high CKA with both Kaldi AND LLM
+      acoustic_unique → high CKA with Kaldi, low with LLM
+      textual_unique  → low CKA with Kaldi, high with LLM
     """
     U_A,     _ = cross_cov_directions(X, K, k)
     U_T_raw, _ = cross_cov_directions(X, T, min(k, T.shape[1] - 1))
 
-    # Overlap subspace: directions within U_A's span most aligned with U_T
-    P, _, _ = np.linalg.svd(U_A.T @ U_T_raw, full_matrices=False)
-    U_overlap = U_A @ P  # (D_w, k) — orthonormal, lives inside U_A's column space
+    # Principal angle decomposition
+    P, sigma, Qt = np.linalg.svd(U_A.T @ U_T_raw, full_matrices=False)
+    Q = Qt.T  # (k_T, k_T) — right singular vectors for U_T side
 
-    X_A       = X @ U_A
-    X_T       = X @ U_T_raw
-    X_overlap = X @ U_overlap
+    # Split by threshold
+    shared_mask = sigma > overlap_threshold
+    k_shared = int(shared_mask.sum())
+    log.info(f"      Shared directions (cos > {overlap_threshold}): {k_shared} / {len(sigma)}")
 
-    reps = {
-        "whisper":       X,
-        "acoustic_proj": X_A,
-        "textual_proj":  X_T,
-        "overlap_proj":  X_overlap,
-        "kaldi":         K,
-        "llm":           T,
-    }
+    # Shared subspace (intersection approximation)
+    U_A_T      = U_A      @ P[:, shared_mask]   # (D_w, k_shared)
+    # Unique subspaces — directions orthogonal to the shared set
+    U_A_unique = U_A      @ P[:, ~shared_mask]  # (D_w, k - k_shared)
+    U_T_unique = U_T_raw  @ Q[:, ~shared_mask]  # (D_w, k - k_shared)
+
+    reps = {"whisper": X, "acoustic_proj": X @ U_A}
+    if U_A_unique.shape[1] > 0:
+        reps["acoustic_unique"] = X @ U_A_unique
+    if k_shared > 0:
+        reps["overlap_proj"] = X @ U_A_T
+    reps["textual_proj"] = X @ U_T_raw
+    if U_T_unique.shape[1] > 0:
+        reps["textual_unique"] = X @ U_T_unique
+    reps["kaldi"] = K
+    reps["llm"]   = T
 
     names = list(reps.keys())
     matrix = {}
@@ -230,10 +256,31 @@ def compute_cka_matrix(
                     matrix[f"{n2}_vs_{n1}"] = float(val)
 
     for n in names:
-        log.info(f"      CKA({n:15s}, kaldi):  {matrix.get(f'{n}_vs_kaldi', matrix.get(f'kaldi_vs_{n}', '—')):.3f}  "
-                 f"llm: {matrix.get(f'{n}_vs_llm', matrix.get(f'llm_vs_{n}', '—')):.3f}")
+        k_val = matrix.get(f"{n}_vs_kaldi", matrix.get(f"kaldi_vs_{n}", float("nan")))
+        t_val = matrix.get(f"{n}_vs_llm",   matrix.get(f"llm_vs_{n}",   float("nan")))
+        log.info(f"      CKA({n:20s}, kaldi): {k_val:.3f}   llm: {t_val:.3f}")
 
-    return {"names": names, "matrix": matrix}
+    return {"names": names, "matrix": matrix,
+            "k_shared": k_shared, "overlap_threshold": overlap_threshold}
+
+
+HEATMAP_LABELS = {
+    "whisper":          "Whisper (full)",
+    "acoustic_proj":    "Acoustic (U_A)",
+    "acoustic_unique":  "Acoustic unique",
+    "overlap_proj":     "Overlap (U_A ∩ U_T)",
+    "textual_proj":     "Textual (U_T)",
+    "textual_unique":   "Textual unique",
+    "kaldi":            "Kaldi",
+    "llm":              "LLM",
+}
+
+# Group order: Whisper projections first, then references
+HEATMAP_ORDER = [
+    "whisper", "acoustic_proj", "acoustic_unique",
+    "overlap_proj", "textual_proj", "textual_unique",
+    "kaldi", "llm",
+]
 
 
 def plot_cka_heatmap(
@@ -241,22 +288,48 @@ def plot_cka_heatmap(
     model_name: str,
     output_path: "Path",
 ) -> None:
-    """Save a heatmap of the 6×6 pairwise CKA matrix for one model."""
-    names  = cka_results["names"]
-    matrix = cka_results["matrix"]
-    n      = len(names)
-    grid   = np.zeros((n, n))
+    """Save a heatmap of the pairwise CKA matrix for one model."""
+    all_names = cka_results["names"]
+    matrix    = cka_results["matrix"]
+
+    # Reorder to canonical display order, keeping only names present
+    names = [n for n in HEATMAP_ORDER if n in all_names]
+    n     = len(names)
+    grid  = np.zeros((n, n))
     for i, n1 in enumerate(names):
         for j, n2 in enumerate(names):
             grid[i, j] = matrix.get(f"{n1}_vs_{n2}", matrix.get(f"{n2}_vs_{n1}", 0.0))
 
-    labels = [
-        "Whisper (full)", "Acoustic proj.", "Textual proj.",
-        "Overlap proj.", "Kaldi", "LLM",
-    ]
-    fig, ax = plt.subplots(figsize=(7, 6))
+    labels = [HEATMAP_LABELS.get(nm, nm) for nm in names]
+    n_proj = sum(1 for nm in names if nm not in ("kaldi", "llm"))
+
+    fig, ax = plt.subplots(figsize=(max(7, n * 0.9), max(6, n * 0.8)))
     im = ax.imshow(grid, vmin=0, vmax=1, cmap="Blues")
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    ax.set_xticks(range(n)); ax.set_xticklabels(labels, rotation=40, ha="right", fontsize=8)
+    ax.set_yticks(range(n)); ax.set_yticklabels(labels, fontsize=8)
+
+    for i in range(n):
+        for j in range(n):
+            ax.text(j, i, f"{grid[i,j]:.2f}", ha="center", va="center",
+                    fontsize=7, color="white" if grid[i, j] > 0.55 else "black")
+
+    # Divider between Whisper projections and reference embeddings
+    if n_proj < n:
+        ax.axhline(n_proj - 0.5, color="black", linewidth=1.5, alpha=0.6)
+        ax.axvline(n_proj - 0.5, color="black", linewidth=1.5, alpha=0.6)
+
+    k_shared = cka_results.get("k_shared", "?")
+    thresh   = cka_results.get("overlap_threshold", CKA_OVERLAP_THRESHOLD)
+    ax.set_title(
+        f"Linear CKA — {model_name}\n"
+        f"Overlap: {k_shared} shared dirs (cos > {thresh})",
+        fontsize=10,
+    )
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.close()
+    log.info(f"Saved CKA heatmap → {output_path}")
     ax.set_xticks(range(n)); ax.set_xticklabels(labels, rotation=35, ha="right", fontsize=9)
     ax.set_yticks(range(n)); ax.set_yticklabels(labels, fontsize=9)
     for i in range(n):
@@ -671,10 +744,12 @@ def main():
     parser.add_argument("--overlap",        action="store_true",
                         help="Measure overlap between raw acoustic and textual subspaces "
                              "(principal angles + overlap variance); tests UGE orthogonality")
-    parser.add_argument("--cka",            action="store_true",
+    parser.add_argument("--cka",              action="store_true",
                         help="Compute pairwise linear CKA matrix between Whisper (full), "
-                             "acoustic projection, textual projection, overlap projection, "
-                             "Kaldi, and LLM")
+                             "acoustic/textual/overlap projections, Kaldi, and LLM")
+    parser.add_argument("--overlap_threshold", type=float, default=CKA_OVERLAP_THRESHOLD,
+                        help="Principal angle cosine threshold for shared vs. unique split "
+                             "in CKA decomposition (default: %(default)s)")
     parser.add_argument("--whisper_models", nargs="+",
                         default=WHISPER_ENC_MODELS + WHISPER_DEC_MODELS)
     args = parser.parse_args()
@@ -747,7 +822,8 @@ def main():
             Xm = (Xm - Xm.mean(0)).astype(np.float64)
             Km = (Km - Km.mean(0)).astype(np.float64)
             Tm = (Tm - Tm.mean(0)).astype(np.float64)
-            cka_result = compute_cka_matrix(Xm, Km, Tm, k=args.k)
+            cka_result = compute_cka_matrix(Xm, Km, Tm, k=args.k,
+                                            overlap_threshold=args.overlap_threshold)
             all_cka[model_name] = cka_result
             heatmap_path = args.plots_dir / f"cka_{model_name}.png"
             plot_cka_heatmap(cka_result, model_name, heatmap_path)
