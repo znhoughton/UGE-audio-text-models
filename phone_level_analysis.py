@@ -450,14 +450,17 @@ def main():
     # ------------------------------------------------------------------
     # 0. Ensure datasets are present
     # ------------------------------------------------------------------
-    ljspeech_dir = args.ljspeech_dir or (data_dir / "LJSpeech-1.1")
+    # Default to the WordData/ directories so the already-downloaded LJSpeech
+    # and TextGrids from word_level_analysis.py are reused automatically.
+    word_data_dir = root / "WordData"
+    ljspeech_dir = args.ljspeech_dir or (word_data_dir / "LJSpeech-1.1")
     try:
         ljspeech_dir = ensure_ljspeech(ljspeech_dir)
     except RuntimeError as e:
         logger.error(str(e))
         sys.exit(1)
 
-    textgrid_dir = args.textgrid_dir or (data_dir / "textgrids")
+    textgrid_dir = args.textgrid_dir or (word_data_dir / "textgrids")
     try:
         textgrid_dir = ensure_textgrids(textgrid_dir)
     except RuntimeError as e:
