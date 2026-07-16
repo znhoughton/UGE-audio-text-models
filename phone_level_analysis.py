@@ -598,6 +598,9 @@ def main():
     names = list(embeddings.keys())
     logger.info(f"Models with embeddings: {names}")
 
+    # Audio no longer needed — free ~13 GB before loading all embeddings for CKA
+    del utterances
+
     # ------------------------------------------------------------------
     # 2b. Align: keep only phones where every model produced an embedding
     # ------------------------------------------------------------------
