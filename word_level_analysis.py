@@ -1657,14 +1657,15 @@ def minibatch_cka(
 def pca_eigenvalues(X: np.ndarray, n_components: int = PCA_COMPONENTS) -> np.ndarray:
     from sklearn.utils.extmath import randomized_svd
     valid = np.linalg.norm(X, axis=1) > 1e-10
-    Xv = X[valid].astype(np.float64)
-    Xc = Xv - Xv.mean(axis=0, keepdims=True)
-    n = Xc.shape[0]
-    if not np.isfinite(Xc).all():
-        Xc = np.nan_to_num(Xc, nan=0.0, posinf=0.0, neginf=0.0)
+    Xv = X[valid].astype(np.float64)   # single float64 copy
+    n = Xv.shape[0]
+    Xv -= Xv.mean(axis=0, keepdims=True)   # center in-place (no Xc copy)
+    if not np.isfinite(Xv).all():
+        np.nan_to_num(Xv, nan=0.0, posinf=0.0, neginf=0.0, copy=False)
+    Xv /= np.sqrt(n - 1)                   # scale in-place (no temporary)
     _, s, _ = randomized_svd(
-        Xc / np.sqrt(n - 1),
-        n_components=min(n_components, min(Xc.shape) - 1),
+        Xv,
+        n_components=min(n_components, min(Xv.shape) - 1),
         n_oversamples=10, n_iter=4, random_state=MINIBATCH_SEED,
     )
     eigs = s ** 2

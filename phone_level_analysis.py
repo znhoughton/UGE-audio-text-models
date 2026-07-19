@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import csv
+import gc
 import json
 import logging
 import pickle
@@ -630,6 +631,14 @@ def main():
                 embeddings[name] = embeddings[name][valid_mask]
             N = n_valid
             logger.info(f"All embedding matrices trimmed to {N:,} aligned phones")
+
+    # Downcast to float16 before PCA/CKA — halves the ~85 GB base footprint.
+    # Both pca_eigenvalues and minibatch_cka cast to float64 internally, so
+    # precision is not lost in the actual computations.
+    for name in list(embeddings.keys()):
+        embeddings[name] = embeddings[name].astype(np.float16)
+    gc.collect()
+    logger.info("Embeddings downcast to float16 for PCA/CKA phase")
 
     # ------------------------------------------------------------------
     # 3. PCA eigenvalue analysis
