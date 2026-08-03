@@ -1,0 +1,3493 @@
+{
+  "n_phones": 883675,
+  "models": {
+    "whisper-base-enc": {
+      "hf_id": "openai/whisper-base",
+      "modality": "audio-whisper-enc",
+      "params": "74M",
+      "arch": "Whisper encoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-small-enc": {
+      "hf_id": "openai/whisper-small",
+      "modality": "audio-whisper-enc",
+      "params": "244M",
+      "arch": "Whisper encoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-medium-enc": {
+      "hf_id": "openai/whisper-medium",
+      "modality": "audio-whisper-enc",
+      "params": "769M",
+      "arch": "Whisper encoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-large-enc": {
+      "hf_id": "openai/whisper-large-v3",
+      "modality": "audio-whisper-enc",
+      "params": "1550M",
+      "arch": "Whisper encoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-large-v2-enc": {
+      "hf_id": "openai/whisper-large-v2",
+      "modality": "audio-whisper-enc",
+      "params": "1550M",
+      "arch": "Whisper encoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-large-v1-enc": {
+      "hf_id": "openai/whisper-large",
+      "modality": "audio-whisper-enc",
+      "params": "1550M",
+      "arch": "Whisper encoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-base-dec": {
+      "hf_id": "openai/whisper-base",
+      "modality": "audio-whisper-dec",
+      "params": "74M",
+      "arch": "Whisper decoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-small-dec": {
+      "hf_id": "openai/whisper-small",
+      "modality": "audio-whisper-dec",
+      "params": "244M",
+      "arch": "Whisper decoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-medium-dec": {
+      "hf_id": "openai/whisper-medium",
+      "modality": "audio-whisper-dec",
+      "params": "769M",
+      "arch": "Whisper decoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-large-dec": {
+      "hf_id": "openai/whisper-large-v3",
+      "modality": "audio-whisper-dec",
+      "params": "1550M",
+      "arch": "Whisper decoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-large-v2-dec": {
+      "hf_id": "openai/whisper-large-v2",
+      "modality": "audio-whisper-dec",
+      "params": "1550M",
+      "arch": "Whisper decoder",
+      "corpus": "680k hrs audio"
+    },
+    "whisper-large-v1-dec": {
+      "hf_id": "openai/whisper-large",
+      "modality": "audio-whisper-dec",
+      "params": "1550M",
+      "arch": "Whisper decoder",
+      "corpus": "680k hrs audio"
+    },
+    "parakeet-ctc-0.6b": {
+      "hf_id": "nvidia/parakeet-ctc-0.6b",
+      "modality": "audio-parakeet",
+      "params": "600M",
+      "arch": "FastConformer-CTC",
+      "corpus": "Granary (64k hrs English)"
+    },
+    "mimi": {
+      "hf_id": "kyutai/mimi",
+      "modality": "audio-mimi",
+      "params": "~85M",
+      "arch": "Conv+Transformer codec",
+      "corpus": "Moshi training set"
+    },
+    "kaldi-librispeech": {
+      "hf_id": null,
+      "modality": "audio-kaldi",
+      "params": "~18M",
+      "arch": "TDNN-F chain (LF-MMI) \u2014 prefinal-chain.batchnorm2",
+      "corpus": "LibriSpeech 960h \u2014 phone-state targets, no LM",
+      "kaldi_model_file": "final_hidden.mdl"
+    },
+    "kaldi-librispeech-penult": {
+      "hf_id": null,
+      "modality": "audio-kaldi",
+      "params": "~18M",
+      "arch": "TDNN-F chain (LF-MMI) \u2014 prefinal-chain.batchnorm1",
+      "corpus": "LibriSpeech 960h \u2014 phone-state targets, no LM",
+      "kaldi_model_file": "final_hidden_bn1.mdl"
+    },
+    "kaldi-librispeech-antepen": {
+      "hf_id": null,
+      "modality": "audio-kaldi",
+      "params": "~18M",
+      "arch": "TDNN-F chain (LF-MMI) \u2014 prefinal-l",
+      "corpus": "LibriSpeech 960h \u2014 phone-state targets, no LM",
+      "kaldi_model_file": "final_hidden_pfl.mdl"
+    },
+    "wav2vec2-base": {
+      "hf_id": "facebook/wav2vec2-base",
+      "modality": "audio-wav2vec2",
+      "params": "95M",
+      "arch": "Wav2Vec2 (pre-trained only)",
+      "corpus": "LibriSpeech 960h (self-supervised, no labels)"
+    },
+    "babylm-125m": {
+      "hf_id": "znhoughton/opt-babylm-125m-20eps-seed964",
+      "modality": "text",
+      "params": "125M",
+      "arch": "OPT",
+      "corpus": "BabyLM (~100M tokens)"
+    },
+    "opt-125m": {
+      "hf_id": "facebook/opt-125m",
+      "modality": "text",
+      "params": "125M",
+      "arch": "OPT",
+      "corpus": "~180B tokens"
+    },
+    "babylm-350m": {
+      "hf_id": "znhoughton/opt-babylm-350m-20eps-seed964",
+      "modality": "text",
+      "params": "350M",
+      "arch": "OPT",
+      "corpus": "BabyLM (~100M tokens)"
+    },
+    "babylm-1.3b": {
+      "hf_id": "znhoughton/opt-babylm-1.3b-20eps-seed964",
+      "modality": "text",
+      "params": "1.3B",
+      "arch": "OPT",
+      "corpus": "BabyLM (~100M tokens)"
+    },
+    "pythia-160m": {
+      "hf_id": "EleutherAI/pythia-160m",
+      "modality": "text",
+      "params": "160M",
+      "arch": "GPT-NeoX",
+      "corpus": "The Pile (300B tokens)"
+    },
+    "olmo-7b": {
+      "hf_id": "allenai/OLMo-2-1124-7B",
+      "modality": "text",
+      "params": "7B",
+      "arch": "OLMo-2",
+      "corpus": "Dolma"
+    },
+    "pythia-6.9b": {
+      "hf_id": "EleutherAI/pythia-6.9b",
+      "modality": "text",
+      "params": "6.9B",
+      "arch": "GPT-NeoX",
+      "corpus": "The Pile (300B tokens)"
+    }
+  },
+  "embedding_shapes": {
+    "whisper-base-enc": [
+      883675,
+      512
+    ],
+    "whisper-small-enc": [
+      883675,
+      768
+    ],
+    "whisper-medium-enc": [
+      883675,
+      1024
+    ],
+    "whisper-large-enc": [
+      883675,
+      1280
+    ],
+    "whisper-large-v2-enc": [
+      883675,
+      1280
+    ],
+    "whisper-large-v1-enc": [
+      883675,
+      1280
+    ],
+    "whisper-base-dec": [
+      883675,
+      512
+    ],
+    "whisper-small-dec": [
+      883675,
+      768
+    ],
+    "whisper-medium-dec": [
+      883675,
+      1024
+    ],
+    "whisper-large-dec": [
+      883675,
+      1280
+    ],
+    "whisper-large-v2-dec": [
+      883675,
+      1280
+    ],
+    "whisper-large-v1-dec": [
+      883675,
+      1280
+    ],
+    "parakeet-ctc-0.6b": [
+      883675,
+      1024
+    ],
+    "mimi": [
+      883675,
+      512
+    ],
+    "kaldi-librispeech": [
+      883675,
+      256
+    ],
+    "kaldi-librispeech-penult": [
+      883675,
+      1536
+    ],
+    "kaldi-librispeech-antepen": [
+      883675,
+      256
+    ],
+    "wav2vec2-base": [
+      883675,
+      768
+    ],
+    "babylm-125m": [
+      883675,
+      768
+    ],
+    "opt-125m": [
+      883675,
+      768
+    ],
+    "babylm-350m": [
+      883675,
+      1024
+    ],
+    "babylm-1.3b": [
+      883675,
+      2048
+    ],
+    "pythia-160m": [
+      883675,
+      768
+    ],
+    "olmo-7b": [
+      883675,
+      4096
+    ],
+    "pythia-6.9b": [
+      883675,
+      4096
+    ]
+  },
+  "cka_scores": {
+    "whisper-base-enc vs whisper-small-enc": {
+      "score": 0.8046429961307087,
+      "ci95": 0.000217091645441368
+    },
+    "whisper-base-enc vs whisper-medium-enc": {
+      "score": 0.8409283101660955,
+      "ci95": 0.0001845606506434948
+    },
+    "whisper-base-enc vs whisper-large-enc": {
+      "score": 0.7707633679245793,
+      "ci95": 0.0003126581696426126
+    },
+    "whisper-base-enc vs whisper-large-v2-enc": {
+      "score": 0.7675918542317581,
+      "ci95": 0.00029275767920557345
+    },
+    "whisper-base-enc vs whisper-large-v1-enc": {
+      "score": 0.7859357655657345,
+      "ci95": 0.00025049342291086287
+    },
+    "whisper-base-enc vs whisper-base-dec": {
+      "score": 0.15525677784080594,
+      "ci95": 0.0006918230238011099
+    },
+    "whisper-base-enc vs whisper-small-dec": {
+      "score": 0.33376494783782773,
+      "ci95": 0.0009977559673569893
+    },
+    "whisper-base-enc vs whisper-medium-dec": {
+      "score": 0.4426829543861767,
+      "ci95": 0.0007802594441003013
+    },
+    "whisper-base-enc vs whisper-large-dec": {
+      "score": 0.1526770792900656,
+      "ci95": 0.00048237675367316014
+    },
+    "whisper-base-enc vs whisper-large-v2-dec": {
+      "score": 0.4409889070024148,
+      "ci95": 0.0007249151133788436
+    },
+    "whisper-base-enc vs whisper-large-v1-dec": {
+      "score": 0.23942233124209342,
+      "ci95": 0.0006960051415603126
+    },
+    "whisper-base-enc vs parakeet-ctc-0.6b": {
+      "score": 0.12626301317709013,
+      "ci95": 0.00035442529509875176
+    },
+    "whisper-base-enc vs mimi": {
+      "score": 0.039917655811309405,
+      "ci95": 0.000562332118492005
+    },
+    "whisper-base-enc vs kaldi-librispeech": {
+      "score": 0.11476334704042047,
+      "ci95": 0.00022694386893403506
+    },
+    "whisper-base-enc vs kaldi-librispeech-penult": {
+      "score": 0.10678565766400917,
+      "ci95": 0.00022075896690146204
+    },
+    "whisper-base-enc vs kaldi-librispeech-antepen": {
+      "score": 0.08803685991587225,
+      "ci95": 0.0002429189078589772
+    },
+    "whisper-base-enc vs wav2vec2-base": {
+      "score": 0.1107916167643315,
+      "ci95": 0.00040455385624782773
+    },
+    "whisper-base-enc vs babylm-125m": {
+      "score": 0.1795150584301459,
+      "ci95": 0.0005317761569597745
+    },
+    "whisper-base-enc vs opt-125m": {
+      "score": 0.1898592793234646,
+      "ci95": 0.0005985655666835873
+    },
+    "whisper-base-enc vs babylm-350m": {
+      "score": 0.17570929555167694,
+      "ci95": 0.0005655931114624113
+    },
+    "whisper-base-enc vs babylm-1.3b": {
+      "score": 0.17997315431347016,
+      "ci95": 0.0005942536171855789
+    },
+    "whisper-base-enc vs pythia-160m": {
+      "score": 0.136394531519065,
+      "ci95": 0.0006340640132559673
+    },
+    "whisper-base-enc vs olmo-7b": {
+      "score": 0.1898590315876083,
+      "ci95": 0.0006837150082527204
+    },
+    "whisper-base-enc vs pythia-6.9b": {
+      "score": 0.13869082817868175,
+      "ci95": 0.000623151437302112
+    },
+    "whisper-small-enc vs whisper-medium-enc": {
+      "score": 0.9576567927623291,
+      "ci95": 6.470815811393676e-05
+    },
+    "whisper-small-enc vs whisper-large-enc": {
+      "score": 0.797735094366399,
+      "ci95": 0.0003670602891799415
+    },
+    "whisper-small-enc vs whisper-large-v2-enc": {
+      "score": 0.7251711568271665,
+      "ci95": 0.00034493479396369565
+    },
+    "whisper-small-enc vs whisper-large-v1-enc": {
+      "score": 0.94837867749645,
+      "ci95": 7.89187279330814e-05
+    },
+    "whisper-small-enc vs whisper-base-dec": {
+      "score": 0.15787841149808426,
+      "ci95": 0.0006969543886044122
+    },
+    "whisper-small-enc vs whisper-small-dec": {
+      "score": 0.3569966140183712,
+      "ci95": 0.000988711075311902
+    },
+    "whisper-small-enc vs whisper-medium-dec": {
+      "score": 0.4689871781843355,
+      "ci95": 0.0008200654434326426
+    },
+    "whisper-small-enc vs whisper-large-dec": {
+      "score": 0.1576063167943892,
+      "ci95": 0.00048774682283800867
+    },
+    "whisper-small-enc vs whisper-large-v2-dec": {
+      "score": 0.4716244483392423,
+      "ci95": 0.0008271571161967904
+    },
+    "whisper-small-enc vs whisper-large-v1-dec": {
+      "score": 0.2432551943547436,
+      "ci95": 0.0007052022360505136
+    },
+    "whisper-small-enc vs parakeet-ctc-0.6b": {
+      "score": 0.10877408173368107,
+      "ci95": 0.00033554610057317933
+    },
+    "whisper-small-enc vs mimi": {
+      "score": 0.039258469975895056,
+      "ci95": 0.0005347232218551457
+    },
+    "whisper-small-enc vs kaldi-librispeech": {
+      "score": 0.0796974664234972,
+      "ci95": 0.00021498716557701969
+    },
+    "whisper-small-enc vs kaldi-librispeech-penult": {
+      "score": 0.07452170939626553,
+      "ci95": 0.00021432492501643222
+    },
+    "whisper-small-enc vs kaldi-librispeech-antepen": {
+      "score": 0.061805091369173386,
+      "ci95": 0.00023100491885282972
+    },
+    "whisper-small-enc vs wav2vec2-base": {
+      "score": 0.08747615926059703,
+      "ci95": 0.0004134130362770039
+    },
+    "whisper-small-enc vs babylm-125m": {
+      "score": 0.1806396855560297,
+      "ci95": 0.0005037766706030144
+    },
+    "whisper-small-enc vs opt-125m": {
+      "score": 0.19762746385836183,
+      "ci95": 0.0006056386712593574
+    },
+    "whisper-small-enc vs babylm-350m": {
+      "score": 0.17600074865108684,
+      "ci95": 0.0005235084791253799
+    },
+    "whisper-small-enc vs babylm-1.3b": {
+      "score": 0.17933628845381744,
+      "ci95": 0.0005455412013338893
+    },
+    "whisper-small-enc vs pythia-160m": {
+      "score": 0.13796549897267013,
+      "ci95": 0.0006199022363970756
+    },
+    "whisper-small-enc vs olmo-7b": {
+      "score": 0.1941142736684998,
+      "ci95": 0.0006911364575787037
+    },
+    "whisper-small-enc vs pythia-6.9b": {
+      "score": 0.13860282918980574,
+      "ci95": 0.0005794676881689664
+    },
+    "whisper-medium-enc vs whisper-large-enc": {
+      "score": 0.8614386371008629,
+      "ci95": 0.00027446219852642685
+    },
+    "whisper-medium-enc vs whisper-large-v2-enc": {
+      "score": 0.7531311786649206,
+      "ci95": 0.0002873926811484814
+    },
+    "whisper-medium-enc vs whisper-large-v1-enc": {
+      "score": 0.9508373309678462,
+      "ci95": 6.407607763069792e-05
+    },
+    "whisper-medium-enc vs whisper-base-dec": {
+      "score": 0.15950616804364087,
+      "ci95": 0.0006710211523677647
+    },
+    "whisper-medium-enc vs whisper-small-dec": {
+      "score": 0.3594872201786984,
+      "ci95": 0.000932667335463913
+    },
+    "whisper-medium-enc vs whisper-medium-dec": {
+      "score": 0.5086882384066319,
+      "ci95": 0.0008743945378309992
+    },
+    "whisper-medium-enc vs whisper-large-dec": {
+      "score": 0.16444786381060064,
+      "ci95": 0.0004952720753294864
+    },
+    "whisper-medium-enc vs whisper-large-v2-dec": {
+      "score": 0.501658767099954,
+      "ci95": 0.0008107433878986165
+    },
+    "whisper-medium-enc vs whisper-large-v1-dec": {
+      "score": 0.2667294073574624,
+      "ci95": 0.0007628223347647452
+    },
+    "whisper-medium-enc vs parakeet-ctc-0.6b": {
+      "score": 0.10342802931039442,
+      "ci95": 0.0003257653911170145
+    },
+    "whisper-medium-enc vs mimi": {
+      "score": 0.03795246385867667,
+      "ci95": 0.0005138435813988355
+    },
+    "whisper-medium-enc vs kaldi-librispeech": {
+      "score": 0.07276302449163433,
+      "ci95": 0.00019741998885425965
+    },
+    "whisper-medium-enc vs kaldi-librispeech-penult": {
+      "score": 0.06774768398474995,
+      "ci95": 0.00019860472703622158
+    },
+    "whisper-medium-enc vs kaldi-librispeech-antepen": {
+      "score": 0.05631700468042211,
+      "ci95": 0.00021520425806675073
+    },
+    "whisper-medium-enc vs wav2vec2-base": {
+      "score": 0.08390737909768423,
+      "ci95": 0.00042012816990884337
+    },
+    "whisper-medium-enc vs babylm-125m": {
+      "score": 0.1825687087074498,
+      "ci95": 0.0004826813387285996
+    },
+    "whisper-medium-enc vs opt-125m": {
+      "score": 0.2026759748615896,
+      "ci95": 0.0005906592702714744
+    },
+    "whisper-medium-enc vs babylm-350m": {
+      "score": 0.17760461673744474,
+      "ci95": 0.000498005467155434
+    },
+    "whisper-medium-enc vs babylm-1.3b": {
+      "score": 0.18032494238172267,
+      "ci95": 0.0005177939601854312
+    },
+    "whisper-medium-enc vs pythia-160m": {
+      "score": 0.1408465495433976,
+      "ci95": 0.000596737652838352
+    },
+    "whisper-medium-enc vs olmo-7b": {
+      "score": 0.1968078358896587,
+      "ci95": 0.0006770835836297461
+    },
+    "whisper-medium-enc vs pythia-6.9b": {
+      "score": 0.14115207751453485,
+      "ci95": 0.0005590330392315711
+    },
+    "whisper-large-enc vs whisper-large-v2-enc": {
+      "score": 0.839933159443701,
+      "ci95": 0.00018897593322094437
+    },
+    "whisper-large-enc vs whisper-large-v1-enc": {
+      "score": 0.8426720603772875,
+      "ci95": 0.0003117405031607362
+    },
+    "whisper-large-enc vs whisper-base-dec": {
+      "score": 0.1681697700923389,
+      "ci95": 0.0006575018567179053
+    },
+    "whisper-large-enc vs whisper-small-dec": {
+      "score": 0.3698275399087562,
+      "ci95": 0.0009631331621525551
+    },
+    "whisper-large-enc vs whisper-medium-dec": {
+      "score": 0.4738302378149999,
+      "ci95": 0.0008785458346723259
+    },
+    "whisper-large-enc vs whisper-large-dec": {
+      "score": 0.19499667925146547,
+      "ci95": 0.0005074023231427408
+    },
+    "whisper-large-enc vs whisper-large-v2-dec": {
+      "score": 0.4977689438258447,
+      "ci95": 0.0007940940156240692
+    },
+    "whisper-large-enc vs whisper-large-v1-dec": {
+      "score": 0.2799422483604808,
+      "ci95": 0.0007767503095803481
+    },
+    "whisper-large-enc vs parakeet-ctc-0.6b": {
+      "score": 0.11192977857114718,
+      "ci95": 0.0003232219758179973
+    },
+    "whisper-large-enc vs mimi": {
+      "score": 0.037324323548540685,
+      "ci95": 0.0004939537652985861
+    },
+    "whisper-large-enc vs kaldi-librispeech": {
+      "score": 0.07963373341041133,
+      "ci95": 0.00022638473519389406
+    },
+    "whisper-large-enc vs kaldi-librispeech-penult": {
+      "score": 0.07512791569576496,
+      "ci95": 0.00022403897395142596
+    },
+    "whisper-large-enc vs kaldi-librispeech-antepen": {
+      "score": 0.06331048730235789,
+      "ci95": 0.0002423566881767216
+    },
+    "whisper-large-enc vs wav2vec2-base": {
+      "score": 0.08437793284438609,
+      "ci95": 0.0004128042862007651
+    },
+    "whisper-large-enc vs babylm-125m": {
+      "score": 0.19762353874224114,
+      "ci95": 0.00046262692076713024
+    },
+    "whisper-large-enc vs opt-125m": {
+      "score": 0.22093603549127933,
+      "ci95": 0.000583001177145656
+    },
+    "whisper-large-enc vs babylm-350m": {
+      "score": 0.19279150811689122,
+      "ci95": 0.00047621748658655645
+    },
+    "whisper-large-enc vs babylm-1.3b": {
+      "score": 0.1920574513826534,
+      "ci95": 0.0004857261729344587
+    },
+    "whisper-large-enc vs pythia-160m": {
+      "score": 0.16019674927901123,
+      "ci95": 0.0005840154909428277
+    },
+    "whisper-large-enc vs olmo-7b": {
+      "score": 0.22323305265602428,
+      "ci95": 0.0006806451730140742
+    },
+    "whisper-large-enc vs pythia-6.9b": {
+      "score": 0.16051147229487012,
+      "ci95": 0.000562527916689457
+    },
+    "whisper-large-v2-enc vs whisper-large-v1-enc": {
+      "score": 0.766749845138056,
+      "ci95": 0.00031054440094016193
+    },
+    "whisper-large-v2-enc vs whisper-base-dec": {
+      "score": 0.20009687360227021,
+      "ci95": 0.0006927799657189608
+    },
+    "whisper-large-v2-enc vs whisper-small-dec": {
+      "score": 0.341584643371348,
+      "ci95": 0.0009043273100537389
+    },
+    "whisper-large-v2-enc vs whisper-medium-dec": {
+      "score": 0.3799166060280001,
+      "ci95": 0.0006749230338604722
+    },
+    "whisper-large-v2-enc vs whisper-large-dec": {
+      "score": 0.2035627458797137,
+      "ci95": 0.0005083504755502516
+    },
+    "whisper-large-v2-enc vs whisper-large-v2-dec": {
+      "score": 0.4133307694230373,
+      "ci95": 0.0007033718250518712
+    },
+    "whisper-large-v2-enc vs whisper-large-v1-dec": {
+      "score": 0.24875596021553367,
+      "ci95": 0.0006142346643497249
+    },
+    "whisper-large-v2-enc vs parakeet-ctc-0.6b": {
+      "score": 0.20737273469139597,
+      "ci95": 0.0004691043695815301
+    },
+    "whisper-large-v2-enc vs mimi": {
+      "score": 0.046335395354748905,
+      "ci95": 0.000722151075860154
+    },
+    "whisper-large-v2-enc vs kaldi-librispeech": {
+      "score": 0.15814676652273044,
+      "ci95": 0.0003278823361356553
+    },
+    "whisper-large-v2-enc vs kaldi-librispeech-penult": {
+      "score": 0.14768450206363384,
+      "ci95": 0.0003181974039590071
+    },
+    "whisper-large-v2-enc vs kaldi-librispeech-antepen": {
+      "score": 0.1247592070714651,
+      "ci95": 0.00036057818069015296
+    },
+    "whisper-large-v2-enc vs wav2vec2-base": {
+      "score": 0.13631296399556095,
+      "ci95": 0.0004338093491267517
+    },
+    "whisper-large-v2-enc vs babylm-125m": {
+      "score": 0.2619849571208652,
+      "ci95": 0.0006113033648321285
+    },
+    "whisper-large-v2-enc vs opt-125m": {
+      "score": 0.25848158420756223,
+      "ci95": 0.0006195822987328395
+    },
+    "whisper-large-v2-enc vs babylm-350m": {
+      "score": 0.25911985636994356,
+      "ci95": 0.0006368962965865874
+    },
+    "whisper-large-v2-enc vs babylm-1.3b": {
+      "score": 0.2572523313267154,
+      "ci95": 0.0006749924035216362
+    },
+    "whisper-large-v2-enc vs pythia-160m": {
+      "score": 0.20926095779692697,
+      "ci95": 0.0006757933507413462
+    },
+    "whisper-large-v2-enc vs olmo-7b": {
+      "score": 0.25950493423198917,
+      "ci95": 0.0007006753406501756
+    },
+    "whisper-large-v2-enc vs pythia-6.9b": {
+      "score": 0.20513118831726096,
+      "ci95": 0.0006997904570909519
+    },
+    "whisper-large-v1-enc vs whisper-base-dec": {
+      "score": 0.17760734889246,
+      "ci95": 0.0007260144324044977
+    },
+    "whisper-large-v1-enc vs whisper-small-dec": {
+      "score": 0.3758744794689494,
+      "ci95": 0.0010219162596902705
+    },
+    "whisper-large-v1-enc vs whisper-medium-dec": {
+      "score": 0.4829905699919245,
+      "ci95": 0.0008381697895060751
+    },
+    "whisper-large-v1-enc vs whisper-large-dec": {
+      "score": 0.17682618758385565,
+      "ci95": 0.0004936886648074564
+    },
+    "whisper-large-v1-enc vs whisper-large-v2-dec": {
+      "score": 0.4906460021619948,
+      "ci95": 0.0008028656548850531
+    },
+    "whisper-large-v1-enc vs whisper-large-v1-dec": {
+      "score": 0.2629386214244444,
+      "ci95": 0.0007106082385418906
+    },
+    "whisper-large-v1-enc vs parakeet-ctc-0.6b": {
+      "score": 0.1305377397960904,
+      "ci95": 0.0004032331687831965
+    },
+    "whisper-large-v1-enc vs mimi": {
+      "score": 0.04290048399152781,
+      "ci95": 0.0006044343250100307
+    },
+    "whisper-large-v1-enc vs kaldi-librispeech": {
+      "score": 0.09097720842754631,
+      "ci95": 0.0002422734116898623
+    },
+    "whisper-large-v1-enc vs kaldi-librispeech-penult": {
+      "score": 0.0845193503691166,
+      "ci95": 0.0002354209622112329
+    },
+    "whisper-large-v1-enc vs kaldi-librispeech-antepen": {
+      "score": 0.06978005982156703,
+      "ci95": 0.0002536846118717705
+    },
+    "whisper-large-v1-enc vs wav2vec2-base": {
+      "score": 0.09511332163482172,
+      "ci95": 0.00041477685347404117
+    },
+    "whisper-large-v1-enc vs babylm-125m": {
+      "score": 0.20590283789004699,
+      "ci95": 0.0005185620175013195
+    },
+    "whisper-large-v1-enc vs opt-125m": {
+      "score": 0.22225152943380802,
+      "ci95": 0.0006103636368446896
+    },
+    "whisper-large-v1-enc vs babylm-350m": {
+      "score": 0.20160094620798935,
+      "ci95": 0.0005392240250474428
+    },
+    "whisper-large-v1-enc vs babylm-1.3b": {
+      "score": 0.2034415300444967,
+      "ci95": 0.0005710367207669443
+    },
+    "whisper-large-v1-enc vs pythia-160m": {
+      "score": 0.1622042475211455,
+      "ci95": 0.0006502653034367053
+    },
+    "whisper-large-v1-enc vs olmo-7b": {
+      "score": 0.21483482132136786,
+      "ci95": 0.0006942460619882342
+    },
+    "whisper-large-v1-enc vs pythia-6.9b": {
+      "score": 0.15969811276757276,
+      "ci95": 0.0006233522056845118
+    },
+    "whisper-base-dec vs whisper-small-dec": {
+      "score": 0.33362510835117465,
+      "ci95": 0.0011596899243038225
+    },
+    "whisper-base-dec vs whisper-medium-dec": {
+      "score": 0.13393475119494253,
+      "ci95": 0.00037594597272876985
+    },
+    "whisper-base-dec vs whisper-large-dec": {
+      "score": 0.2068524378172474,
+      "ci95": 0.0006375281514928991
+    },
+    "whisper-base-dec vs whisper-large-v2-dec": {
+      "score": 0.21071056583508205,
+      "ci95": 0.0010010927571383918
+    },
+    "whisper-base-dec vs whisper-large-v1-dec": {
+      "score": 0.16552881255602403,
+      "ci95": 0.0006474362853784174
+    },
+    "whisper-base-dec vs parakeet-ctc-0.6b": {
+      "score": 0.1450351925379742,
+      "ci95": 0.000415435038417821
+    },
+    "whisper-base-dec vs mimi": {
+      "score": 0.04064850996283227,
+      "ci95": 0.0007694942895981905
+    },
+    "whisper-base-dec vs kaldi-librispeech": {
+      "score": 0.036578342369917555,
+      "ci95": 0.00026195645549606923
+    },
+    "whisper-base-dec vs kaldi-librispeech-penult": {
+      "score": 0.03557452866501688,
+      "ci95": 0.0002618212070631691
+    },
+    "whisper-base-dec vs kaldi-librispeech-antepen": {
+      "score": 0.03191903001687524,
+      "ci95": 0.0003305189924517255
+    },
+    "whisper-base-dec vs wav2vec2-base": {
+      "score": 0.030095461093233786,
+      "ci95": 0.000318649884139146
+    },
+    "whisper-base-dec vs babylm-125m": {
+      "score": 0.33416965712822305,
+      "ci95": 0.0005023724866278916
+    },
+    "whisper-base-dec vs opt-125m": {
+      "score": 0.3080235673220974,
+      "ci95": 0.0005772143296666107
+    },
+    "whisper-base-dec vs babylm-350m": {
+      "score": 0.34429986475631796,
+      "ci95": 0.0005260362832072862
+    },
+    "whisper-base-dec vs babylm-1.3b": {
+      "score": 0.30595284170530634,
+      "ci95": 0.0005385238526954736
+    },
+    "whisper-base-dec vs pythia-160m": {
+      "score": 0.4405277727802494,
+      "ci95": 0.0012044241848194052
+    },
+    "whisper-base-dec vs olmo-7b": {
+      "score": 0.27233207249570224,
+      "ci95": 0.0006524229373286462
+    },
+    "whisper-base-dec vs pythia-6.9b": {
+      "score": 0.34332558231288335,
+      "ci95": 0.001287557375697505
+    },
+    "whisper-small-dec vs whisper-medium-dec": {
+      "score": 0.22964976162622514,
+      "ci95": 0.0005838841572708191
+    },
+    "whisper-small-dec vs whisper-large-dec": {
+      "score": 0.2799975473094336,
+      "ci95": 0.000685512143815201
+    },
+    "whisper-small-dec vs whisper-large-v2-dec": {
+      "score": 0.49855540378696434,
+      "ci95": 0.0012888161952754487
+    },
+    "whisper-small-dec vs whisper-large-v1-dec": {
+      "score": 0.23385285773721468,
+      "ci95": 0.0006884789702355816
+    },
+    "whisper-small-dec vs parakeet-ctc-0.6b": {
+      "score": 0.0904582719772046,
+      "ci95": 0.000614480206053605
+    },
+    "whisper-small-dec vs mimi": {
+      "score": 0.07106564121427017,
+      "ci95": 0.00103254012176556
+    },
+    "whisper-small-dec vs kaldi-librispeech": {
+      "score": 0.01741975819928214,
+      "ci95": 0.00022186446214150915
+    },
+    "whisper-small-dec vs kaldi-librispeech-penult": {
+      "score": 0.017141215309500715,
+      "ci95": 0.00022652214812436143
+    },
+    "whisper-small-dec vs kaldi-librispeech-antepen": {
+      "score": 0.015990737561321,
+      "ci95": 0.00026903475168677763
+    },
+    "whisper-small-dec vs wav2vec2-base": {
+      "score": 0.050821663367934845,
+      "ci95": 0.0006288664390202551
+    },
+    "whisper-small-dec vs babylm-125m": {
+      "score": 0.2516206270102006,
+      "ci95": 0.0004547058679674981
+    },
+    "whisper-small-dec vs opt-125m": {
+      "score": 0.27185941457737045,
+      "ci95": 0.0004936419541456288
+    },
+    "whisper-small-dec vs babylm-350m": {
+      "score": 0.2550321461940318,
+      "ci95": 0.00048626997303316603
+    },
+    "whisper-small-dec vs babylm-1.3b": {
+      "score": 0.2507937416196254,
+      "ci95": 0.0005406836315444487
+    },
+    "whisper-small-dec vs pythia-160m": {
+      "score": 0.3061233939381257,
+      "ci95": 0.0010115251191197712
+    },
+    "whisper-small-dec vs olmo-7b": {
+      "score": 0.28051867531460745,
+      "ci95": 0.0005977949048521325
+    },
+    "whisper-small-dec vs pythia-6.9b": {
+      "score": 0.2736188593848632,
+      "ci95": 0.0010049563897940057
+    },
+    "whisper-medium-dec vs whisper-large-dec": {
+      "score": 0.3851025259137289,
+      "ci95": 0.0007576161270182766
+    },
+    "whisper-medium-dec vs whisper-large-v2-dec": {
+      "score": 0.436094391200189,
+      "ci95": 0.0008881892268729051
+    },
+    "whisper-medium-dec vs whisper-large-v1-dec": {
+      "score": 0.44848044887365385,
+      "ci95": 0.0008095450247802789
+    },
+    "whisper-medium-dec vs parakeet-ctc-0.6b": {
+      "score": 0.04679960713420741,
+      "ci95": 0.0003014283234995873
+    },
+    "whisper-medium-dec vs mimi": {
+      "score": 0.014911665868717717,
+      "ci95": 0.0002468642433656006
+    },
+    "whisper-medium-dec vs kaldi-librispeech": {
+      "score": 0.011397428595254342,
+      "ci95": 0.0001473320450750672
+    },
+    "whisper-medium-dec vs kaldi-librispeech-penult": {
+      "score": 0.011426995475147516,
+      "ci95": 0.00015105568050916988
+    },
+    "whisper-medium-dec vs kaldi-librispeech-antepen": {
+      "score": 0.009601269626867756,
+      "ci95": 0.00014973174970084332
+    },
+    "whisper-medium-dec vs wav2vec2-base": {
+      "score": 0.040889076598404454,
+      "ci95": 0.00034832958443093575
+    },
+    "whisper-medium-dec vs babylm-125m": {
+      "score": 0.1642548596622621,
+      "ci95": 0.0005534932370156691
+    },
+    "whisper-medium-dec vs opt-125m": {
+      "score": 0.20004132830316743,
+      "ci95": 0.000590346104087754
+    },
+    "whisper-medium-dec vs babylm-350m": {
+      "score": 0.15758164731666857,
+      "ci95": 0.0005410301986407559
+    },
+    "whisper-medium-dec vs babylm-1.3b": {
+      "score": 0.1510421139241404,
+      "ci95": 0.0005565606049732039
+    },
+    "whisper-medium-dec vs pythia-160m": {
+      "score": 0.1573805679614033,
+      "ci95": 0.0004461782110468419
+    },
+    "whisper-medium-dec vs olmo-7b": {
+      "score": 0.2206445326487971,
+      "ci95": 0.0006704121769206591
+    },
+    "whisper-medium-dec vs pythia-6.9b": {
+      "score": 0.18336991691310958,
+      "ci95": 0.0006354031931812266
+    },
+    "whisper-large-dec vs whisper-large-v2-dec": {
+      "score": 0.31299981615515055,
+      "ci95": 0.0006720979850564863
+    },
+    "whisper-large-dec vs whisper-large-v1-dec": {
+      "score": 0.4565547136392757,
+      "ci95": 0.0007923782348407151
+    },
+    "whisper-large-dec vs parakeet-ctc-0.6b": {
+      "score": 0.07808360429642808,
+      "ci95": 0.0003520271789898105
+    },
+    "whisper-large-dec vs mimi": {
+      "score": 0.017933730293092708,
+      "ci95": 0.0003443477914091277
+    },
+    "whisper-large-dec vs kaldi-librispeech": {
+      "score": 0.020511665433529724,
+      "ci95": 0.00017058019691472076
+    },
+    "whisper-large-dec vs kaldi-librispeech-penult": {
+      "score": 0.020965924789923488,
+      "ci95": 0.000178858663988825
+    },
+    "whisper-large-dec vs kaldi-librispeech-antepen": {
+      "score": 0.017399269686960726,
+      "ci95": 0.00016952656068208543
+    },
+    "whisper-large-dec vs wav2vec2-base": {
+      "score": 0.023739590415571676,
+      "ci95": 0.0002187497502011386
+    },
+    "whisper-large-dec vs babylm-125m": {
+      "score": 0.25225975134230444,
+      "ci95": 0.0006372101997221416
+    },
+    "whisper-large-dec vs opt-125m": {
+      "score": 0.2815106444964352,
+      "ci95": 0.0006127840551059299
+    },
+    "whisper-large-dec vs babylm-350m": {
+      "score": 0.25028562309726354,
+      "ci95": 0.0006555616654598273
+    },
+    "whisper-large-dec vs babylm-1.3b": {
+      "score": 0.22964197839334935,
+      "ci95": 0.0006481283391429351
+    },
+    "whisper-large-dec vs pythia-160m": {
+      "score": 0.2887272507904762,
+      "ci95": 0.0006508828119536212
+    },
+    "whisper-large-dec vs olmo-7b": {
+      "score": 0.3312689876593048,
+      "ci95": 0.0008084038022190967
+    },
+    "whisper-large-dec vs pythia-6.9b": {
+      "score": 0.29471791122724134,
+      "ci95": 0.0007577344923683064
+    },
+    "whisper-large-v2-dec vs whisper-large-v1-dec": {
+      "score": 0.3547012379393536,
+      "ci95": 0.00099224283089705
+    },
+    "whisper-large-v2-dec vs parakeet-ctc-0.6b": {
+      "score": 0.055252608241761925,
+      "ci95": 0.0004185247363445521
+    },
+    "whisper-large-v2-dec vs mimi": {
+      "score": 0.04101279488257181,
+      "ci95": 0.0005902430624637754
+    },
+    "whisper-large-v2-dec vs kaldi-librispeech": {
+      "score": 0.01350837415951275,
+      "ci95": 0.0001557519122536897
+    },
+    "whisper-large-v2-dec vs kaldi-librispeech-penult": {
+      "score": 0.013726070966717692,
+      "ci95": 0.00016223454817933193
+    },
+    "whisper-large-v2-dec vs kaldi-librispeech-antepen": {
+      "score": 0.011998583275444804,
+      "ci95": 0.0001699790972845039
+    },
+    "whisper-large-v2-dec vs wav2vec2-base": {
+      "score": 0.04900757344321267,
+      "ci95": 0.0005350863826441144
+    },
+    "whisper-large-v2-dec vs babylm-125m": {
+      "score": 0.19401890039004094,
+      "ci95": 0.0005274966063661451
+    },
+    "whisper-large-v2-dec vs opt-125m": {
+      "score": 0.22650660618945553,
+      "ci95": 0.000547182103671311
+    },
+    "whisper-large-v2-dec vs babylm-350m": {
+      "score": 0.19153115396152964,
+      "ci95": 0.0005733352067855851
+    },
+    "whisper-large-v2-dec vs babylm-1.3b": {
+      "score": 0.19643933560079627,
+      "ci95": 0.0006240283552318934
+    },
+    "whisper-large-v2-dec vs pythia-160m": {
+      "score": 0.22104396081806427,
+      "ci95": 0.0008897385110685214
+    },
+    "whisper-large-v2-dec vs olmo-7b": {
+      "score": 0.2411823787048837,
+      "ci95": 0.0006530721164890228
+    },
+    "whisper-large-v2-dec vs pythia-6.9b": {
+      "score": 0.21100542963982427,
+      "ci95": 0.0007662727941879652
+    },
+    "whisper-large-v1-dec vs parakeet-ctc-0.6b": {
+      "score": 0.05846420464637744,
+      "ci95": 0.0002804995368681595
+    },
+    "whisper-large-v1-dec vs mimi": {
+      "score": 0.01487122464386025,
+      "ci95": 0.00029695089701271674
+    },
+    "whisper-large-v1-dec vs kaldi-librispeech": {
+      "score": 0.01709913867168467,
+      "ci95": 0.00016466621067824237
+    },
+    "whisper-large-v1-dec vs kaldi-librispeech-penult": {
+      "score": 0.01709345884704565,
+      "ci95": 0.00017383260617656786
+    },
+    "whisper-large-v1-dec vs kaldi-librispeech-antepen": {
+      "score": 0.014414004805222142,
+      "ci95": 0.00016761978188473427
+    },
+    "whisper-large-v1-dec vs wav2vec2-base": {
+      "score": 0.026547579742741138,
+      "ci95": 0.0002407604645807023
+    },
+    "whisper-large-v1-dec vs babylm-125m": {
+      "score": 0.21264721716250243,
+      "ci95": 0.0006595687723400799
+    },
+    "whisper-large-v1-dec vs opt-125m": {
+      "score": 0.24804616482587746,
+      "ci95": 0.0006768517546405033
+    },
+    "whisper-large-v1-dec vs babylm-350m": {
+      "score": 0.20831684634744999,
+      "ci95": 0.0006707898693135936
+    },
+    "whisper-large-v1-dec vs babylm-1.3b": {
+      "score": 0.1927084513780807,
+      "ci95": 0.0006893473374707075
+    },
+    "whisper-large-v1-dec vs pythia-160m": {
+      "score": 0.23805368760238035,
+      "ci95": 0.0006763463874700571
+    },
+    "whisper-large-v1-dec vs olmo-7b": {
+      "score": 0.28022446334646506,
+      "ci95": 0.0008203359104290808
+    },
+    "whisper-large-v1-dec vs pythia-6.9b": {
+      "score": 0.24983642387348515,
+      "ci95": 0.0007355911261421811
+    },
+    "parakeet-ctc-0.6b vs mimi": {
+      "score": 0.02636454999284311,
+      "ci95": 0.000575542988871096
+    },
+    "parakeet-ctc-0.6b vs kaldi-librispeech": {
+      "score": 0.09869873771432844,
+      "ci95": 0.0003080179214890594
+    },
+    "parakeet-ctc-0.6b vs kaldi-librispeech-penult": {
+      "score": 0.09193941512327385,
+      "ci95": 0.0002939243676527023
+    },
+    "parakeet-ctc-0.6b vs kaldi-librispeech-antepen": {
+      "score": 0.07683428794555851,
+      "ci95": 0.0002848931713088928
+    },
+    "parakeet-ctc-0.6b vs wav2vec2-base": {
+      "score": 0.05024133666175954,
+      "ci95": 0.00020483100485896855
+    },
+    "parakeet-ctc-0.6b vs babylm-125m": {
+      "score": 0.1724680046041276,
+      "ci95": 0.0005200878553254195
+    },
+    "parakeet-ctc-0.6b vs opt-125m": {
+      "score": 0.14089943626397303,
+      "ci95": 0.0004566231996065112
+    },
+    "parakeet-ctc-0.6b vs babylm-350m": {
+      "score": 0.17577931223178142,
+      "ci95": 0.0005255965447554201
+    },
+    "parakeet-ctc-0.6b vs babylm-1.3b": {
+      "score": 0.1658235517898,
+      "ci95": 0.0005537145594019313
+    },
+    "parakeet-ctc-0.6b vs pythia-160m": {
+      "score": 0.14352355583263357,
+      "ci95": 0.0005051298146420311
+    },
+    "parakeet-ctc-0.6b vs olmo-7b": {
+      "score": 0.1183704506211636,
+      "ci95": 0.0004731409810151037
+    },
+    "parakeet-ctc-0.6b vs pythia-6.9b": {
+      "score": 0.12187481699413151,
+      "ci95": 0.0005671967679142486
+    },
+    "mimi vs kaldi-librispeech": {
+      "score": 0.00923221864395213,
+      "ci95": 0.0002335784809087838
+    },
+    "mimi vs kaldi-librispeech-penult": {
+      "score": 0.008628694320612178,
+      "ci95": 0.00022548296718894373
+    },
+    "mimi vs kaldi-librispeech-antepen": {
+      "score": 0.010477960613605527,
+      "ci95": 0.0003147552652832174
+    },
+    "mimi vs wav2vec2-base": {
+      "score": 0.007408841460631958,
+      "ci95": 0.00017786899768872395
+    },
+    "mimi vs babylm-125m": {
+      "score": 0.016563449225485468,
+      "ci95": 0.00027773248167931773
+    },
+    "mimi vs opt-125m": {
+      "score": 0.018781829524821155,
+      "ci95": 0.00031624219232384673
+    },
+    "mimi vs babylm-350m": {
+      "score": 0.018029884047681972,
+      "ci95": 0.0003107411288286743
+    },
+    "mimi vs babylm-1.3b": {
+      "score": 0.02401679685565996,
+      "ci95": 0.00043195421549125995
+    },
+    "mimi vs pythia-160m": {
+      "score": 0.032852306563093084,
+      "ci95": 0.000638361966536695
+    },
+    "mimi vs olmo-7b": {
+      "score": 0.022022448078496844,
+      "ci95": 0.00038309361475548376
+    },
+    "mimi vs pythia-6.9b": {
+      "score": 0.03675874825280484,
+      "ci95": 0.0007218324223725014
+    },
+    "kaldi-librispeech vs kaldi-librispeech-penult": {
+      "score": 0.8964071063531066,
+      "ci95": 0.00021225768408193393
+    },
+    "kaldi-librispeech vs kaldi-librispeech-antepen": {
+      "score": 0.7203991334067675,
+      "ci95": 0.00048785214397855677
+    },
+    "kaldi-librispeech vs wav2vec2-base": {
+      "score": 0.15535858034478642,
+      "ci95": 0.0005544938642067558
+    },
+    "kaldi-librispeech vs babylm-125m": {
+      "score": 0.034046346777245766,
+      "ci95": 0.0002151997455999156
+    },
+    "kaldi-librispeech vs opt-125m": {
+      "score": 0.027799464254856993,
+      "ci95": 0.00019777063380748802
+    },
+    "kaldi-librispeech vs babylm-350m": {
+      "score": 0.03431025689365347,
+      "ci95": 0.00021812696596803691
+    },
+    "kaldi-librispeech vs babylm-1.3b": {
+      "score": 0.0351673704544948,
+      "ci95": 0.0002387643463581331
+    },
+    "kaldi-librispeech vs pythia-160m": {
+      "score": 0.02726540319721145,
+      "ci95": 0.00024038264302209497
+    },
+    "kaldi-librispeech vs olmo-7b": {
+      "score": 0.024814897265736834,
+      "ci95": 0.00020071094359661238
+    },
+    "kaldi-librispeech vs pythia-6.9b": {
+      "score": 0.02434536226498393,
+      "ci95": 0.00024003853446547056
+    },
+    "kaldi-librispeech-penult vs kaldi-librispeech-antepen": {
+      "score": 0.8499352998129455,
+      "ci95": 0.000322052601534236
+    },
+    "kaldi-librispeech-penult vs wav2vec2-base": {
+      "score": 0.13550902476748494,
+      "ci95": 0.00048482948901967365
+    },
+    "kaldi-librispeech-penult vs babylm-125m": {
+      "score": 0.032374206473978887,
+      "ci95": 0.0002120462959877014
+    },
+    "kaldi-librispeech-penult vs opt-125m": {
+      "score": 0.02669496323849792,
+      "ci95": 0.0001977640026417904
+    },
+    "kaldi-librispeech-penult vs babylm-350m": {
+      "score": 0.03248507020749151,
+      "ci95": 0.0002148623253613318
+    },
+    "kaldi-librispeech-penult vs babylm-1.3b": {
+      "score": 0.03339818045182335,
+      "ci95": 0.00023826123608556288
+    },
+    "kaldi-librispeech-penult vs pythia-160m": {
+      "score": 0.026689725106834334,
+      "ci95": 0.00023919962033622116
+    },
+    "kaldi-librispeech-penult vs olmo-7b": {
+      "score": 0.024760896158335564,
+      "ci95": 0.00021055984457773696
+    },
+    "kaldi-librispeech-penult vs pythia-6.9b": {
+      "score": 0.023726956322495652,
+      "ci95": 0.00024069118986284514
+    },
+    "kaldi-librispeech-antepen vs wav2vec2-base": {
+      "score": 0.10019005456298846,
+      "ci95": 0.00040390959852862264
+    },
+    "kaldi-librispeech-antepen vs babylm-125m": {
+      "score": 0.02815269626950703,
+      "ci95": 0.00020656234758340697
+    },
+    "kaldi-librispeech-antepen vs opt-125m": {
+      "score": 0.023503735978734834,
+      "ci95": 0.000203394925346161
+    },
+    "kaldi-librispeech-antepen vs babylm-350m": {
+      "score": 0.028337114678135742,
+      "ci95": 0.00021132386521405987
+    },
+    "kaldi-librispeech-antepen vs babylm-1.3b": {
+      "score": 0.029639520505461335,
+      "ci95": 0.00024177949655022706
+    },
+    "kaldi-librispeech-antepen vs pythia-160m": {
+      "score": 0.025715546738871647,
+      "ci95": 0.00030032576996618163
+    },
+    "kaldi-librispeech-antepen vs olmo-7b": {
+      "score": 0.022774950686524287,
+      "ci95": 0.00022126787228495047
+    },
+    "kaldi-librispeech-antepen vs pythia-6.9b": {
+      "score": 0.023263665179414184,
+      "ci95": 0.00030803646565200006
+    },
+    "wav2vec2-base vs babylm-125m": {
+      "score": 0.026596730347955472,
+      "ci95": 0.00022137751804665343
+    },
+    "wav2vec2-base vs opt-125m": {
+      "score": 0.02945286210272913,
+      "ci95": 0.00026931937832919134
+    },
+    "wav2vec2-base vs babylm-350m": {
+      "score": 0.02641830634318256,
+      "ci95": 0.0002166673130752533
+    },
+    "wav2vec2-base vs babylm-1.3b": {
+      "score": 0.027009001780126433,
+      "ci95": 0.00022355745584215253
+    },
+    "wav2vec2-base vs pythia-160m": {
+      "score": 0.020277064592788892,
+      "ci95": 0.00023032398717462625
+    },
+    "wav2vec2-base vs olmo-7b": {
+      "score": 0.029258215024770343,
+      "ci95": 0.0002890409094082674
+    },
+    "wav2vec2-base vs pythia-6.9b": {
+      "score": 0.020493241570766717,
+      "ci95": 0.0002124178153581861
+    },
+    "babylm-125m vs opt-125m": {
+      "score": 0.6298913198004653,
+      "ci95": 0.0006317646609073065
+    },
+    "babylm-125m vs babylm-350m": {
+      "score": 0.846741699493558,
+      "ci95": 0.0003126763966360044
+    },
+    "babylm-125m vs babylm-1.3b": {
+      "score": 0.7132682878883672,
+      "ci95": 0.0005290255278460635
+    },
+    "babylm-125m vs pythia-160m": {
+      "score": 0.5650894643287914,
+      "ci95": 0.0006959302356409077
+    },
+    "babylm-125m vs olmo-7b": {
+      "score": 0.555892779803339,
+      "ci95": 0.0007680645938811243
+    },
+    "babylm-125m vs pythia-6.9b": {
+      "score": 0.5080373368585358,
+      "ci95": 0.0008070585492381475
+    },
+    "opt-125m vs babylm-350m": {
+      "score": 0.6168801216660875,
+      "ci95": 0.0006397077231659285
+    },
+    "opt-125m vs babylm-1.3b": {
+      "score": 0.5340709237056012,
+      "ci95": 0.0007672778047579005
+    },
+    "opt-125m vs pythia-160m": {
+      "score": 0.6597887352032378,
+      "ci95": 0.0006915624352345656
+    },
+    "opt-125m vs olmo-7b": {
+      "score": 0.7175978724301361,
+      "ci95": 0.00055874757691148
+    },
+    "opt-125m vs pythia-6.9b": {
+      "score": 0.6821541267315805,
+      "ci95": 0.0007050111224654545
+    },
+    "babylm-350m vs babylm-1.3b": {
+      "score": 0.7164120231617386,
+      "ci95": 0.0005113622620226339
+    },
+    "babylm-350m vs pythia-160m": {
+      "score": 0.5647265403220136,
+      "ci95": 0.0006805815843052899
+    },
+    "babylm-350m vs olmo-7b": {
+      "score": 0.5396653129421654,
+      "ci95": 0.0007642329799763395
+    },
+    "babylm-350m vs pythia-6.9b": {
+      "score": 0.49875402240884065,
+      "ci95": 0.0007752448725737865
+    },
+    "babylm-1.3b vs pythia-160m": {
+      "score": 0.4891294217696877,
+      "ci95": 0.0006767655863225646
+    },
+    "babylm-1.3b vs olmo-7b": {
+      "score": 0.48401115985240567,
+      "ci95": 0.0008297538342754941
+    },
+    "babylm-1.3b vs pythia-6.9b": {
+      "score": 0.44977811944418616,
+      "ci95": 0.0008151073401640282
+    },
+    "pythia-160m vs olmo-7b": {
+      "score": 0.6218246873279677,
+      "ci95": 0.00058332198904476
+    },
+    "pythia-160m vs pythia-6.9b": {
+      "score": 0.7157552174868987,
+      "ci95": 0.0005923729524407606
+    },
+    "olmo-7b vs pythia-6.9b": {
+      "score": 0.7760068029784879,
+      "ci95": 0.0006165181858644588
+    }
+  },
+  "cka_matrix": [
+    [
+      1.0,
+      0.8046429961307087,
+      0.8409283101660955,
+      0.7707633679245793,
+      0.7675918542317581,
+      0.7859357655657345,
+      0.15525677784080594,
+      0.33376494783782773,
+      0.4426829543861767,
+      0.1526770792900656,
+      0.4409889070024148,
+      0.23942233124209342,
+      0.12626301317709013,
+      0.039917655811309405,
+      0.11476334704042047,
+      0.10678565766400917,
+      0.08803685991587225,
+      0.1107916167643315,
+      0.1795150584301459,
+      0.1898592793234646,
+      0.17570929555167694,
+      0.17997315431347016,
+      0.136394531519065,
+      0.1898590315876083,
+      0.13869082817868175
+    ],
+    [
+      0.8046429961307087,
+      1.0,
+      0.9576567927623291,
+      0.797735094366399,
+      0.7251711568271665,
+      0.94837867749645,
+      0.15787841149808426,
+      0.3569966140183712,
+      0.4689871781843355,
+      0.1576063167943892,
+      0.4716244483392423,
+      0.2432551943547436,
+      0.10877408173368107,
+      0.039258469975895056,
+      0.0796974664234972,
+      0.07452170939626553,
+      0.061805091369173386,
+      0.08747615926059703,
+      0.1806396855560297,
+      0.19762746385836183,
+      0.17600074865108684,
+      0.17933628845381744,
+      0.13796549897267013,
+      0.1941142736684998,
+      0.13860282918980574
+    ],
+    [
+      0.8409283101660955,
+      0.9576567927623291,
+      1.0,
+      0.8614386371008629,
+      0.7531311786649206,
+      0.9508373309678462,
+      0.15950616804364087,
+      0.3594872201786984,
+      0.5086882384066319,
+      0.16444786381060064,
+      0.501658767099954,
+      0.2667294073574624,
+      0.10342802931039442,
+      0.03795246385867667,
+      0.07276302449163433,
+      0.06774768398474995,
+      0.05631700468042211,
+      0.08390737909768423,
+      0.1825687087074498,
+      0.2026759748615896,
+      0.17760461673744474,
+      0.18032494238172267,
+      0.1408465495433976,
+      0.1968078358896587,
+      0.14115207751453485
+    ],
+    [
+      0.7707633679245793,
+      0.797735094366399,
+      0.8614386371008629,
+      1.0,
+      0.839933159443701,
+      0.8426720603772875,
+      0.1681697700923389,
+      0.3698275399087562,
+      0.4738302378149999,
+      0.19499667925146547,
+      0.4977689438258447,
+      0.2799422483604808,
+      0.11192977857114718,
+      0.037324323548540685,
+      0.07963373341041133,
+      0.07512791569576496,
+      0.06331048730235789,
+      0.08437793284438609,
+      0.19762353874224114,
+      0.22093603549127933,
+      0.19279150811689122,
+      0.1920574513826534,
+      0.16019674927901123,
+      0.22323305265602428,
+      0.16051147229487012
+    ],
+    [
+      0.7675918542317581,
+      0.7251711568271665,
+      0.7531311786649206,
+      0.839933159443701,
+      1.0,
+      0.766749845138056,
+      0.20009687360227021,
+      0.341584643371348,
+      0.3799166060280001,
+      0.2035627458797137,
+      0.4133307694230373,
+      0.24875596021553367,
+      0.20737273469139597,
+      0.046335395354748905,
+      0.15814676652273044,
+      0.14768450206363384,
+      0.1247592070714651,
+      0.13631296399556095,
+      0.2619849571208652,
+      0.25848158420756223,
+      0.25911985636994356,
+      0.2572523313267154,
+      0.20926095779692697,
+      0.25950493423198917,
+      0.20513118831726096
+    ],
+    [
+      0.7859357655657345,
+      0.94837867749645,
+      0.9508373309678462,
+      0.8426720603772875,
+      0.766749845138056,
+      1.0,
+      0.17760734889246,
+      0.3758744794689494,
+      0.4829905699919245,
+      0.17682618758385565,
+      0.4906460021619948,
+      0.2629386214244444,
+      0.1305377397960904,
+      0.04290048399152781,
+      0.09097720842754631,
+      0.0845193503691166,
+      0.06978005982156703,
+      0.09511332163482172,
+      0.20590283789004699,
+      0.22225152943380802,
+      0.20160094620798935,
+      0.2034415300444967,
+      0.1622042475211455,
+      0.21483482132136786,
+      0.15969811276757276
+    ],
+    [
+      0.15525677784080594,
+      0.15787841149808426,
+      0.15950616804364087,
+      0.1681697700923389,
+      0.20009687360227021,
+      0.17760734889246,
+      1.0,
+      0.33362510835117465,
+      0.13393475119494253,
+      0.2068524378172474,
+      0.21071056583508205,
+      0.16552881255602403,
+      0.1450351925379742,
+      0.04064850996283227,
+      0.036578342369917555,
+      0.03557452866501688,
+      0.03191903001687524,
+      0.030095461093233786,
+      0.33416965712822305,
+      0.3080235673220974,
+      0.34429986475631796,
+      0.30595284170530634,
+      0.4405277727802494,
+      0.27233207249570224,
+      0.34332558231288335
+    ],
+    [
+      0.33376494783782773,
+      0.3569966140183712,
+      0.3594872201786984,
+      0.3698275399087562,
+      0.341584643371348,
+      0.3758744794689494,
+      0.33362510835117465,
+      1.0,
+      0.22964976162622514,
+      0.2799975473094336,
+      0.49855540378696434,
+      0.23385285773721468,
+      0.0904582719772046,
+      0.07106564121427017,
+      0.01741975819928214,
+      0.017141215309500715,
+      0.015990737561321,
+      0.050821663367934845,
+      0.2516206270102006,
+      0.27185941457737045,
+      0.2550321461940318,
+      0.2507937416196254,
+      0.3061233939381257,
+      0.28051867531460745,
+      0.2736188593848632
+    ],
+    [
+      0.4426829543861767,
+      0.4689871781843355,
+      0.5086882384066319,
+      0.4738302378149999,
+      0.3799166060280001,
+      0.4829905699919245,
+      0.13393475119494253,
+      0.22964976162622514,
+      1.0,
+      0.3851025259137289,
+      0.436094391200189,
+      0.44848044887365385,
+      0.04679960713420741,
+      0.014911665868717717,
+      0.011397428595254342,
+      0.011426995475147516,
+      0.009601269626867756,
+      0.040889076598404454,
+      0.1642548596622621,
+      0.20004132830316743,
+      0.15758164731666857,
+      0.1510421139241404,
+      0.1573805679614033,
+      0.2206445326487971,
+      0.18336991691310958
+    ],
+    [
+      0.1526770792900656,
+      0.1576063167943892,
+      0.16444786381060064,
+      0.19499667925146547,
+      0.2035627458797137,
+      0.17682618758385565,
+      0.2068524378172474,
+      0.2799975473094336,
+      0.3851025259137289,
+      1.0,
+      0.31299981615515055,
+      0.4565547136392757,
+      0.07808360429642808,
+      0.017933730293092708,
+      0.020511665433529724,
+      0.020965924789923488,
+      0.017399269686960726,
+      0.023739590415571676,
+      0.25225975134230444,
+      0.2815106444964352,
+      0.25028562309726354,
+      0.22964197839334935,
+      0.2887272507904762,
+      0.3312689876593048,
+      0.29471791122724134
+    ],
+    [
+      0.4409889070024148,
+      0.4716244483392423,
+      0.501658767099954,
+      0.4977689438258447,
+      0.4133307694230373,
+      0.4906460021619948,
+      0.21071056583508205,
+      0.49855540378696434,
+      0.436094391200189,
+      0.31299981615515055,
+      1.0,
+      0.3547012379393536,
+      0.055252608241761925,
+      0.04101279488257181,
+      0.01350837415951275,
+      0.013726070966717692,
+      0.011998583275444804,
+      0.04900757344321267,
+      0.19401890039004094,
+      0.22650660618945553,
+      0.19153115396152964,
+      0.19643933560079627,
+      0.22104396081806427,
+      0.2411823787048837,
+      0.21100542963982427
+    ],
+    [
+      0.23942233124209342,
+      0.2432551943547436,
+      0.2667294073574624,
+      0.2799422483604808,
+      0.24875596021553367,
+      0.2629386214244444,
+      0.16552881255602403,
+      0.23385285773721468,
+      0.44848044887365385,
+      0.4565547136392757,
+      0.3547012379393536,
+      1.0,
+      0.05846420464637744,
+      0.01487122464386025,
+      0.01709913867168467,
+      0.01709345884704565,
+      0.014414004805222142,
+      0.026547579742741138,
+      0.21264721716250243,
+      0.24804616482587746,
+      0.20831684634744999,
+      0.1927084513780807,
+      0.23805368760238035,
+      0.28022446334646506,
+      0.24983642387348515
+    ],
+    [
+      0.12626301317709013,
+      0.10877408173368107,
+      0.10342802931039442,
+      0.11192977857114718,
+      0.20737273469139597,
+      0.1305377397960904,
+      0.1450351925379742,
+      0.0904582719772046,
+      0.04679960713420741,
+      0.07808360429642808,
+      0.055252608241761925,
+      0.05846420464637744,
+      1.0,
+      0.02636454999284311,
+      0.09869873771432844,
+      0.09193941512327385,
+      0.07683428794555851,
+      0.05024133666175954,
+      0.1724680046041276,
+      0.14089943626397303,
+      0.17577931223178142,
+      0.1658235517898,
+      0.14352355583263357,
+      0.1183704506211636,
+      0.12187481699413151
+    ],
+    [
+      0.039917655811309405,
+      0.039258469975895056,
+      0.03795246385867667,
+      0.037324323548540685,
+      0.046335395354748905,
+      0.04290048399152781,
+      0.04064850996283227,
+      0.07106564121427017,
+      0.014911665868717717,
+      0.017933730293092708,
+      0.04101279488257181,
+      0.01487122464386025,
+      0.02636454999284311,
+      1.0,
+      0.00923221864395213,
+      0.008628694320612178,
+      0.010477960613605527,
+      0.007408841460631958,
+      0.016563449225485468,
+      0.018781829524821155,
+      0.018029884047681972,
+      0.02401679685565996,
+      0.032852306563093084,
+      0.022022448078496844,
+      0.03675874825280484
+    ],
+    [
+      0.11476334704042047,
+      0.0796974664234972,
+      0.07276302449163433,
+      0.07963373341041133,
+      0.15814676652273044,
+      0.09097720842754631,
+      0.036578342369917555,
+      0.01741975819928214,
+      0.011397428595254342,
+      0.020511665433529724,
+      0.01350837415951275,
+      0.01709913867168467,
+      0.09869873771432844,
+      0.00923221864395213,
+      1.0,
+      0.8964071063531066,
+      0.7203991334067675,
+      0.15535858034478642,
+      0.034046346777245766,
+      0.027799464254856993,
+      0.03431025689365347,
+      0.0351673704544948,
+      0.02726540319721145,
+      0.024814897265736834,
+      0.02434536226498393
+    ],
+    [
+      0.10678565766400917,
+      0.07452170939626553,
+      0.06774768398474995,
+      0.07512791569576496,
+      0.14768450206363384,
+      0.0845193503691166,
+      0.03557452866501688,
+      0.017141215309500715,
+      0.011426995475147516,
+      0.020965924789923488,
+      0.013726070966717692,
+      0.01709345884704565,
+      0.09193941512327385,
+      0.008628694320612178,
+      0.8964071063531066,
+      1.0,
+      0.8499352998129455,
+      0.13550902476748494,
+      0.032374206473978887,
+      0.02669496323849792,
+      0.03248507020749151,
+      0.03339818045182335,
+      0.026689725106834334,
+      0.024760896158335564,
+      0.023726956322495652
+    ],
+    [
+      0.08803685991587225,
+      0.061805091369173386,
+      0.05631700468042211,
+      0.06331048730235789,
+      0.1247592070714651,
+      0.06978005982156703,
+      0.03191903001687524,
+      0.015990737561321,
+      0.009601269626867756,
+      0.017399269686960726,
+      0.011998583275444804,
+      0.014414004805222142,
+      0.07683428794555851,
+      0.010477960613605527,
+      0.7203991334067675,
+      0.8499352998129455,
+      1.0,
+      0.10019005456298846,
+      0.02815269626950703,
+      0.023503735978734834,
+      0.028337114678135742,
+      0.029639520505461335,
+      0.025715546738871647,
+      0.022774950686524287,
+      0.023263665179414184
+    ],
+    [
+      0.1107916167643315,
+      0.08747615926059703,
+      0.08390737909768423,
+      0.08437793284438609,
+      0.13631296399556095,
+      0.09511332163482172,
+      0.030095461093233786,
+      0.050821663367934845,
+      0.040889076598404454,
+      0.023739590415571676,
+      0.04900757344321267,
+      0.026547579742741138,
+      0.05024133666175954,
+      0.007408841460631958,
+      0.15535858034478642,
+      0.13550902476748494,
+      0.10019005456298846,
+      1.0,
+      0.026596730347955472,
+      0.02945286210272913,
+      0.02641830634318256,
+      0.027009001780126433,
+      0.020277064592788892,
+      0.029258215024770343,
+      0.020493241570766717
+    ],
+    [
+      0.1795150584301459,
+      0.1806396855560297,
+      0.1825687087074498,
+      0.19762353874224114,
+      0.2619849571208652,
+      0.20590283789004699,
+      0.33416965712822305,
+      0.2516206270102006,
+      0.1642548596622621,
+      0.25225975134230444,
+      0.19401890039004094,
+      0.21264721716250243,
+      0.1724680046041276,
+      0.016563449225485468,
+      0.034046346777245766,
+      0.032374206473978887,
+      0.02815269626950703,
+      0.026596730347955472,
+      1.0,
+      0.6298913198004653,
+      0.846741699493558,
+      0.7132682878883672,
+      0.5650894643287914,
+      0.555892779803339,
+      0.5080373368585358
+    ],
+    [
+      0.1898592793234646,
+      0.19762746385836183,
+      0.2026759748615896,
+      0.22093603549127933,
+      0.25848158420756223,
+      0.22225152943380802,
+      0.3080235673220974,
+      0.27185941457737045,
+      0.20004132830316743,
+      0.2815106444964352,
+      0.22650660618945553,
+      0.24804616482587746,
+      0.14089943626397303,
+      0.018781829524821155,
+      0.027799464254856993,
+      0.02669496323849792,
+      0.023503735978734834,
+      0.02945286210272913,
+      0.6298913198004653,
+      1.0,
+      0.6168801216660875,
+      0.5340709237056012,
+      0.6597887352032378,
+      0.7175978724301361,
+      0.6821541267315805
+    ],
+    [
+      0.17570929555167694,
+      0.17600074865108684,
+      0.17760461673744474,
+      0.19279150811689122,
+      0.25911985636994356,
+      0.20160094620798935,
+      0.34429986475631796,
+      0.2550321461940318,
+      0.15758164731666857,
+      0.25028562309726354,
+      0.19153115396152964,
+      0.20831684634744999,
+      0.17577931223178142,
+      0.018029884047681972,
+      0.03431025689365347,
+      0.03248507020749151,
+      0.028337114678135742,
+      0.02641830634318256,
+      0.846741699493558,
+      0.6168801216660875,
+      1.0,
+      0.7164120231617386,
+      0.5647265403220136,
+      0.5396653129421654,
+      0.49875402240884065
+    ],
+    [
+      0.17997315431347016,
+      0.17933628845381744,
+      0.18032494238172267,
+      0.1920574513826534,
+      0.2572523313267154,
+      0.2034415300444967,
+      0.30595284170530634,
+      0.2507937416196254,
+      0.1510421139241404,
+      0.22964197839334935,
+      0.19643933560079627,
+      0.1927084513780807,
+      0.1658235517898,
+      0.02401679685565996,
+      0.0351673704544948,
+      0.03339818045182335,
+      0.029639520505461335,
+      0.027009001780126433,
+      0.7132682878883672,
+      0.5340709237056012,
+      0.7164120231617386,
+      1.0,
+      0.4891294217696877,
+      0.48401115985240567,
+      0.44977811944418616
+    ],
+    [
+      0.136394531519065,
+      0.13796549897267013,
+      0.1408465495433976,
+      0.16019674927901123,
+      0.20926095779692697,
+      0.1622042475211455,
+      0.4405277727802494,
+      0.3061233939381257,
+      0.1573805679614033,
+      0.2887272507904762,
+      0.22104396081806427,
+      0.23805368760238035,
+      0.14352355583263357,
+      0.032852306563093084,
+      0.02726540319721145,
+      0.026689725106834334,
+      0.025715546738871647,
+      0.020277064592788892,
+      0.5650894643287914,
+      0.6597887352032378,
+      0.5647265403220136,
+      0.4891294217696877,
+      1.0,
+      0.6218246873279677,
+      0.7157552174868987
+    ],
+    [
+      0.1898590315876083,
+      0.1941142736684998,
+      0.1968078358896587,
+      0.22323305265602428,
+      0.25950493423198917,
+      0.21483482132136786,
+      0.27233207249570224,
+      0.28051867531460745,
+      0.2206445326487971,
+      0.3312689876593048,
+      0.2411823787048837,
+      0.28022446334646506,
+      0.1183704506211636,
+      0.022022448078496844,
+      0.024814897265736834,
+      0.024760896158335564,
+      0.022774950686524287,
+      0.029258215024770343,
+      0.555892779803339,
+      0.7175978724301361,
+      0.5396653129421654,
+      0.48401115985240567,
+      0.6218246873279677,
+      1.0,
+      0.7760068029784879
+    ],
+    [
+      0.13869082817868175,
+      0.13860282918980574,
+      0.14115207751453485,
+      0.16051147229487012,
+      0.20513118831726096,
+      0.15969811276757276,
+      0.34332558231288335,
+      0.2736188593848632,
+      0.18336991691310958,
+      0.29471791122724134,
+      0.21100542963982427,
+      0.24983642387348515,
+      0.12187481699413151,
+      0.03675874825280484,
+      0.02434536226498393,
+      0.023726956322495652,
+      0.023263665179414184,
+      0.020493241570766717,
+      0.5080373368585358,
+      0.6821541267315805,
+      0.49875402240884065,
+      0.44977811944418616,
+      0.7157552174868987,
+      0.7760068029784879,
+      1.0
+    ]
+  ],
+  "eigenvalue_spectra": {
+    "whisper-base-enc": [
+      0.1623335605266639,
+      0.12397661103169066,
+      0.07653507312470324,
+      0.07434076847622509,
+      0.05919955855975336,
+      0.04730869918749848,
+      0.041117849780892196,
+      0.029089596533776404,
+      0.023670135339537438,
+      0.021162006977274696,
+      0.019078607030905706,
+      0.016887465690580937,
+      0.01567458526313971,
+      0.014130181472720039,
+      0.013751554848854758,
+      0.012788996022492227,
+      0.012191460232218048,
+      0.011625847253335453,
+      0.010961406559818438,
+      0.010858046312018919,
+      0.010470973737704099,
+      0.0099213228777838,
+      0.009821089037941018,
+      0.00935111533853471,
+      0.009016912759003059,
+      0.008838700542779054,
+      0.008543096879447733,
+      0.008314485135308037,
+      0.0076950319805766144,
+      0.0074596464076184255,
+      0.0073337287381659315,
+      0.006974062787833207,
+      0.006807181104651041,
+      0.006687456391985189,
+      0.006674062619576876,
+      0.00644066759304712,
+      0.0062823665306154484,
+      0.006149087158958288,
+      0.005748830874623687,
+      0.005642444700942088,
+      0.005476060906134482,
+      0.005339232950568363,
+      0.00522479238298281,
+      0.0051171584138318404,
+      0.004918081804278898,
+      0.004861626031183282,
+      0.004737057171235017,
+      0.004618052507779375,
+      0.004462318918064805,
+      0.004391345492745909
+    ],
+    "whisper-small-enc": [
+      0.20770352947968673,
+      0.1285563895371486,
+      0.10320678545208903,
+      0.08933102266085274,
+      0.04767544869310843,
+      0.041447200311778704,
+      0.032981005668208156,
+      0.027046669988353454,
+      0.021745341627385575,
+      0.017598821286476225,
+      0.015958651750620254,
+      0.014145391766424445,
+      0.01308863802324225,
+      0.011941742021772232,
+      0.011134039688182273,
+      0.010267999913909217,
+      0.00990435928154121,
+      0.009716369733021486,
+      0.009307462179198927,
+      0.008858547031628802,
+      0.008706137385202458,
+      0.008374417217025086,
+      0.00798487892144865,
+      0.007690650662181686,
+      0.007264910193331712,
+      0.007064680649052742,
+      0.006923894102568753,
+      0.006854140590264708,
+      0.006302264455852046,
+      0.0062037443180155884,
+      0.005956628102699521,
+      0.0057767327730173955,
+      0.005665382698013356,
+      0.005528215274163908,
+      0.005380253106041512,
+      0.005290033000414263,
+      0.005031612470568013,
+      0.004998710341930095,
+      0.0049888038733795406,
+      0.004790095875978012,
+      0.0047093784989553165,
+      0.004604721679582458,
+      0.004460738114391317,
+      0.004386590628582974,
+      0.004334272597755067,
+      0.004067647064803157,
+      0.003896807530417285,
+      0.003836365448682853,
+      0.003693247008771635,
+      0.003618629322280247
+    ],
+    "whisper-medium-enc": [
+      0.2346973859072697,
+      0.15216070036783805,
+      0.07365012370822392,
+      0.06493622918073405,
+      0.04297344185493766,
+      0.03628963925843699,
+      0.026984747710188325,
+      0.024070236790355557,
+      0.01970235558271904,
+      0.01694372295081565,
+      0.015883088759786095,
+      0.014147520041874447,
+      0.012960042069298915,
+      0.01239248443170147,
+      0.011329787328757739,
+      0.01079501221194531,
+      0.0104836495415405,
+      0.009802297581707073,
+      0.00943227914982591,
+      0.00938842126957963,
+      0.008903173892380122,
+      0.008683166039852312,
+      0.008253524949669787,
+      0.008123914203988445,
+      0.007747501349873966,
+      0.007722139591116061,
+      0.007440255467704602,
+      0.007299037917555796,
+      0.007246715516781066,
+      0.007131551423553216,
+      0.007035989652519077,
+      0.00688442712842289,
+      0.006732870612515353,
+      0.006441618417401933,
+      0.006360444878544541,
+      0.006266100082873064,
+      0.006050496734478389,
+      0.00591722041870929,
+      0.0058553162290327955,
+      0.005770961180587092,
+      0.005445817082830902,
+      0.005297006881372678,
+      0.005173814996730044,
+      0.005091390058782823,
+      0.004916326392329619,
+      0.00481885114259598,
+      0.004741876922596933,
+      0.004600770776752279,
+      0.004553421248612059,
+      0.004471133112300932
+    ],
+    "whisper-large-enc": [
+      0.21709355464250912,
+      0.12835894080280408,
+      0.07851886902781205,
+      0.059226452383374976,
+      0.044572720985669764,
+      0.04286135123587239,
+      0.031030113060040446,
+      0.028589548423346427,
+      0.026812579509691584,
+      0.01900578628599737,
+      0.017515542471904216,
+      0.016965442304574235,
+      0.01577693905213932,
+      0.015052525063486326,
+      0.014190617122576582,
+      0.012390979013933245,
+      0.012222126806034978,
+      0.011798502085435451,
+      0.010476819072313535,
+      0.010289413718878185,
+      0.009913354573645856,
+      0.009505660955420294,
+      0.009227289517833696,
+      0.008973754812674985,
+      0.00846392808966417,
+      0.008154809120113994,
+      0.007927377946619137,
+      0.007397722655053713,
+      0.007301004159010031,
+      0.006921668983378676,
+      0.006849139242524955,
+      0.0064054448493531535,
+      0.006270677279824284,
+      0.006109923878323175,
+      0.005970399270860828,
+      0.005590119075423434,
+      0.005432227597173162,
+      0.005299301576871879,
+      0.005278015845731008,
+      0.005177330188677053,
+      0.005079128005856466,
+      0.004860775501089894,
+      0.004785212894750871,
+      0.004621781886356468,
+      0.004531917015654417,
+      0.004419757212373947,
+      0.00437265346427911,
+      0.004236180391014277,
+      0.004131304146101304,
+      0.004043316795951401
+    ],
+    "whisper-large-v2-enc": [
+      0.11315340118670121,
+      0.07092496375340329,
+      0.06582336415211966,
+      0.056291592212490166,
+      0.04484513413255454,
+      0.04144299513729602,
+      0.0377974201606495,
+      0.03396961311852704,
+      0.029877247243466288,
+      0.02663240859605393,
+      0.02627120869541404,
+      0.025769755480830686,
+      0.022859719204523732,
+      0.022177732911608163,
+      0.020293242765344416,
+      0.019875255939856083,
+      0.01838180034695574,
+      0.017064859209943765,
+      0.016396064530938583,
+      0.015497610615967185,
+      0.014959729907674009,
+      0.014602695717335001,
+      0.014066307200859917,
+      0.013287485052221801,
+      0.012344598350352716,
+      0.011730437208114567,
+      0.011620040530053955,
+      0.01077384828552578,
+      0.010395455322591335,
+      0.010156670286698885,
+      0.009776973669199386,
+      0.00928425750406006,
+      0.009064497952275288,
+      0.008977848359538288,
+      0.008674376998258359,
+      0.008262469849437166,
+      0.008160159724374939,
+      0.00790689916090816,
+      0.0075885853228856975,
+      0.00730925749826525,
+      0.007246022689304724,
+      0.007183739761503001,
+      0.007120761207123198,
+      0.0067711678213299275,
+      0.006605624927042652,
+      0.006398413790279361,
+      0.006340881912535311,
+      0.006218971201165031,
+      0.005929022521854178,
+      0.0058974108725879945
+    ],
+    "whisper-large-v1-enc": [
+      0.18640332964649187,
+      0.13431802051982702,
+      0.07899663086752705,
+      0.06273272550976099,
+      0.05144181130146476,
+      0.03679943831630601,
+      0.029583079833042526,
+      0.02431705073192077,
+      0.023344513484807806,
+      0.01918753065606973,
+      0.018888426690056328,
+      0.01860876997223504,
+      0.01771105249908994,
+      0.016143782412711,
+      0.01463477228700749,
+      0.013907180722277,
+      0.012442523790613074,
+      0.011933803563773817,
+      0.011455202589044271,
+      0.011038308631146073,
+      0.010502527799885314,
+      0.010035208478565604,
+      0.009771927034763312,
+      0.009456460302761345,
+      0.00927506828864492,
+      0.008815086502062325,
+      0.008371013739723864,
+      0.008126483956948276,
+      0.007884010703706578,
+      0.007615195814522044,
+      0.007207638532599216,
+      0.007065277442649916,
+      0.006825330248748143,
+      0.006555082656613435,
+      0.00634187498639326,
+      0.006313342096764506,
+      0.00623009661975013,
+      0.006062832062500785,
+      0.005987464424693257,
+      0.0059266977201880245,
+      0.005693032344085216,
+      0.005503569862750431,
+      0.005403808847288868,
+      0.005389637532163193,
+      0.005288458466147031,
+      0.005083976919085473,
+      0.004989591749987942,
+      0.004866688504347308,
+      0.004782582056600218,
+      0.00474208027988741
+    ],
+    "whisper-base-dec": [
+      0.15498670602782275,
+      0.07359526252607199,
+      0.054545640164271804,
+      0.04736742593705355,
+      0.04114109912747972,
+      0.03349417427279993,
+      0.029383231305635502,
+      0.025913550570545636,
+      0.025508992331940317,
+      0.023990877587151276,
+      0.022113502678142438,
+      0.021070841834879287,
+      0.019664308209152635,
+      0.019449387771868352,
+      0.018737609334200763,
+      0.01791180566454402,
+      0.017076541342967932,
+      0.016346116062309648,
+      0.015549049899380649,
+      0.015165009016378324,
+      0.014465385755866325,
+      0.014168254337344572,
+      0.013588732450163598,
+      0.013406558422801557,
+      0.012443927590060954,
+      0.012376127038345227,
+      0.012092433956047153,
+      0.011838504980755562,
+      0.011776868627121169,
+      0.011457797267529345,
+      0.010850969742480301,
+      0.010744031360979496,
+      0.010434124990958282,
+      0.010167983596761054,
+      0.009856572997852784,
+      0.009837440426171143,
+      0.009556093102669876,
+      0.009354900528744124,
+      0.008893361246761773,
+      0.008859356926700245,
+      0.008765713902825722,
+      0.008618984816781748,
+      0.008439351966323845,
+      0.00836218409517701,
+      0.008181835277945606,
+      0.008083222425025478,
+      0.007909131233338532,
+      0.007647445447485138,
+      0.007501761511834701,
+      0.007309812312551198
+    ],
+    "whisper-small-dec": [
+      0.3322205949251662,
+      0.11230980703778483,
+      0.06937708845261692,
+      0.044014916133589134,
+      0.030596105237457455,
+      0.02558847733756515,
+      0.022717429454386956,
+      0.02140697632060941,
+      0.017682399162814343,
+      0.016531282669810472,
+      0.016104150316529307,
+      0.014177420502561471,
+      0.012843420190529902,
+      0.012154898138021019,
+      0.011519021334144121,
+      0.011125876383386427,
+      0.010942733199929009,
+      0.010100184434327598,
+      0.009700251883881753,
+      0.009347239776008666,
+      0.008823027677266957,
+      0.00846682276989786,
+      0.008339599229575704,
+      0.008118046810685554,
+      0.007831721843206187,
+      0.007530037008790782,
+      0.0074125992726143276,
+      0.007280540497154943,
+      0.007007686535890765,
+      0.006945237275896487,
+      0.0066977948878051835,
+      0.006651745576196483,
+      0.006579307134650936,
+      0.006448497393391692,
+      0.006281623527662985,
+      0.006058657342487572,
+      0.005947089700651364,
+      0.005770174637440641,
+      0.005617439044100885,
+      0.005561138145021427,
+      0.0054477199065268095,
+      0.0053380476786456625,
+      0.005255011179924226,
+      0.0051795684522688325,
+      0.0050922478878167275,
+      0.004940245226812064,
+      0.004858031524058163,
+      0.004764325140849628,
+      0.0046828253033360506,
+      0.004612918498253059
+    ],
+    "whisper-medium-dec": [
+      0.2380954491686253,
+      0.16115836239619688,
+      0.07515626202601962,
+      0.06556135622206956,
+      0.041931201787988884,
+      0.03319249538186449,
+      0.03252086583589424,
+      0.030788279849351653,
+      0.027187137293909577,
+      0.02295695600841327,
+      0.021556408260680202,
+      0.01737321185076244,
+      0.014623529469816309,
+      0.011201099741089078,
+      0.010827915221641995,
+      0.010561239848822896,
+      0.009734358990026115,
+      0.00928764671035414,
+      0.008935672816335949,
+      0.008771524586187997,
+      0.008210986658260356,
+      0.00797104616446241,
+      0.006951681274293193,
+      0.006809618503339371,
+      0.006653480409205891,
+      0.006454052366735472,
+      0.006122858451259827,
+      0.005850402821748203,
+      0.005820652016159466,
+      0.005486532187920825,
+      0.005350339317427861,
+      0.0051456810120876495,
+      0.00484486006722797,
+      0.004793238973003977,
+      0.004615519701694653,
+      0.004607224509424022,
+      0.0044076660277288324,
+      0.004245833278771628,
+      0.004197847916165282,
+      0.004127315437706451,
+      0.003957172820847207,
+      0.003872364327389915,
+      0.003778051972813259,
+      0.0037073106985940625,
+      0.0036414022049824917,
+      0.0035744863649285518,
+      0.0035099979833241933,
+      0.003396913352340848,
+      0.0032587844082816683,
+      0.003215705305823785
+    ],
+    "whisper-large-dec": [
+      0.1634279597752074,
+      0.08892175722753762,
+      0.080116210015886,
+      0.04254115459696569,
+      0.03911159434098198,
+      0.033488063247950145,
+      0.030104401255323005,
+      0.025610616892227968,
+      0.024185205657869836,
+      0.022541968398759327,
+      0.02138110780819503,
+      0.02002750155893308,
+      0.019293307038476582,
+      0.01827780916789387,
+      0.017238675278056826,
+      0.016728086463831806,
+      0.016052955481274306,
+      0.015185502700893694,
+      0.01464988121088766,
+      0.013860977743641296,
+      0.01363137095256372,
+      0.013247030722397116,
+      0.01282704461602929,
+      0.012296172050805805,
+      0.012017488486971485,
+      0.011609143056423337,
+      0.011311696532876826,
+      0.0107289181530322,
+      0.010302030464190088,
+      0.010214350940988836,
+      0.009927240932140747,
+      0.009582034985600788,
+      0.009348223990639379,
+      0.009229640507359265,
+      0.008775630902443614,
+      0.008570377820765739,
+      0.00853348926195409,
+      0.008297895225265748,
+      0.008030513552041721,
+      0.007798194097109439,
+      0.007718147626524266,
+      0.007472580646228116,
+      0.007408598091112047,
+      0.007356232214368894,
+      0.007164655451312541,
+      0.007109407791783702,
+      0.006958274214743517,
+      0.006708415058090673,
+      0.006682304660212313,
+      0.0063981611332314375
+    ],
+    "whisper-large-v2-dec": [
+      0.30935742287940576,
+      0.13937700346944018,
+      0.09337823095009469,
+      0.06016024452647215,
+      0.03692881614226388,
+      0.032747832760296004,
+      0.025481402879836988,
+      0.021138856180032185,
+      0.018582145282374115,
+      0.01571533362159957,
+      0.014379515122363873,
+      0.013327876332633798,
+      0.012810330290101835,
+      0.010942612439362658,
+      0.00982011252388223,
+      0.00952547453664177,
+      0.008769054123373402,
+      0.008444894773080788,
+      0.007779145211112411,
+      0.007679046873489078,
+      0.007401513355575265,
+      0.007078844729841051,
+      0.006805930524396216,
+      0.006215081254105958,
+      0.006164850812957032,
+      0.00600653563678111,
+      0.005747460932058045,
+      0.0056509694618850454,
+      0.005382962581176195,
+      0.005308734611828463,
+      0.005012346112006876,
+      0.004971857882963012,
+      0.00492401556917284,
+      0.004806446149595702,
+      0.004708629488336383,
+      0.004548059459105946,
+      0.004432837109647604,
+      0.004385421900209663,
+      0.004214201077050069,
+      0.004059280498075069,
+      0.003982314610527628,
+      0.0039292050605493935,
+      0.0037723324642676154,
+      0.003667462077092846,
+      0.003627764504105542,
+      0.003562863326594707,
+      0.003477651213919952,
+      0.003316318058528804,
+      0.00327270987253626,
+      0.003220048747252544
+    ],
+    "whisper-large-v1-dec": [
+      0.20296789893798112,
+      0.15757660977584872,
+      0.08867577350905988,
+      0.07095480188886867,
+      0.045513066004766956,
+      0.03974916210368708,
+      0.0321795733985564,
+      0.02581286279793421,
+      0.02392637658583547,
+      0.018327414150707298,
+      0.01682335018771311,
+      0.01634573307105381,
+      0.01478264146995816,
+      0.013360774916432436,
+      0.012527025914123167,
+      0.011802946713788646,
+      0.010835220789505533,
+      0.01059538218496015,
+      0.009713249916400069,
+      0.009378843692032231,
+      0.008677373073967062,
+      0.008271709229450662,
+      0.007988600664371263,
+      0.007706504729289546,
+      0.007542802416470195,
+      0.007086166650090772,
+      0.006652424551055572,
+      0.0065026673328750844,
+      0.00635892006376644,
+      0.006054967705239598,
+      0.005755866729216534,
+      0.005680497719435434,
+      0.005565477576447741,
+      0.005413901656312537,
+      0.005261309037524694,
+      0.00520541448620852,
+      0.005158059051380093,
+      0.005067636143189023,
+      0.004883071954809287,
+      0.004859550455970872,
+      0.004703994333404783,
+      0.004576848747662493,
+      0.0045614042430755465,
+      0.004382171050035919,
+      0.004296794430329313,
+      0.004236312872430419,
+      0.004118360934479466,
+      0.00393405926926417,
+      0.0038479043160565564,
+      0.0038005205669773227
+    ],
+    "parakeet-ctc-0.6b": [
+      0.21536390817003576,
+      0.06631239534718347,
+      0.05095759855810016,
+      0.034984547853508914,
+      0.030150346565170107,
+      0.029122141632771152,
+      0.02682780762189937,
+      0.024191201558429454,
+      0.02237753139517308,
+      0.02120164531176854,
+      0.02083901398914973,
+      0.019351242083168546,
+      0.018648886225152612,
+      0.017413181126297334,
+      0.01689037437491664,
+      0.016559225964212995,
+      0.016030907421124622,
+      0.015288309014205059,
+      0.014696128933037234,
+      0.014176154211364877,
+      0.013689506159021227,
+      0.013463501446078975,
+      0.012984355681431766,
+      0.012846199742896709,
+      0.01251895023017811,
+      0.012412250673141056,
+      0.012135541146547899,
+      0.011934962036386733,
+      0.011641507655391861,
+      0.011112136527569157,
+      0.01100875788050448,
+      0.010873717554845203,
+      0.010540717614123295,
+      0.010273672121450849,
+      0.01012021527901005,
+      0.009727164972291725,
+      0.009722158844650027,
+      0.00967380990683319,
+      0.009451900539902231,
+      0.009227568620956238,
+      0.00909647867946139,
+      0.008925416195582736,
+      0.00873727916185254,
+      0.008586530265649235,
+      0.008408554935771376,
+      0.008144134728326173,
+      0.008001930149517568,
+      0.007913480415208998,
+      0.007869329969084005,
+      0.007575723509665423
+    ],
+    "mimi": [
+      0.18841731070780124,
+      0.1438249085546405,
+      0.06611572247774539,
+      0.046010531009244786,
+      0.0442734930220351,
+      0.038801427952897594,
+      0.03287762213311787,
+      0.032276659455471396,
+      0.02882950525333472,
+      0.02591122357349742,
+      0.02138936358024316,
+      0.018671465981778247,
+      0.01704997778339684,
+      0.015234031080749054,
+      0.013708454973167767,
+      0.012938551442816075,
+      0.012485164649065326,
+      0.0117647667365433,
+      0.011337411735799247,
+      0.010973190298490993,
+      0.010438529510883428,
+      0.010322058565411076,
+      0.009569591786904441,
+      0.009220712326852561,
+      0.008859541492527177,
+      0.008625128164262972,
+      0.008440152308575501,
+      0.00810624169444959,
+      0.007913713790309872,
+      0.007760350670048634,
+      0.007630235967246543,
+      0.007311753518656593,
+      0.007044866488637233,
+      0.006925385236166974,
+      0.006919207772551612,
+      0.006604634313724311,
+      0.006577509022092805,
+      0.00645250005648259,
+      0.006132936197128196,
+      0.005934428310451186,
+      0.005706524654439988,
+      0.005423436848647241,
+      0.0053364712754123585,
+      0.005274666442662203,
+      0.005051966907954682,
+      0.004878130704331052,
+      0.004778148956116675,
+      0.00471943689788255,
+      0.004580345245440345,
+      0.004570612471913704
+    ],
+    "kaldi-librispeech": [
+      0.1261362232407903,
+      0.06302318692662741,
+      0.05429265543178485,
+      0.05281048735411414,
+      0.045879722233071824,
+      0.04493849041289025,
+      0.03596160374288613,
+      0.03505600049442202,
+      0.032166983975010735,
+      0.029937375407654815,
+      0.026090977079631848,
+      0.024174964971414276,
+      0.022491547547780783,
+      0.020656910827977687,
+      0.020420757624661355,
+      0.01928716370314859,
+      0.018545215315259878,
+      0.01726335659413183,
+      0.016646041379847855,
+      0.016034382411679003,
+      0.015198503487040377,
+      0.014646564772849454,
+      0.013349042567726954,
+      0.013178990585908879,
+      0.01273219652041517,
+      0.012005759669995448,
+      0.01187763097239639,
+      0.011200895649492861,
+      0.011061552101638344,
+      0.010689166327769872,
+      0.010439197837167576,
+      0.009924386447315092,
+      0.009647073087410085,
+      0.009098640832308868,
+      0.008863786993075126,
+      0.008455183892468878,
+      0.00823802523554729,
+      0.00784724807783008,
+      0.007746277723732937,
+      0.00750223431311627,
+      0.007295515782639789,
+      0.00715483788937288,
+      0.006741450197182414,
+      0.00655074275165818,
+      0.006473281375377698,
+      0.006418337645227248,
+      0.006264404753262725,
+      0.00597657404103467,
+      0.0059181124160422455,
+      0.005690339378210585
+    ],
+    "kaldi-librispeech-penult": [
+      0.1558300035823299,
+      0.07457328537815276,
+      0.06019695970310454,
+      0.05626654217127648,
+      0.04748261087961435,
+      0.045680168959810676,
+      0.03744048069952611,
+      0.0369910990942115,
+      0.03175351263988657,
+      0.029943349274283455,
+      0.0264572556800165,
+      0.025636775785741073,
+      0.02363524663886071,
+      0.021427565894831517,
+      0.019601101519721838,
+      0.019132832002225056,
+      0.01809387854279128,
+      0.016287932254835234,
+      0.015645622453840602,
+      0.014292017446622769,
+      0.013709072106343862,
+      0.012877874748491414,
+      0.01235790585601737,
+      0.011269856211065033,
+      0.011057399981749884,
+      0.010021714330001862,
+      0.009689230273137067,
+      0.009590483336648676,
+      0.009084364255389426,
+      0.008445885808297053,
+      0.008430311632831944,
+      0.007927862975129938,
+      0.007594498812376814,
+      0.0073344638175337025,
+      0.007174772727694332,
+      0.006417744725351779,
+      0.006171855049231518,
+      0.0060498152039872915,
+      0.005857338631670199,
+      0.0056620397510475555,
+      0.005404282804959359,
+      0.005189522819199806,
+      0.005088216627300423,
+      0.004843581808187585,
+      0.0047351667505558335,
+      0.004639044973620647,
+      0.004455026720582989,
+      0.004268872297707188,
+      0.004205287760641505,
+      0.004078266601565057
+    ],
+    "kaldi-librispeech-antepen": [
+      0.4726254507347704,
+      0.07476354304612633,
+      0.0378188623042033,
+      0.030034025542827147,
+      0.025111258052949503,
+      0.023539541154506412,
+      0.02286908475245632,
+      0.019411752311841893,
+      0.01729309505266768,
+      0.01654012185974605,
+      0.015798071080917995,
+      0.0141710394350251,
+      0.01378603827390882,
+      0.012269452981845817,
+      0.010874055465833664,
+      0.01056405661878599,
+      0.009862434589122676,
+      0.009101498985775988,
+      0.008920749953076516,
+      0.008679911810934368,
+      0.00800141345874357,
+      0.007709737992697174,
+      0.007021126843896117,
+      0.007002758818859246,
+      0.006753661625797597,
+      0.0065349161749077185,
+      0.006010314677170452,
+      0.005943682007170908,
+      0.005690018611834494,
+      0.005446919710783563,
+      0.005302953258061547,
+      0.005072303475577331,
+      0.005031516690045618,
+      0.004921040312963964,
+      0.0047909114736048135,
+      0.0045800882573768555,
+      0.004376286564530813,
+      0.004187794934662746,
+      0.00407147831479318,
+      0.003977201600147904,
+      0.0037920892617648834,
+      0.003703795892908775,
+      0.003649831558954083,
+      0.0036231395634034667,
+      0.003369144831278567,
+      0.003325972948850316,
+      0.003173827410447312,
+      0.003125688015585163,
+      0.002940096699803576,
+      0.002836245006056573
+    ],
+    "wav2vec2-base": [
+      0.2696258105174243,
+      0.128066293243774,
+      0.08583804269520737,
+      0.058988285075427443,
+      0.054855784182275956,
+      0.04592887993270294,
+      0.039105800726311986,
+      0.03374195467781201,
+      0.02562771629195823,
+      0.023663467597029204,
+      0.01774176654765877,
+      0.015654797057603285,
+      0.014635053189834709,
+      0.013625791970066463,
+      0.012790422536787341,
+      0.011586025041291496,
+      0.010639185264945117,
+      0.008806072969214455,
+      0.008304091777383922,
+      0.007763783490433572,
+      0.007444126736413558,
+      0.00690707680325123,
+      0.0066975231681254115,
+      0.0063925256202480565,
+      0.0054463229868883896,
+      0.005149330618652792,
+      0.004814743011543671,
+      0.004451998896701915,
+      0.00437863986919039,
+      0.004356024529804715,
+      0.0039523078818811865,
+      0.0038378974751417786,
+      0.0037173270431509926,
+      0.003611337018471795,
+      0.0033950132324540245,
+      0.003220640441852121,
+      0.003129420131353065,
+      0.002979771487420481,
+      0.0029331130723066266,
+      0.0028308338895054485,
+      0.0027182436348936055,
+      0.0026773270250206203,
+      0.002543294823969564,
+      0.002494081252160794,
+      0.00237609591965391,
+      0.002240653447713337,
+      0.0022306138902587875,
+      0.002139223664932001,
+      0.0020117626049555087,
+      0.001933705036941536
+    ],
+    "babylm-125m": [
+      0.11835034664599856,
+      0.07028921407459193,
+      0.05371330133159417,
+      0.049422601560467926,
+      0.04795013597216793,
+      0.03786382468142959,
+      0.0323569397548313,
+      0.029166506496155747,
+      0.026837976123291023,
+      0.02534536503532768,
+      0.024816681999844752,
+      0.02286161952304923,
+      0.02151405304070717,
+      0.020415709806926703,
+      0.018746454396021763,
+      0.018030868238213697,
+      0.017410767961631827,
+      0.016546442176731842,
+      0.016273512715285127,
+      0.015603815246678613,
+      0.01512744794684178,
+      0.014123504116563629,
+      0.013477495878016879,
+      0.013183996556117341,
+      0.013017891214680917,
+      0.012855758969509804,
+      0.01242131531524362,
+      0.012138132888445678,
+      0.011972395213676563,
+      0.011570357913647323,
+      0.01141816764979159,
+      0.011249994228692948,
+      0.010864250771343452,
+      0.01078680124776586,
+      0.010546456217645534,
+      0.010338455677956526,
+      0.010004141765250916,
+      0.00978292616155091,
+      0.009406069661024313,
+      0.009146233745727364,
+      0.009015387298070634,
+      0.00889899400166945,
+      0.00876328094042727,
+      0.008639158685317814,
+      0.008334080378684909,
+      0.008128870621262127,
+      0.008074415823009362,
+      0.007933837174112376,
+      0.007709534328510187,
+      0.007554510828496259
+    ],
+    "opt-125m": [
+      0.1428234431254116,
+      0.06886220172349704,
+      0.056559050143106866,
+      0.054376874422427196,
+      0.04996952182508119,
+      0.03749941289415075,
+      0.03338467793489915,
+      0.029396108220489395,
+      0.02726977233937585,
+      0.02482466406283799,
+      0.0236187159604437,
+      0.0228324777404802,
+      0.021498969134902686,
+      0.019281141400062412,
+      0.018481356180370896,
+      0.01759382000789842,
+      0.01655383509122438,
+      0.016149994501664794,
+      0.01529844438279265,
+      0.014728327218757102,
+      0.014209432602589757,
+      0.0139479052650089,
+      0.013546515041477343,
+      0.012804080983212621,
+      0.012052509159700311,
+      0.011914305754304957,
+      0.01143675496585705,
+      0.011133833542882875,
+      0.010948002059848092,
+      0.010616465177410115,
+      0.010509088976018266,
+      0.010305213597707688,
+      0.00977801362347777,
+      0.009518927307336982,
+      0.009250633580813284,
+      0.00904039677872796,
+      0.00893767122904886,
+      0.008713987184226404,
+      0.008497781550238361,
+      0.008299923936060726,
+      0.008116734028907302,
+      0.007918843613710706,
+      0.007829762131724769,
+      0.007415191071424411,
+      0.007299487439411689,
+      0.007224653004506722,
+      0.007050016409924725,
+      0.0069604675747647745,
+      0.00689394570210426,
+      0.0068266483976982765
+    ],
+    "babylm-350m": [
+      0.11207831170939102,
+      0.06995111798510723,
+      0.05651629798188562,
+      0.052438371850660394,
+      0.04708299323612703,
+      0.03876478110172345,
+      0.032899481565381215,
+      0.02897091488815741,
+      0.026853228998458448,
+      0.025516224638266635,
+      0.024787608536176512,
+      0.023465411461724983,
+      0.022353517896276584,
+      0.02022469903594734,
+      0.019131151904999064,
+      0.018093407133223598,
+      0.017445549559415373,
+      0.01660736576083496,
+      0.015704110859552037,
+      0.01534224177244759,
+      0.014703376682176736,
+      0.014649220955227481,
+      0.014419944966763784,
+      0.013693347144053998,
+      0.013181476677973343,
+      0.012697962336538887,
+      0.01227077888993682,
+      0.012114574206461972,
+      0.011914081673579288,
+      0.011510240648662521,
+      0.01126596671354487,
+      0.01122322222991126,
+      0.010951650789854704,
+      0.010711674203927886,
+      0.010574469331069805,
+      0.009915917541869079,
+      0.00990052547092816,
+      0.009593189875553406,
+      0.009378672144942389,
+      0.009171684834593703,
+      0.009164385831894259,
+      0.008795150855534088,
+      0.008627966477669924,
+      0.008544909379378131,
+      0.0083008639729033,
+      0.008055168906334493,
+      0.007897854118746982,
+      0.007673245717337256,
+      0.007485646764383668,
+      0.007386042782491295
+    ],
+    "babylm-1.3b": [
+      0.12318829734311336,
+      0.07958606119650735,
+      0.05126738670600829,
+      0.05037952295403225,
+      0.04636035004740941,
+      0.03596914658690654,
+      0.029051774457926408,
+      0.02591317947685192,
+      0.024882725460855005,
+      0.024008371289700528,
+      0.02353528855502741,
+      0.02173254091442014,
+      0.021219779911214466,
+      0.01978977313049684,
+      0.018977732107096124,
+      0.018018658426247783,
+      0.017120434163098715,
+      0.016568757382016335,
+      0.015933383155852673,
+      0.01524642703919544,
+      0.01503181815559379,
+      0.014540643530740792,
+      0.014177647413202016,
+      0.013920924182341091,
+      0.013130109751258284,
+      0.012718250288898149,
+      0.012463505838176998,
+      0.011919082163539776,
+      0.011823611446723406,
+      0.01175371172407191,
+      0.011357653613473632,
+      0.011024967171012777,
+      0.010938768273460128,
+      0.010567947033968364,
+      0.010287759084253422,
+      0.010243192914543153,
+      0.010078214749549883,
+      0.009695256902300931,
+      0.009629738880512606,
+      0.009519257944163738,
+      0.009309469030235384,
+      0.00928253511724349,
+      0.009131968132773978,
+      0.008801145137128498,
+      0.008756757770168173,
+      0.00843229217905522,
+      0.008322031028704073,
+      0.008304060229457323,
+      0.00818243264762245,
+      0.007905657361849727
+    ],
+    "pythia-160m": [
+      0.14026175628276363,
+      0.10518914253274075,
+      0.05348758564266049,
+      0.04884813735003531,
+      0.043053071462074655,
+      0.03427756729536771,
+      0.031403766931106594,
+      0.03079746773067565,
+      0.025656581652003362,
+      0.02473944638686129,
+      0.023376116530699587,
+      0.021942774792178224,
+      0.02051177365634436,
+      0.0182756361384029,
+      0.01724782361046781,
+      0.01685100360061634,
+      0.016395865546466867,
+      0.01528831760005097,
+      0.013899178426753839,
+      0.013817554849723345,
+      0.013278547870514159,
+      0.013035127595002484,
+      0.012696735848538029,
+      0.012546032948096003,
+      0.011989309076971887,
+      0.011635527449989223,
+      0.011140743344053747,
+      0.010914382455306485,
+      0.010820432496300573,
+      0.010518329338053122,
+      0.0103365147970286,
+      0.010050196629912187,
+      0.009691435258116329,
+      0.009391670085256834,
+      0.009196941786084026,
+      0.009043652952138577,
+      0.008908964499201918,
+      0.008780746087649793,
+      0.008471447725663155,
+      0.008256735730040137,
+      0.008097445160525392,
+      0.007996386851992991,
+      0.007816963137086257,
+      0.007535717510021634,
+      0.007451417577008521,
+      0.007323580806672871,
+      0.007181095289939448,
+      0.007046601093927197,
+      0.006852575189281622,
+      0.0066741753916331435
+    ],
+    "olmo-7b": [
+      0.20971975845618135,
+      0.09580203346948869,
+      0.07430811850888959,
+      0.06667080456749856,
+      0.05726833310661146,
+      0.05089430875560365,
+      0.03302455131115933,
+      0.032568910823456435,
+      0.026179727293328604,
+      0.0246420453792135,
+      0.022991752868866955,
+      0.020740059573629867,
+      0.01885115130280539,
+      0.01610002258753561,
+      0.014815752602578048,
+      0.013827760783048822,
+      0.01336721632771385,
+      0.01236291907266728,
+      0.011785592648917148,
+      0.010696292326499214,
+      0.00996805792139259,
+      0.00948081240065191,
+      0.008959627992711086,
+      0.008689452811811141,
+      0.008343306132079545,
+      0.007739591029713187,
+      0.007562604653847869,
+      0.007265199731101605,
+      0.006696909871851297,
+      0.006360911969648355,
+      0.006257235152616731,
+      0.005775623682310268,
+      0.005683910735021701,
+      0.00539035473453337,
+      0.005315333551462115,
+      0.0051309549888223,
+      0.005093353947574954,
+      0.004867142010890434,
+      0.004747672261185979,
+      0.004675783823987564,
+      0.004498720671917324,
+      0.004374009081203212,
+      0.0042797472438766,
+      0.00412917225532886,
+      0.0038293873331444366,
+      0.003775743062349389,
+      0.0036865692783237852,
+      0.003650032932963655,
+      0.0036260707523768977,
+      0.003529596219608352
+    ],
+    "pythia-6.9b": [
+      0.20885978218141885,
+      0.1583384208611484,
+      0.09074190854324957,
+      0.05949604926684925,
+      0.04298647973585935,
+      0.03404230269792364,
+      0.033542423280770714,
+      0.02769360857917966,
+      0.02348258777276799,
+      0.021247536897293764,
+      0.018728351778283588,
+      0.01616115272737095,
+      0.01605132902855041,
+      0.014600362366868177,
+      0.013885716206364996,
+      0.01277077783827776,
+      0.011646580843285168,
+      0.01052135128513352,
+      0.009980693354838187,
+      0.009631752133234438,
+      0.008835860927993053,
+      0.008706286793718017,
+      0.008095911778767836,
+      0.007940265255522659,
+      0.0075112350510089096,
+      0.007157575056077701,
+      0.0069727171784210555,
+      0.0067341046356081975,
+      0.0064763577495072855,
+      0.006098640610882051,
+      0.00594278576188214,
+      0.005737708385996028,
+      0.005533411093758398,
+      0.005376028310043187,
+      0.005324308413507954,
+      0.0050665851574828134,
+      0.005044812334209033,
+      0.004883772054641898,
+      0.004676971395104414,
+      0.0045396836130573125,
+      0.004432254225954216,
+      0.004245166070798572,
+      0.004184146651665925,
+      0.003977967401930641,
+      0.003842574064807787,
+      0.0038068091575087946,
+      0.003726817508375211,
+      0.0036422901366015338,
+      0.0035693568677587686,
+      0.003508428978740081
+    ]
+  },
+  "effective_ranks": {
+    "whisper-base-enc": 25.972081811521576,
+    "whisper-small-enc": 21.293483239192003,
+    "whisper-medium-enc": 21.430041422138856,
+    "whisper-large-enc": 23.23691095821198,
+    "whisper-large-v2-enc": 35.06562480925541,
+    "whisper-large-v1-enc": 25.191936408757556,
+    "whisper-base-dec": 34.53968623614723,
+    "whisper-small-dec": 18.557491618353584,
+    "whisper-medium-dec": 19.607532230440544,
+    "whisper-large-dec": 31.631239988131703,
+    "whisper-large-v2-dec": 16.610242169933027,
+    "whisper-large-v1-dec": 21.539218297291082,
+    "parakeet-ctc-0.6b": 31.215519585183344,
+    "mimi": 25.40706006394559,
+    "kaldi-librispeech": 35.0682207289336,
+    "kaldi-librispeech-penult": 30.55127664055426,
+    "kaldi-librispeech-antepen": 12.650610245148098,
+    "wav2vec2-base": 17.683528992189885,
+    "babylm-125m": 36.99631713601417,
+    "opt-125m": 34.338571992402734,
+    "babylm-350m": 37.15152491301919,
+    "babylm-1.3b": 36.62474154990096,
+    "pythia-160m": 33.18321696075811,
+    "olmo-7b": 24.04108105726794,
+    "pythia-6.9b": 21.48049980502701
+  }
+}
