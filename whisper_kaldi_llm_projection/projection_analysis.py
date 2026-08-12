@@ -1,38 +1,47 @@
 #!/usr/bin/env python3
 """
-Whisper-Kaldi-LLM Variance Decomposition via Iterative MLP Deflation
+Whisper-Kaldi-LLM Variance Decomposition via INLP + Nonlinear Verification
 
-Decomposes Whisper encoder embedding variance into four components:
-  - Kaldi-only    : variance predictable from Kaldi but not LLMs
-  - LLM-only      : variance predictable from LLMs but not Kaldi
-  - Shared        : variance predictable from both
-  - Neither       : variance predictable from neither
+Decomposes Whisper embedding variance into four components:
+  - Kaldi-only    : variance in the linear Kaldi subspace but not the linear LLM subspace
+  - LLM-only      : variance in the linear LLM subspace but not the linear Kaldi subspace
+  - Shared        : variance in both linear subspaces
+  - Neither       : variance in neither linear subspace
 
 Method:
-  For each Whisper model, run deflation in both orderings:
+  Linear deflation (INLP-style) is done in one shot using Ridge regression.
+  Because the OLS residual is orthogonal to X_target by construction, no
+  iteration is needed — a second linear probe on the residual explains 0%.
+  Both orderings are run to recover the shared component algebraically:
 
   Ordering 1 (Kaldi first):
-    1. Train MLP f1: X_kaldi -> X_whisper_residual; subtract f1(X_kaldi); repeat until R² < threshold
-    2. Train MLP f2: X_llm   -> residual;            subtract; repeat
+    1. Ridge(X_kaldi → X_whisper) → subtract → res_k
+    2. Ridge(X_llm   → res_k)     → subtract → res_kl
 
   Ordering 2 (LLM first):
-    1. Train MLP g1: X_llm   -> X_whisper_residual; subtract; repeat
-    2. Train MLP g2: X_kaldi -> residual;            subtract; repeat
+    1. Ridge(X_llm   → X_whisper) → subtract → res_l
+    2. Ridge(X_kaldi → res_l)     → subtract → res_lk
 
-  Four components recovered:
-    kaldi_only = V_kaldi_given_llm  (from ordering 2, step 2)
-    llm_only   = V_llm_given_kaldi  (from ordering 1, step 2)
-    shared     = V_kaldi_total - kaldi_only  (= V_llm_total - llm_only, sanity check)
+  Four components:
+    kaldi_only = V_kaldi_given_llm  (ordering 2, step 2)
+    llm_only   = V_llm_given_kaldi  (ordering 1, step 2)
+    shared     = V_kaldi_total - kaldi_only  (== V_llm_total - llm_only)
     neither    = 1 - kaldi_only - llm_only - shared
 
+  Nonlinear verification:
+    MLP probes are trained on the "neither" residual to test whether any
+    nonlinear Kaldi or LLM structure survived the linear deflation.
+    Low R² (<0.05) confirms the linear subspace captured essentially all
+    shared structure; high R² is reported and discussed.
+
 Usage (word-level):
-  python projection_analysis.py --granularity word \
-      --embeddings_dir /dpluth-data \
+  python projection_analysis.py --granularity word \\
+      --embeddings_dir /dpluth-data \\
       --output_dir ./word
 
 Usage (phone-level):
-  python projection_analysis.py --granularity phone \
-      --embeddings_dir /dpluth-data \
+  python projection_analysis.py --granularity phone \\
+      --embeddings_dir /dpluth-data \\
       --output_dir ./phone
 """
 
@@ -49,6 +58,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
+from sklearn.linear_model import RidgeCV
 
 logger = logging.getLogger("projection")
 
@@ -92,9 +102,51 @@ LLM_MODELS = [
     "pythia-6.9b",
 ]
 
+# Alphas tried by RidgeCV (log-spaced; LOO-CV selects the best)
+RIDGE_ALPHAS = [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+
 
 # ---------------------------------------------------------------------------
-# MLP probe
+# Linear deflation (INLP-style, one shot)
+# ---------------------------------------------------------------------------
+
+def linear_deflation(
+    X_whisper_residual: np.ndarray,
+    X_target: np.ndarray,
+    val_mask: np.ndarray,
+) -> tuple:
+    """
+    Fit Ridge regression (X_target → X_whisper_residual) on the training split,
+    then subtract predictions from the full dataset.
+
+    Because the OLS residual is orthogonal to X_target by construction, one step
+    removes all linearly-accessible variance — no iteration required.
+
+    RidgeCV selects regularisation strength via leave-one-out CV, which handles
+    the near-singular Gram matrix that arises from low-effective-rank embeddings
+    (e.g. OLMo-7B effective rank ≈ 24 despite d=4096).
+
+    Returns:
+        residual    (np.ndarray): X_whisper_residual - Ridge prediction (all data)
+        r2_val      (float):      R² on held-out validation split
+        alpha_chosen (float):     Ridge alpha selected by CV
+    """
+    train_mask = ~val_mask
+
+    reg = RidgeCV(alphas=RIDGE_ALPHAS, fit_intercept=True)
+    reg.fit(X_target[train_mask], X_whisper_residual[train_mask])
+
+    pred_val = reg.predict(X_target[val_mask])
+    r2_val = r2_score(X_whisper_residual[val_mask], pred_val)
+
+    pred_all = reg.predict(X_target)
+    residual = X_whisper_residual - pred_all
+
+    return residual, float(r2_val), float(reg.alpha_)
+
+
+# ---------------------------------------------------------------------------
+# MLP probe (used only for nonlinear verification)
 # ---------------------------------------------------------------------------
 
 class MLPProbe(nn.Module):
@@ -124,10 +176,8 @@ def train_probe(
 ) -> MLPProbe:
     """Train MLP with early stopping on validation MSE.
 
-    All data lives GPU-resident for the duration of training to avoid
-    repeated CPU→GPU transfers. Shuffling is done with torch.randperm on
-    the GPU rather than through DataLoader (which is optimised for CPU data).
-    Mixed precision (bfloat16) is used on CUDA for ~2x throughput.
+    Full dataset is GPU-resident for the duration of training; shuffling uses
+    torch.randperm on the GPU. bfloat16 AMP gives ~2x throughput on A100/H100.
     """
     probe = MLPProbe(X_in_tr.shape[1], X_out_tr.shape[1],
                      hidden_dim, n_layers, dropout).to(device)
@@ -136,7 +186,6 @@ def train_probe(
     use_amp = device == "cuda" and torch.cuda.is_bf16_supported()
     scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
 
-    # Move full splits to GPU once
     t_in  = torch.from_numpy(X_in_tr.astype(np.float32)).to(device)
     t_out = torch.from_numpy(X_out_tr.astype(np.float32)).to(device)
     v_in  = torch.from_numpy(X_in_val.astype(np.float32)).to(device)
@@ -196,66 +245,35 @@ def r2_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return 0.0 if ss_tot < 1e-12 else 1.0 - ss_res / ss_tot
 
 
-# ---------------------------------------------------------------------------
-# Iterative deflation
-# ---------------------------------------------------------------------------
-
-def iterative_deflation(
-    X_whisper_residual: np.ndarray,
+def nonlinear_verification(
+    X_residual: np.ndarray,
     X_target: np.ndarray,
     val_mask: np.ndarray,
-    total_var: float,
-    threshold: float = 0.01,
-    max_iters: int = 20,
     device: str = "cuda",
     **probe_kwargs,
-) -> tuple:
+) -> float:
     """
-    Repeatedly train MLP (X_target -> residual), subtract predictions, until R² < threshold.
+    Train an MLP (X_target → X_residual) and return R² on the validation split.
 
-    Probe direction: X_target -> X_whisper_residual
-      - f(X_target) is in Whisper space so subtraction is well-defined.
-      - Dimensions of Whisper not predictable from X_target get near-zero predictions
-        (conditional mean ≈ 0 when embeddings are centered) and survive intact.
-
-    Returns:
-        residual (np.ndarray): deflated Whisper embeddings
-        log (list[dict]):      per-iteration R² and variance removed
+    Intended to be called on the "neither" residual after linear deflation.
+    Low R² confirms the linear subspace captured all shared structure.
+    High R² indicates surviving nonlinear structure and should be reported.
     """
     train_mask = ~val_mask
-    residual = X_whisper_residual.copy()
-    log = []
+    probe = train_probe(
+        X_target[train_mask], X_residual[train_mask],
+        X_target[val_mask],   X_residual[val_mask],
+        device=device, **probe_kwargs,
+    )
+    pred_val = predict_batched(probe, X_target[val_mask], device=device)
+    r2 = r2_score(X_residual[val_mask], pred_val)
 
-    for i in range(max_iters):
-        probe = train_probe(
-            X_target[train_mask], residual[train_mask],
-            X_target[val_mask],   residual[val_mask],
-            device=device, **probe_kwargs,
-        )
+    del probe
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
-        pred_val = predict_batched(probe, X_target[val_mask], device=device)
-        r2 = r2_score(residual[val_mask], pred_val)
-
-        pred_all = predict_batched(probe, X_target, device=device)
-        var_removed = float((pred_all ** 2).sum() / total_var)
-
-        entry = {"iteration": i + 1, "r2_val": round(r2, 5),
-                 "var_removed_frac": round(var_removed, 5)}
-        log.append(entry)
-        logger.info(f"    iter {i + 1}: R²={r2:.4f}  var_removed={var_removed:.4f}")
-
-        residual = residual - pred_all
-
-        del probe, pred_all, pred_val
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-
-        if r2 < threshold:
-            logger.info(f"    R² < {threshold} — deflation complete")
-            break
-
-    return residual, log
+    return float(r2)
 
 
 # ---------------------------------------------------------------------------
@@ -267,18 +285,17 @@ def venn_decomposition(
     X_kaldi: np.ndarray,
     X_llm: np.ndarray,
     val_mask: np.ndarray,
-    threshold: float = 0.01,
-    max_iters: int = 20,
     device: str = "cuda",
     **probe_kwargs,
 ) -> dict:
     """
-    Run both orderings of deflation and recover four variance components.
+    Run both orderings of linear deflation and recover four variance components,
+    then verify with nonlinear MLP probes on the neither residual.
 
     From two orderings:
       Ordering 1 — Kaldi first:
-        V_kaldi_total   = Kaldi-only + Shared
-        V_llm_given_k   = LLM-only
+        V_kaldi_total = Kaldi-only + Shared
+        V_llm_given_k = LLM-only
       Ordering 2 — LLM first:
         V_llm_total     = LLM-only + Shared
         V_kaldi_given_l = Kaldi-only
@@ -294,31 +311,31 @@ def venn_decomposition(
     def vfrac(arr):
         return float((arr ** 2).sum() / total_var)
 
-    deflation_kw = dict(val_mask=val_mask, total_var=total_var,
-                        threshold=threshold, max_iters=max_iters,
-                        device=device, **probe_kwargs)
-
     # ---- Ordering 1: Kaldi → LLM ----------------------------------------
-    logger.info("  [Ordering 1] Deflating Kaldi...")
-    res_k, log_k = iterative_deflation(X_whisper, X_kaldi, **deflation_kw)
+    logger.info("  [Ordering 1] Ridge: Kaldi → Whisper...")
+    res_k, r2_k, alpha_k = linear_deflation(X_whisper, X_kaldi, val_mask)
+    logger.info(f"    R²={r2_k:.4f}  alpha={alpha_k}")
 
-    logger.info("  [Ordering 1] Deflating LLM from Kaldi residual...")
-    res_kl, log_kl = iterative_deflation(res_k, X_llm, **deflation_kw)
+    logger.info("  [Ordering 1] Ridge: LLM → Kaldi residual...")
+    res_kl, r2_kl, alpha_kl = linear_deflation(res_k, X_llm, val_mask)
+    logger.info(f"    R²={r2_kl:.4f}  alpha={alpha_kl}")
 
     V_kaldi_total  = 1.0 - vfrac(res_k)
     V_llm_given_k  = vfrac(res_k) - vfrac(res_kl)
     V_neither_ord1 = vfrac(res_kl)
 
     # ---- Ordering 2: LLM → Kaldi ----------------------------------------
-    logger.info("  [Ordering 2] Deflating LLM...")
-    res_l, log_l = iterative_deflation(X_whisper, X_llm, **deflation_kw)
+    logger.info("  [Ordering 2] Ridge: LLM → Whisper...")
+    res_l, r2_l, alpha_l = linear_deflation(X_whisper, X_llm, val_mask)
+    logger.info(f"    R²={r2_l:.4f}  alpha={alpha_l}")
 
-    logger.info("  [Ordering 2] Deflating Kaldi from LLM residual...")
-    res_lk, log_lk = iterative_deflation(res_l, X_kaldi, **deflation_kw)
+    logger.info("  [Ordering 2] Ridge: Kaldi → LLM residual...")
+    res_lk, r2_lk, alpha_lk = linear_deflation(res_l, X_kaldi, val_mask)
+    logger.info(f"    R²={r2_lk:.4f}  alpha={alpha_lk}")
 
-    V_llm_total    = 1.0 - vfrac(res_l)
+    V_llm_total     = 1.0 - vfrac(res_l)
     V_kaldi_given_l = vfrac(res_l) - vfrac(res_lk)
-    V_neither_ord2 = vfrac(res_lk)
+    V_neither_ord2  = vfrac(res_lk)
 
     # ---- Four components -------------------------------------------------
     kaldi_only = V_kaldi_given_l
@@ -328,29 +345,57 @@ def venn_decomposition(
 
     shared_check = V_llm_total - llm_only
     if abs(shared - shared_check) > 0.02:
-        logger.warning(f"  Shared inconsistency: {shared:.4f} vs {shared_check:.4f} — "
-                       "may indicate probe didn't converge fully")
+        logger.warning(f"  Shared inconsistency: {shared:.4f} vs {shared_check:.4f}")
     if abs(V_neither_ord1 - V_neither_ord2) > 0.02:
         logger.warning(f"  Neither inconsistency: ord1={V_neither_ord1:.4f} ord2={V_neither_ord2:.4f}")
 
+    # ---- Nonlinear verification on neither residual ----------------------
+    # Average the two neither residuals — one from each ordering — then check
+    # whether an MLP can still recover Kaldi or LLM structure from what remains.
+    neither_residual = (res_kl + res_lk) / 2.0
+
+    logger.info("  [Verification] MLP probe: Kaldi → neither residual...")
+    nlr2_kaldi = nonlinear_verification(neither_residual, X_kaldi, val_mask,
+                                        device=device, **probe_kwargs)
+    logger.info(f"    nonlinear R²(Kaldi)={nlr2_kaldi:.4f}")
+
+    logger.info("  [Verification] MLP probe: LLM → neither residual...")
+    nlr2_llm = nonlinear_verification(neither_residual, X_llm, val_mask,
+                                      device=device, **probe_kwargs)
+    logger.info(f"    nonlinear R²(LLM)={nlr2_llm:.4f}")
+
+    if nlr2_kaldi > 0.05:
+        logger.warning(f"  Nonlinear Kaldi structure remains in neither residual: R²={nlr2_kaldi:.4f}")
+    if nlr2_llm > 0.05:
+        logger.warning(f"  Nonlinear LLM structure remains in neither residual: R²={nlr2_llm:.4f}")
+
     return {
-        "kaldi_only":    round(kaldi_only, 5),
-        "llm_only":      round(llm_only, 5),
-        "shared":        round(shared, 5),
-        "neither":       round(neither, 5),
+        "kaldi_only": round(kaldi_only, 5),
+        "llm_only":   round(llm_only, 5),
+        "shared":     round(shared, 5),
+        "neither":    round(neither, 5),
+        # Nonlinear verification
+        "nlr2_kaldi": round(nlr2_kaldi, 5),
+        "nlr2_llm":   round(nlr2_llm, 5),
         # Raw quantities for transparency / debugging
-        "V_kaldi_total":    round(V_kaldi_total, 5),
-        "V_llm_total":      round(V_llm_total, 5),
+        "V_kaldi_total":     round(V_kaldi_total, 5),
+        "V_llm_total":       round(V_llm_total, 5),
         "V_kaldi_given_llm": round(V_kaldi_given_l, 5),
         "V_llm_given_kaldi": round(V_llm_given_k, 5),
         "neither_ordering1": round(V_neither_ord1, 5),
         "neither_ordering2": round(V_neither_ord2, 5),
         "shared_check":      round(shared_check, 5),
-        "logs": {
-            "ordering1_kaldi": log_k,
-            "ordering1_llm":   log_kl,
-            "ordering2_llm":   log_l,
-            "ordering2_kaldi": log_lk,
+        "linear_r2": {
+            "ord1_kaldi":      round(r2_k, 5),
+            "ord1_llm_given_k": round(r2_kl, 5),
+            "ord2_llm":        round(r2_l, 5),
+            "ord2_kaldi_given_l": round(r2_lk, 5),
+        },
+        "ridge_alphas": {
+            "ord1_kaldi":      alpha_k,
+            "ord1_llm_given_k": alpha_kl,
+            "ord2_llm":        alpha_l,
+            "ord2_kaldi_given_l": alpha_lk,
         },
     }
 
@@ -360,8 +405,8 @@ def venn_decomposition(
 # ---------------------------------------------------------------------------
 
 def load_embedding(embeddings_dir: Path, granularity: str, model_name: str) -> np.ndarray:
-    subdir  = "WordData"  if granularity == "word"  else "PhoneData"
-    prefix  = "word"      if granularity == "word"  else "phone"
+    subdir = "WordData"  if granularity == "word"  else "PhoneData"
+    prefix = "word"      if granularity == "word"  else "phone"
     path = embeddings_dir / subdir / f"{prefix}_embeddings_{model_name}.pkl"
     if not path.exists():
         raise FileNotFoundError(f"Embedding not found: {path}")
@@ -374,9 +419,9 @@ def load_embedding(embeddings_dir: Path, granularity: str, model_name: str) -> n
 def build_llm_target(embeddings_dir: Path, granularity: str,
                      llm_models: list, pca_dims: int, seed: int) -> np.ndarray:
     """
-    If one LLM: return its embeddings directly.
-    If multiple LLMs: compute a shared subspace via PCA on pooled (centered,
-    scale-normalized) embeddings, return projection onto top pca_dims PCs.
+    If one LLM: return its embeddings directly (centered).
+    If multiple LLMs: compute a shared subspace via PCA on pooled embeddings,
+    return projection onto top pca_dims PCs.
     """
     if len(llm_models) == 1:
         X = load_embedding(embeddings_dir, granularity, llm_models[0])
@@ -389,8 +434,6 @@ def build_llm_target(embeddings_dir: Path, granularity: str,
         try:
             e = load_embedding(embeddings_dir, granularity, m).astype(np.float64)
             e -= e.mean(0)
-            # Normalize each model to unit average norm before pooling so no
-            # single high-dimensional model dominates the shared subspace
             e /= (np.linalg.norm(e, axis=1).mean() + 1e-8)
             arrays.append(e)
         except FileNotFoundError as ex:
@@ -399,17 +442,16 @@ def build_llm_target(embeddings_dir: Path, granularity: str,
     if not arrays:
         raise RuntimeError("No LLM embeddings found")
 
-    stacked = np.concatenate(arrays, axis=1)   # (N, sum_d)
+    stacked = np.concatenate(arrays, axis=1)
     del arrays; gc.collect()
 
     stacked -= stacked.mean(0)
-    stacked /= np.sqrt(stacked.shape[0] - 1)   # scale for SVD
+    stacked /= np.sqrt(stacked.shape[0] - 1)
 
     from sklearn.utils.extmath import randomized_svd
     _, _, Vt = randomized_svd(stacked, n_components=pca_dims, random_state=seed)
     del stacked; gc.collect()
 
-    # Project: reload and re-concatenate at float32 for the final projection
     arrays2 = []
     for m in llm_models:
         try:
@@ -422,7 +464,7 @@ def build_llm_target(embeddings_dir: Path, granularity: str,
     stacked2 = np.concatenate(arrays2, axis=1).astype(np.float32)
     del arrays2; gc.collect()
 
-    projection = stacked2 @ Vt.T.astype(np.float32)   # (N, pca_dims)
+    projection = stacked2 @ Vt.T.astype(np.float32)
     del stacked2; gc.collect()
     logger.info(f"  Shared LLM target shape: {projection.shape}")
     return projection
@@ -434,26 +476,20 @@ def build_llm_target(embeddings_dir: Path, granularity: str,
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Whisper-Kaldi-LLM variance decomposition"
+        description="Whisper-Kaldi-LLM variance decomposition (INLP + nonlinear verification)"
     )
-    p.add_argument("--granularity", choices=["word", "phone"], required=True,
-                   help="Analysis granularity")
+    p.add_argument("--granularity", choices=["word", "phone"], required=True)
     p.add_argument("--embeddings_dir", type=Path, default=Path("/dpluth-data"),
                    help="Root dir containing WordData/ and PhoneData/ pkl files")
     p.add_argument("--output_dir", type=Path, default=None,
                    help="Where to save results (default: ./<granularity>/)")
-    p.add_argument("--whisper_models", nargs="+", default=WHISPER_ALL,
-                   help="Whisper model(s) to analyse (encoders + decoders by default)")
-    p.add_argument("--kaldi_model", default="kaldi-librispeech",
-                   choices=KALDI_MODELS)
+    p.add_argument("--whisper_models", nargs="+", default=WHISPER_ALL)
+    p.add_argument("--kaldi_model", default="kaldi-librispeech", choices=KALDI_MODELS)
     p.add_argument("--llm_models", nargs="+", default=["olmo-7b"],
-                   help="LLM(s) to use. Defaults to olmo-7b (largest). Multiple → shared PCA subspace.")
+                   help="LLM(s) to use. Defaults to olmo-7b. Multiple → shared PCA subspace.")
     p.add_argument("--llm_pca_dims", type=int, default=256,
                    help="PCA dims for shared LLM subspace when >1 LLM given")
-    p.add_argument("--threshold", type=float, default=0.01,
-                   help="R² threshold to stop iterative deflation")
-    p.add_argument("--max_iters", type=int, default=20,
-                   help="Max deflation iterations per stage")
+    # MLP verification hyperparameters
     p.add_argument("--hidden_dim", type=int, default=1024)
     p.add_argument("--n_layers", type=int, default=3)
     p.add_argument("--dropout", type=float, default=0.1)
@@ -462,7 +498,7 @@ def parse_args():
     p.add_argument("--max_epochs", type=int, default=150)
     p.add_argument("--patience", type=int, default=10)
     p.add_argument("--val_frac", type=float, default=0.2,
-                   help="Fraction of data held out for R² evaluation")
+                   help="Fraction held out for R² evaluation")
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
 
@@ -542,16 +578,17 @@ def main():
 
         result = venn_decomposition(
             X_w, X_kaldi, X_llm, val_mask,
-            threshold=args.threshold, max_iters=args.max_iters,
             device=device, **probe_kwargs,
         )
 
         logger.info(f"  --- {whisper_name} summary ---")
-        logger.info(f"  Kaldi-only : {result['kaldi_only']:.4f}")
-        logger.info(f"  LLM-only   : {result['llm_only']:.4f}")
-        logger.info(f"  Shared     : {result['shared']:.4f}")
-        logger.info(f"  Neither    : {result['neither']:.4f}")
-        logger.info(f"  (check: sum = {result['kaldi_only']+result['llm_only']+result['shared']+result['neither']:.4f})")
+        logger.info(f"  Kaldi-only   : {result['kaldi_only']:.4f}")
+        logger.info(f"  LLM-only     : {result['llm_only']:.4f}")
+        logger.info(f"  Shared       : {result['shared']:.4f}")
+        logger.info(f"  Neither      : {result['neither']:.4f}")
+        logger.info(f"  (sum={result['kaldi_only']+result['llm_only']+result['shared']+result['neither']:.4f})")
+        logger.info(f"  nlr2 Kaldi   : {result['nlr2_kaldi']:.4f}")
+        logger.info(f"  nlr2 LLM     : {result['nlr2_llm']:.4f}")
 
         all_results[whisper_name] = result
 
@@ -569,8 +606,8 @@ def main():
         "kaldi_model":  args.kaldi_model,
         "llm_models":   args.llm_models,
         "llm_pca_dims": args.llm_pca_dims,
-        "threshold":    args.threshold,
-        "max_iters":    args.max_iters,
+        "method":       "ridge_inlp_plus_mlp_verification",
+        "ridge_alphas_tried": RIDGE_ALPHAS,
         "results":      all_results,
     }
     with open(out_path, "w") as f:
@@ -581,13 +618,14 @@ def main():
     # Save per-model CSVs + summary CSV
     # ------------------------------------------------------------------
     COMPONENTS = ["kaldi_only", "llm_only", "shared", "neither",
+                  "nlr2_kaldi", "nlr2_llm",
                   "V_kaldi_total", "V_llm_total"]
 
     for whisper_name, result in all_results.items():
         csv_path = output_dir / f"{whisper_name}_decomposition.csv"
         with open(csv_path, "w", newline="") as f:
             writer = csv.writer(f)
-            writer.writerow(["component", "fraction"])
+            writer.writerow(["component", "value"])
             for comp in COMPONENTS:
                 writer.writerow([comp, result[comp]])
         logger.info(f"CSV → {csv_path}")
