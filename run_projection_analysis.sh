@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-EMBEDDINGS_DIR="/dpluth-data"
+EMBEDDINGS_DIR="."
 WORD_OUT="whisper_kaldi_llm_projection/word"
 PHONE_OUT="whisper_kaldi_llm_projection/phone"
 ANALYSIS="whisper_kaldi_llm_projection/projection_analysis.py"
