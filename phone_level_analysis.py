@@ -402,7 +402,12 @@ def parse_args():
                    help="LJSpeech-1.1 root (must contain metadata.csv and wavs/). "
                         "Auto-downloaded if absent.")
     p.add_argument("--root_dir", default=".", type=Path,
-                   help="Root directory for PhoneData/, PhonePlots/, logs/")
+                   help="Root directory for large files: PhoneData/ pkl embeddings, "
+                        "phone_records.json, LJSpeech, textgrids. "
+                        "Can be external storage (e.g. /dpluth-data) to save disk space.")
+    p.add_argument("--output_dir", default=".", type=Path,
+                   help="Directory for small outputs: results JSON, CSV tables, plots, logs. "
+                        "Defaults to current directory (the repo root).")
     p.add_argument("--max_phones", default=None, type=int,
                    help="Cap total phone records (useful for testing)")
     p.add_argument("--batch_size", default=2048, type=int,
@@ -434,12 +439,15 @@ def parse_args():
 def main():
     args = parse_args()
     root = Path(args.root_dir)
-    data_dir  = root / "PhoneData"
-    plots_dir = root / "PhonePlots"
+    output_root = Path(args.output_dir)
+    data_dir        = root        / "PhoneData"  # large files: pkl, phone_records.json
+    output_data_dir = output_root / "PhoneData"  # small results: JSON, CSV
+    plots_dir       = output_root / "PhonePlots"
     data_dir.mkdir(parents=True, exist_ok=True)
+    output_data_dir.mkdir(parents=True, exist_ok=True)
     plots_dir.mkdir(parents=True, exist_ok=True)
 
-    log_path = _setup_logging(root / "logs")
+    log_path = _setup_logging(output_root / "logs")
     logger.info("=" * 60)
     logger.info("Phone-Level Representation Analysis — run started")
     logger.info(f"Log file: {log_path}")
@@ -701,7 +709,7 @@ def main():
     # 5. Save outputs
     # ------------------------------------------------------------------
     with _timer("Save tables"):
-        save_summary_tables_phone(cka_matrix, cka_results, names, eigenvalues, embeddings, data_dir)
+        save_summary_tables_phone(cka_matrix, cka_results, names, eigenvalues, embeddings, output_data_dir)
 
     results_json = {
         "n_phones": N,
@@ -713,7 +721,7 @@ def main():
         "eigenvalue_spectra": {k: v.tolist() for k, v in eigenvalues.items()},
         "effective_ranks": {k: effective_rank(v) for k, v in eigenvalues.items()},
     }
-    json_path = data_dir / "phone_results.json"
+    json_path = output_data_dir / "phone_results.json"
     with open(json_path, "w") as f:
         json.dump(results_json, f, indent=2)
     logger.info(f"Results JSON → {json_path}")
