@@ -49,7 +49,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset
 
 logger = logging.getLogger("projection")
 
@@ -123,35 +122,49 @@ def train_probe(
     max_epochs: int = 150, patience: int = 10,
     device: str = "cuda",
 ) -> MLPProbe:
-    """Train MLP with early stopping on validation MSE."""
+    """Train MLP with early stopping on validation MSE.
+
+    All data lives GPU-resident for the duration of training to avoid
+    repeated CPU→GPU transfers. Shuffling is done with torch.randperm on
+    the GPU rather than through DataLoader (which is optimised for CPU data).
+    Mixed precision (bfloat16) is used on CUDA for ~2x throughput.
+    """
     probe = MLPProbe(X_in_tr.shape[1], X_out_tr.shape[1],
                      hidden_dim, n_layers, dropout).to(device)
-    opt = torch.optim.Adam(probe.parameters(), lr=lr, weight_decay=1e-5)
+    opt   = torch.optim.Adam(probe.parameters(), lr=lr, weight_decay=1e-5)
     sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=5, factor=0.5)
+    use_amp = device == "cuda" and torch.cuda.is_bf16_supported()
+    scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
 
+    # Move full splits to GPU once
     t_in  = torch.from_numpy(X_in_tr.astype(np.float32)).to(device)
     t_out = torch.from_numpy(X_out_tr.astype(np.float32)).to(device)
     v_in  = torch.from_numpy(X_in_val.astype(np.float32)).to(device)
     v_out = torch.from_numpy(X_out_val.astype(np.float32)).to(device)
-
-    loader = DataLoader(TensorDataset(t_in, t_out), batch_size=batch_size, shuffle=True)
+    N_tr  = t_in.shape[0]
 
     best_val, best_state, no_improve = float("inf"), None, 0
     probe.train()
     for epoch in range(max_epochs):
-        for xb, yb in loader:
+        perm = torch.randperm(N_tr, device=device)
+        for start in range(0, N_tr, batch_size):
+            idx = perm[start:start + batch_size]
+            xb, yb = t_in[idx], t_out[idx]
             opt.zero_grad()
-            nn.functional.mse_loss(probe(xb), yb).backward()
-            opt.step()
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
+                loss = nn.functional.mse_loss(probe(xb), yb)
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
 
         probe.eval()
-        with torch.no_grad():
+        with torch.no_grad(), torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
             val_loss = nn.functional.mse_loss(probe(v_in), v_out).item()
         probe.train()
 
         sched.step(val_loss)
         if val_loss < best_val - 1e-6:
-            best_val = val_loss
+            best_val   = val_loss
             best_state = {k: v.cpu().clone() for k, v in probe.state_dict().items()}
             no_improve = 0
         else:
