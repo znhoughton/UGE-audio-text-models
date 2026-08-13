@@ -344,7 +344,7 @@ def nonlinear_verification(
     pred_val = predict_batched(probe, X_target[val_mask], device=device)
     r2 = r2_score(X_residual[val_mask], pred_val)
 
-    del probe
+    del probe, pred_val
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
