@@ -58,7 +58,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import Ridge
 
 logger = logging.getLogger("projection")
 
@@ -102,8 +102,8 @@ LLM_MODELS = [
     "pythia-6.9b",
 ]
 
-# Alphas tried by RidgeCV (log-spaced; LOO-CV selects the best)
-RIDGE_ALPHAS = [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+# Alphas tried by val-split CV (log-spaced)
+RIDGE_ALPHAS = [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
 
 
 # ---------------------------------------------------------------------------
@@ -122,27 +122,49 @@ def linear_deflation(
     Because the OLS residual is orthogonal to X_target by construction, one step
     removes all linearly-accessible variance — no iteration required.
 
-    RidgeCV selects regularisation strength via leave-one-out CV, which handles
-    the near-singular Gram matrix that arises from low-effective-rank embeddings
-    (e.g. OLMo-7B effective rank ≈ 24 despite d=4096).
+    Uses solver='cholesky' which only needs the Gram matrix (p×p = ~128 MB for
+    OLMo) rather than the full SVD U matrix (n×p = ~11.6 GB). Alpha is chosen
+    via the existing val split rather than LOO-CV to avoid that SVD entirely.
+    Training data is explicitly freed after fitting to keep peak RAM low.
 
     Returns:
-        residual    (np.ndarray): X_whisper_residual - Ridge prediction (all data)
-        r2_val      (float):      R² on held-out validation split
-        alpha_chosen (float):     Ridge alpha selected by CV
+        residual     (np.ndarray): X_whisper_residual - Ridge prediction (all data)
+        r2_val       (float):      R² on held-out validation split
+        alpha_chosen (float):      Ridge alpha selected by val-split CV
     """
     train_mask = ~val_mask
 
-    reg = RidgeCV(alphas=RIDGE_ALPHAS, fit_intercept=True)
-    reg.fit(X_target[train_mask], X_whisper_residual[train_mask])
+    X_tr  = X_target[train_mask]
+    Y_tr  = X_whisper_residual[train_mask]
+    X_val = X_target[val_mask]
+    Y_val = X_whisper_residual[val_mask]
 
-    pred_val = reg.predict(X_target[val_mask])
-    r2_val = r2_score(X_whisper_residual[val_mask], pred_val)
+    # Select alpha on the val split — avoids the O(n×p) SVD that RidgeCV/LOO needs
+    best_alpha, best_r2 = RIDGE_ALPHAS[0], -np.inf
+    for alpha in RIDGE_ALPHAS:
+        reg = Ridge(alpha=alpha, fit_intercept=False, solver="cholesky", copy_X=False)
+        reg.fit(X_tr, Y_tr)
+        r2 = r2_score(Y_val, reg.predict(X_val))
+        if r2 > best_r2:
+            best_r2, best_alpha = r2, alpha
+        del reg
+    gc.collect()
+
+    del X_val, Y_val
+
+    # Refit with best alpha, then free training data before predicting on all data
+    reg = Ridge(alpha=best_alpha, fit_intercept=False, solver="cholesky", copy_X=False)
+    reg.fit(X_tr, Y_tr)
+    del X_tr, Y_tr
+    gc.collect()
 
     pred_all = reg.predict(X_target)
+    del reg
     residual = X_whisper_residual - pred_all
+    del pred_all
+    gc.collect()
 
-    return residual, float(r2_val), float(reg.alpha_)
+    return residual, float(best_r2), float(best_alpha)
 
 
 # ---------------------------------------------------------------------------
@@ -315,26 +337,30 @@ def venn_decomposition(
     logger.info("  [Ordering 1] Ridge: Kaldi → Whisper...")
     res_k, r2_k, alpha_k = linear_deflation(X_whisper, X_kaldi, val_mask)
     logger.info(f"    R²={r2_k:.4f}  alpha={alpha_k}")
+    V_kaldi_total = 1.0 - vfrac(res_k)
+    vfrac_res_k   = vfrac(res_k)
 
     logger.info("  [Ordering 1] Ridge: LLM → Kaldi residual...")
     res_kl, r2_kl, alpha_kl = linear_deflation(res_k, X_llm, val_mask)
     logger.info(f"    R²={r2_kl:.4f}  alpha={alpha_kl}")
+    del res_k; gc.collect()
 
-    V_kaldi_total  = 1.0 - vfrac(res_k)
-    V_llm_given_k  = vfrac(res_k) - vfrac(res_kl)
+    V_llm_given_k  = vfrac_res_k - vfrac(res_kl)
     V_neither_ord1 = vfrac(res_kl)
 
     # ---- Ordering 2: LLM → Kaldi ----------------------------------------
     logger.info("  [Ordering 2] Ridge: LLM → Whisper...")
     res_l, r2_l, alpha_l = linear_deflation(X_whisper, X_llm, val_mask)
     logger.info(f"    R²={r2_l:.4f}  alpha={alpha_l}")
+    V_llm_total = 1.0 - vfrac(res_l)
+    vfrac_res_l = vfrac(res_l)
 
     logger.info("  [Ordering 2] Ridge: Kaldi → LLM residual...")
     res_lk, r2_lk, alpha_lk = linear_deflation(res_l, X_kaldi, val_mask)
     logger.info(f"    R²={r2_lk:.4f}  alpha={alpha_lk}")
+    del res_l; gc.collect()
 
-    V_llm_total     = 1.0 - vfrac(res_l)
-    V_kaldi_given_l = vfrac(res_l) - vfrac(res_lk)
+    V_kaldi_given_l = vfrac_res_l - vfrac(res_lk)
     V_neither_ord2  = vfrac(res_lk)
 
     # ---- Four components -------------------------------------------------
@@ -350,9 +376,8 @@ def venn_decomposition(
         logger.warning(f"  Neither inconsistency: ord1={V_neither_ord1:.4f} ord2={V_neither_ord2:.4f}")
 
     # ---- Nonlinear verification on neither residual ----------------------
-    # Average the two neither residuals — one from each ordering — then check
-    # whether an MLP can still recover Kaldi or LLM structure from what remains.
     neither_residual = (res_kl + res_lk) / 2.0
+    del res_kl, res_lk; gc.collect()
 
     logger.info("  [Verification] MLP probe: Kaldi → neither residual...")
     nlr2_kaldi = nonlinear_verification(neither_residual, X_kaldi, val_mask,
@@ -363,6 +388,7 @@ def venn_decomposition(
     nlr2_llm = nonlinear_verification(neither_residual, X_llm, val_mask,
                                       device=device, **probe_kwargs)
     logger.info(f"    nonlinear R²(LLM)={nlr2_llm:.4f}")
+    del neither_residual; gc.collect()
 
     if nlr2_kaldi > 0.05:
         logger.warning(f"  Nonlinear Kaldi structure remains in neither residual: R²={nlr2_kaldi:.4f}")
