@@ -58,7 +58,6 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn as nn
-from sklearn.linear_model import Ridge
 
 logger = logging.getLogger("projection")
 
@@ -105,6 +104,70 @@ LLM_MODELS = [
 # Alphas tried by val-split CV (log-spaced)
 RIDGE_ALPHAS = [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
 
+# Rows processed per chunk in Ridge helpers — keeps peak extra RAM to ~1.6 GB
+# even when X_target is OLMo (4096-dim, 885k rows = 14.5 GB in float16)
+RIDGE_CHUNK = 50_000
+
+
+# ---------------------------------------------------------------------------
+# Chunked Ridge helpers — no full float32 copy of X_target ever created
+# ---------------------------------------------------------------------------
+
+def _gram_and_cross(X_target, X_residual, mask, chunk_size=RIDGE_CHUNK):
+    """Accumulate Gram (X.T @ X) and cross-cov (X.T @ Y) in float64 chunks.
+
+    Inputs may be float16; each chunk is upcasted to float64 on the fly so
+    the Gram matrix is numerically stable even for near-singular embeddings.
+    Peak extra RAM per iteration: chunk_size × (d_t + d_w) × 8 bytes ≈ 1.6 GB.
+    """
+    d_t = X_target.shape[1]
+    d_w = X_residual.shape[1]
+    gram  = np.zeros((d_t, d_t), dtype=np.float64)
+    cross = np.zeros((d_t, d_w), dtype=np.float64)
+    for start in range(0, len(X_target), chunk_size):
+        end = min(start + chunk_size, len(X_target))
+        m   = mask[start:end]
+        if not m.any():
+            continue
+        X_c = X_target[start:end][m].astype(np.float64)
+        Y_c = X_residual[start:end][m].astype(np.float64)
+        gram  += X_c.T @ X_c
+        cross += X_c.T @ Y_c
+        del X_c, Y_c
+    gc.collect()
+    return gram, cross
+
+
+def _val_r2_chunked(W, X_target, X_residual, val_mask, chunk_size=RIDGE_CHUNK):
+    """Compute R² on the validation set in float32 chunks."""
+    preds, trues = [], []
+    for start in range(0, len(X_target), chunk_size):
+        end = min(start + chunk_size, len(X_target))
+        m   = val_mask[start:end]
+        if not m.any():
+            continue
+        preds.append(X_target[start:end][m].astype(np.float32) @ W)
+        trues.append(X_residual[start:end][m].astype(np.float32))
+    if not preds:
+        return 0.0
+    return r2_score(np.concatenate(trues), np.concatenate(preds))
+
+
+def _predict_subtract_chunked(W, X_target, X_residual, chunk_size=RIDGE_CHUNK):
+    """Compute (X_residual - X_target @ W) in float32 chunks, stored as float16.
+
+    Avoids ever creating a full float32 copy of X_target or X_residual.
+    """
+    result = np.empty(X_residual.shape, dtype=np.float16)
+    for start in range(0, len(X_target), chunk_size):
+        end = min(start + chunk_size, len(X_target))
+        X_c = X_target[start:end].astype(np.float32)
+        Y_c = X_residual[start:end].astype(np.float32)
+        result[start:end] = (Y_c - X_c @ W).astype(np.float16)
+        del X_c, Y_c
+    gc.collect()
+    return result
+
 
 # ---------------------------------------------------------------------------
 # Linear deflation (INLP-style, one shot)
@@ -122,46 +185,37 @@ def linear_deflation(
     Because the OLS residual is orthogonal to X_target by construction, one step
     removes all linearly-accessible variance — no iteration required.
 
-    Uses solver='cholesky' which only needs the Gram matrix (p×p = ~128 MB for
-    OLMo) rather than the full SVD U matrix (n×p = ~11.6 GB). Alpha is chosen
-    via the existing val split rather than LOO-CV to avoid that SVD entirely.
-    Training data is explicitly freed after fitting to keep peak RAM low.
+    Memory strategy (matches phone_level_analysis.py approach):
+      - Embeddings are stored as float16 (halves baseline RAM footprint)
+      - Gram matrix and cross-covariance are accumulated in float64 chunks so
+        no full float32 copy of X_target (14.5 GB for OLMo) is ever created
+      - Alpha selected via val split (avoids RidgeCV LOO-SVD which needs an
+        O(n×p) U matrix — 11.6 GB for OLMo × 4 calls per Whisper model)
+      - Residual stored as float16 to halve persistent memory between models
 
     Returns:
-        residual     (np.ndarray): X_whisper_residual - Ridge prediction (all data)
-        r2_val       (float):      R² on held-out validation split
-        alpha_chosen (float):      Ridge alpha selected by val-split CV
+        residual     (np.ndarray, float16): X_whisper_residual - Ridge prediction
+        r2_val       (float):               R² on held-out validation split
+        alpha_chosen (float):               Ridge alpha selected by val-split CV
     """
     train_mask = ~val_mask
+    d_t = X_target.shape[1]
 
-    X_tr  = X_target[train_mask]
-    Y_tr  = X_whisper_residual[train_mask]
-    X_val = X_target[val_mask]
-    Y_val = X_whisper_residual[val_mask]
+    gram, cross = _gram_and_cross(X_target, X_whisper_residual, train_mask)
 
-    # Select alpha on the val split — avoids the O(n×p) SVD that RidgeCV/LOO needs
-    best_alpha, best_r2 = RIDGE_ALPHAS[0], -np.inf
+    best_alpha, best_r2, best_W = RIDGE_ALPHAS[0], -np.inf, None
     for alpha in RIDGE_ALPHAS:
-        reg = Ridge(alpha=alpha, fit_intercept=False, solver="cholesky", copy_X=False)
-        reg.fit(X_tr, Y_tr)
-        r2 = r2_score(Y_val, reg.predict(X_val))
+        A = gram + alpha * np.eye(d_t, dtype=np.float64)
+        W = np.linalg.solve(A, cross).astype(np.float32)  # (d_t, d_w)
+        r2 = _val_r2_chunked(W, X_target, X_whisper_residual, val_mask)
         if r2 > best_r2:
-            best_r2, best_alpha = r2, alpha
-        del reg
+            best_r2, best_alpha, best_W = r2, alpha, W
+        del W
+    del gram, cross
     gc.collect()
 
-    del X_val, Y_val
-
-    # Refit with best alpha, then free training data before predicting on all data
-    reg = Ridge(alpha=best_alpha, fit_intercept=False, solver="cholesky", copy_X=False)
-    reg.fit(X_tr, Y_tr)
-    del X_tr, Y_tr
-    gc.collect()
-
-    pred_all = reg.predict(X_target)
-    del reg
-    residual = X_whisper_residual - pred_all
-    del pred_all
+    residual = _predict_subtract_chunked(best_W, X_target, X_whisper_residual)
+    del best_W
     gc.collect()
 
     return residual, float(best_r2), float(best_alpha)
@@ -328,10 +382,12 @@ def venn_decomposition(
       shared     = V_kaldi_total - kaldi_only  (== V_llm_total - llm_only)
       neither    = 1 - kaldi_only - llm_only - shared
     """
-    total_var = float((X_whisper ** 2).sum())
+    # Cast to float32 before squaring/summing — float16 overflows at 65504 and
+    # loses precision when accumulating 885k values
+    total_var = float((X_whisper.astype(np.float32) ** 2).sum())
 
     def vfrac(arr):
-        return float((arr ** 2).sum() / total_var)
+        return float((arr.astype(np.float32) ** 2).sum() / total_var)
 
     # ---- Ordering 1: Kaldi → LLM ----------------------------------------
     logger.info("  [Ordering 1] Ridge: Kaldi → Whisper...")
@@ -439,7 +495,7 @@ def load_embedding(embeddings_dir: Path, granularity: str, model_name: str) -> n
     logger.info(f"  Loading {path}")
     with open(path, "rb") as f:
         emb = pickle.load(f)
-    return emb.astype(np.float32)
+    return emb.astype(np.float16)  # halves persistent RAM; upcasted per-chunk during computation
 
 
 def build_llm_target(embeddings_dir: Path, granularity: str,
