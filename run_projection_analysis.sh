@@ -4,7 +4,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-EMBEDDINGS_DIR="."
+WORD_EMBEDDINGS_DIR="."
+PHONE_EMBEDDINGS_DIR="/dpluth-data"
 WORD_OUT="whisper_kaldi_llm_projection/word"
 PHONE_OUT="whisper_kaldi_llm_projection/phone"
 ANALYSIS="whisper_kaldi_llm_projection/projection_analysis.py"
@@ -20,13 +21,13 @@ run_group() {
 
     python "$ANALYSIS" \
         --granularity word \
-        --embeddings_dir "$EMBEDDINGS_DIR" \
+        --embeddings_dir "$WORD_EMBEDDINGS_DIR" \
         --output_dir "$WORD_OUT" \
         --whisper_models "${models[@]}" \
     && \
     python "$ANALYSIS" \
         --granularity phone \
-        --embeddings_dir "$EMBEDDINGS_DIR" \
+        --embeddings_dir "$PHONE_EMBEDDINGS_DIR" \
         --output_dir "$PHONE_OUT" \
         --whisper_models "${models[@]}"
 
