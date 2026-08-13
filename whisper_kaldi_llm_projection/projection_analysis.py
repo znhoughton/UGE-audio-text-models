@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Whisper-Kaldi-LLM Variance Decomposition via INLP + Nonlinear Verification
+Whisper-Kaldi-LLM Variance Decomposition via Ridge Regression + Nonlinear Verification
 
 Decomposes Whisper embedding variance into four components:
   - Kaldi-only    : variance in the linear Kaldi subspace but not the linear LLM subspace
@@ -8,21 +8,41 @@ Decomposes Whisper embedding variance into four components:
   - Shared        : variance in both linear subspaces
   - Neither       : variance in neither linear subspace
 
-Method:
-  Linear deflation (INLP-style) is done in one shot using Ridge regression.
-  Because the OLS residual is orthogonal to X_target by construction, no
-  iteration is needed — a second linear probe on the residual explains 0%.
+Method (regress Whisper ON the target — target is the predictor):
+  We regress Whisper ON the target (Kaldi or LLM): X_whisper ≈ X_target · W,
+  and subtract the prediction. The residual is the part of Whisper NOT linearly
+  predictable from the target:
+
+      res = X_whisper − X_target · W
+
+  Whisper must be the response so that its total variance is the denominator
+  every fraction is measured against — that is what makes the four components a
+  decomposition of *Whisper's* variance. Because it is OLS/ridge regression, the
+  residual is (near-)orthogonal to the target in one shot; a second linear probe
+  on the residual explains ~0.
+
+  Why this is confound-free (no PCA / rank-matching needed):
+    HELD-OUT VARIANCE. W is fit on the train split; every variance fraction is
+    measured on the val split only. In-sample, a p-dim predictor can spuriously
+    subtract ~p/n of any non-target Whisper direction (a finite-sample overlap
+    with the target's column space, NOT true structure). Out-of-sample that
+    overlap does not transfer, so the reported (held-out) numbers remove it
+    entirely — the wrongly-subtracted fraction is the in-sample−held-out gap,
+    ~0.07% at our n, and ~0 on val. Ridge shrinks the projection, subtracting
+    even less. Optional --null_check permutes target rows to confirm the removed
+    held-out variance collapses to ~0.
+
   Both orderings are run to recover the shared component algebraically:
 
   Ordering 1 (Kaldi first):
-    1. Ridge(X_kaldi → X_whisper) → subtract → res_k
-    2. Ridge(X_llm   → res_k)     → subtract → res_kl
+    1. regress Whisper on Kaldi, subtract → res_k
+    2. regress res_k   on LLM,   subtract → res_kl
 
   Ordering 2 (LLM first):
-    1. Ridge(X_llm   → X_whisper) → subtract → res_l
-    2. Ridge(X_kaldi → res_l)     → subtract → res_lk
+    1. regress Whisper on LLM,   subtract → res_l
+    2. regress res_l   on Kaldi, subtract → res_lk
 
-  Four components:
+  Four components (fractions of Whisper's held-out variance):
     kaldi_only = V_kaldi_given_llm  (ordering 2, step 2)
     llm_only   = V_llm_given_kaldi  (ordering 1, step 2)
     shared     = V_kaldi_total - kaldi_only  (== V_llm_total - llm_only)
@@ -101,45 +121,48 @@ LLM_MODELS = [
     "pythia-6.9b",
 ]
 
-# Alphas tried by val-split CV (log-spaced)
+# Alphas tried by val-split CV (log-spaced) — regularizes the target→Whisper fit
 RIDGE_ALPHAS = [0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]
 
-# Rows processed per chunk in Ridge helpers — keeps peak extra RAM to ~1.6 GB
-# even when X_target is OLMo (4096-dim, 885k rows = 14.5 GB in float16)
+# Rows processed per chunk in the accumulators — keeps peak extra RAM bounded
+# even when a target is OLMo (4096-dim, 885k rows = 14.5 GB in float16)
 RIDGE_CHUNK = 50_000
 
 
 # ---------------------------------------------------------------------------
-# Chunked Ridge helpers — no full float32 copy of X_target ever created
+# Chunked Ridge helpers — predictor is the target (Kaldi/LLM); no full float32
+# copy of X_target is ever created, so OLMo (4096-dim, 14.5 GB f16) is safe.
 # ---------------------------------------------------------------------------
 
-def _gram_and_cross(X_target, X_residual, mask, chunk_size=RIDGE_CHUNK):
-    """Accumulate Gram (X.T @ X) and cross-cov (X.T @ Y) in float64 chunks.
-
-    Inputs may be float16; each chunk is upcasted to float64 on the fly so
-    the Gram matrix is numerically stable even for near-singular embeddings.
-    Peak extra RAM per iteration: chunk_size × (d_t + d_w) × 8 bytes ≈ 1.6 GB.
+def _gram_and_cross(X_target, X_whisper, mask, chunk_size=RIDGE_CHUNK):
+    """Accumulate Gram G = Xtᵀ Xt (d_t × d_t) and cross C = Xtᵀ Xw (d_t × d_w)
+    over masked rows, in float64. Peak extra RAM per chunk ≈ chunk_size ×
+    (d_t + d_w) × 8 bytes.
     """
     d_t = X_target.shape[1]
-    d_w = X_residual.shape[1]
-    gram  = np.zeros((d_t, d_t), dtype=np.float64)
-    cross = np.zeros((d_t, d_w), dtype=np.float64)
+    d_w = X_whisper.shape[1]
+    G = np.zeros((d_t, d_t), dtype=np.float64)
+    C = np.zeros((d_t, d_w), dtype=np.float64)
     for start in range(0, len(X_target), chunk_size):
         end = min(start + chunk_size, len(X_target))
         m   = mask[start:end]
         if not m.any():
             continue
-        X_c = X_target[start:end][m].astype(np.float64)
-        Y_c = X_residual[start:end][m].astype(np.float64)
-        gram  += X_c.T @ X_c
-        cross += X_c.T @ Y_c
-        del X_c, Y_c
+        Xt = X_target[start:end][m].astype(np.float64)
+        Xw = X_whisper[start:end][m].astype(np.float64)
+        G += Xt.T @ Xt
+        C += Xt.T @ Xw
+        del Xt, Xw
     gc.collect()
-    return gram, cross
+    return G, C
 
 
-def _val_r2_chunked(W, X_target, X_residual, val_mask, chunk_size=RIDGE_CHUNK):
-    """Compute R² on the validation set in float32 chunks."""
+def _val_r2_chunked(W, X_target, X_whisper, val_mask, chunk_size=RIDGE_CHUNK):
+    """R² of predicting Whisper FROM the target (Whisper ≈ Xt·W) on the val split.
+
+    This is the held-out variance fraction the fit removes — the honest,
+    overfitting-free measure of how much of Whisper lies in the target space.
+    """
     preds, trues = [], []
     for start in range(0, len(X_target), chunk_size):
         end = min(start + chunk_size, len(X_target))
@@ -147,30 +170,29 @@ def _val_r2_chunked(W, X_target, X_residual, val_mask, chunk_size=RIDGE_CHUNK):
         if not m.any():
             continue
         preds.append(X_target[start:end][m].astype(np.float32) @ W)
-        trues.append(X_residual[start:end][m].astype(np.float32))
+        trues.append(X_whisper[start:end][m].astype(np.float32))
     if not preds:
         return 0.0
     return r2_score(np.concatenate(trues), np.concatenate(preds))
 
 
-def _predict_subtract_chunked(W, X_target, X_residual, chunk_size=RIDGE_CHUNK):
-    """Compute (X_residual - X_target @ W) in float32 chunks, stored as float16.
-
-    Avoids ever creating a full float32 copy of X_target or X_residual.
+def _predict_subtract_chunked(W, X_target, X_whisper, chunk_size=RIDGE_CHUNK):
+    """Compute residual = X_whisper − X_target · W in float32 chunks, stored
+    as float16. Never creates a full float32 copy of X_target or X_whisper.
     """
-    result = np.empty(X_residual.shape, dtype=np.float16)
+    result = np.empty(X_whisper.shape, dtype=np.float16)
     for start in range(0, len(X_target), chunk_size):
         end = min(start + chunk_size, len(X_target))
-        X_c = X_target[start:end].astype(np.float32)
-        Y_c = X_residual[start:end].astype(np.float32)
-        result[start:end] = (Y_c - X_c @ W).astype(np.float16)
-        del X_c, Y_c
+        Xt = X_target[start:end].astype(np.float32)
+        Xw = X_whisper[start:end].astype(np.float32)
+        result[start:end] = (Xw - Xt @ W).astype(np.float16)
+        del Xt, Xw
     gc.collect()
     return result
 
 
 # ---------------------------------------------------------------------------
-# Linear deflation (INLP-style, one shot)
+# Linear deflation (regress Whisper ON the target, subtract the projection)
 # ---------------------------------------------------------------------------
 
 def linear_deflation(
@@ -179,46 +201,65 @@ def linear_deflation(
     val_mask: np.ndarray,
 ) -> tuple:
     """
-    Fit Ridge regression (X_target → X_whisper_residual) on the training split,
-    then subtract predictions from the full dataset.
+    Fit Ridge  Whisper ≈ X_target · W  on the train split, then subtract the
+    prediction from the full dataset. The residual is the part of Whisper NOT
+    linearly predictable from the target.
 
-    Because the OLS residual is orthogonal to X_target by construction, one step
-    removes all linearly-accessible variance — no iteration required.
+    Direction is Kaldi/LLM → Whisper (target is the predictor): to decompose
+    Whisper's variance, Whisper must be the response so its total variance is
+    the denominator every fraction is measured against.
 
-    Memory strategy (matches phone_level_analysis.py approach):
-      - Embeddings are stored as float16 (halves baseline RAM footprint)
-      - Gram matrix and cross-covariance are accumulated in float64 chunks so
-        no full float32 copy of X_target (14.5 GB for OLMo) is ever created
-      - Alpha selected via val split (avoids RidgeCV LOO-SVD which needs an
-        O(n×p) U matrix — 11.6 GB for OLMo × 4 calls per Whisper model)
-      - Residual stored as float16 to halve persistent memory between models
+    Guarantees / properties:
+      - The most non-target variance that can be wrongly subtracted is
+        rank(X_target)/n (in-sample), and ~0 out-of-sample. Held-out R²
+        (see venn_decomposition) is what we report, so this is confound-free.
+      - Alpha is selected by held-out R² (not RidgeCV LOO-SVD, which needs an
+        O(n×p) U matrix). Ridge shrinks the projection, so it subtracts even
+        less non-target variance than OLS.
+      - Gram/cross accumulated in float64 chunks; residual stored as float16.
 
     Returns:
-        residual     (np.ndarray, float16): X_whisper_residual - Ridge prediction
-        r2_val       (float):               R² on held-out validation split
-        alpha_chosen (float):               Ridge alpha selected by val-split CV
+        residual (np.ndarray, float16): X_whisper − X_target · W
+        r2_val   (float): held-out R² of the Whisper ≈ Xt·W fit
+        alpha    (float): Ridge alpha selected by val-split CV
     """
     train_mask = ~val_mask
     d_t = X_target.shape[1]
 
-    gram, cross = _gram_and_cross(X_target, X_whisper_residual, train_mask)
+    G, C = _gram_and_cross(X_target, X_whisper_residual, train_mask)
 
     best_alpha, best_r2, best_W = RIDGE_ALPHAS[0], -np.inf, None
     for alpha in RIDGE_ALPHAS:
-        A = gram + alpha * np.eye(d_t, dtype=np.float64)
-        W = np.linalg.solve(A, cross).astype(np.float32)  # (d_t, d_w)
-        r2 = _val_r2_chunked(W, X_target, X_whisper_residual, val_mask)
+        W = np.linalg.solve(G + alpha * np.eye(d_t, dtype=np.float64), C)  # (d_t, d_w)
+        r2 = _val_r2_chunked(W.astype(np.float32), X_target, X_whisper_residual, val_mask)
         if r2 > best_r2:
             best_r2, best_alpha, best_W = r2, alpha, W
         del W
-    del gram, cross
+    del G, C
     gc.collect()
 
-    residual = _predict_subtract_chunked(best_W, X_target, X_whisper_residual)
+    residual = _predict_subtract_chunked(best_W.astype(np.float32),
+                                         X_target, X_whisper_residual)
     del best_W
     gc.collect()
 
     return residual, float(best_r2), float(best_alpha)
+
+
+def null_floor(X_whisper, X_target, val_mask, seed=0):
+    """Chance-level check: permute the target rows (breaking correspondence)
+    and run the same deflation. In the forward direction the removed held-out
+    variance should collapse to ~0, confirming no non-target structure is
+    spuriously subtracted.
+    """
+    rng = np.random.default_rng(seed)
+    perm = rng.permutation(len(X_target))
+    res, r2, _ = linear_deflation(X_whisper, X_target[perm], val_mask)
+    val_idx = val_mask
+    total = float((X_whisper[val_idx].astype(np.float32) ** 2).sum())
+    removed = 1.0 - float((res[val_idx].astype(np.float32) ** 2).sum() / total)
+    del res; gc.collect()
+    return removed, float(r2)
 
 
 # ---------------------------------------------------------------------------
@@ -382,38 +423,40 @@ def venn_decomposition(
       shared     = V_kaldi_total - kaldi_only  (== V_llm_total - llm_only)
       neither    = 1 - kaldi_only - llm_only - shared
     """
-    # Cast to float32 before squaring/summing — float16 overflows at 65504 and
-    # loses precision when accumulating 885k values
-    total_var = float((X_whisper.astype(np.float32) ** 2).sum())
+    # Variance fractions are measured on the VAL split only, so extra target
+    # dimensions that only help in-sample contribute nothing (held-out lever).
+    # Cast to float32 before squaring/summing — float16 overflows at 65504.
+    val_idx = val_mask
+    total_var = float((X_whisper[val_idx].astype(np.float32) ** 2).sum())
 
     def vfrac(arr):
-        return float((arr.astype(np.float32) ** 2).sum() / total_var)
+        return float((arr[val_idx].astype(np.float32) ** 2).sum() / total_var)
 
     # ---- Ordering 1: Kaldi → LLM ----------------------------------------
-    logger.info("  [Ordering 1] Ridge: Kaldi → Whisper...")
+    logger.info("  [Ordering 1] Regress Whisper on Kaldi, subtract...")
     res_k, r2_k, alpha_k = linear_deflation(X_whisper, X_kaldi, val_mask)
-    logger.info(f"    R²={r2_k:.4f}  alpha={alpha_k}")
+    logger.info(f"    held-out R²={r2_k:.4f}  alpha={alpha_k}")
     V_kaldi_total = 1.0 - vfrac(res_k)
     vfrac_res_k   = vfrac(res_k)
 
-    logger.info("  [Ordering 1] Ridge: LLM → Kaldi residual...")
+    logger.info("  [Ordering 1] Regress Kaldi residual on LLM, subtract...")
     res_kl, r2_kl, alpha_kl = linear_deflation(res_k, X_llm, val_mask)
-    logger.info(f"    R²={r2_kl:.4f}  alpha={alpha_kl}")
+    logger.info(f"    held-out R²={r2_kl:.4f}  alpha={alpha_kl}")
     del res_k; gc.collect()
 
     V_llm_given_k  = vfrac_res_k - vfrac(res_kl)
     V_neither_ord1 = vfrac(res_kl)
 
     # ---- Ordering 2: LLM → Kaldi ----------------------------------------
-    logger.info("  [Ordering 2] Ridge: LLM → Whisper...")
+    logger.info("  [Ordering 2] Regress Whisper on LLM, subtract...")
     res_l, r2_l, alpha_l = linear_deflation(X_whisper, X_llm, val_mask)
-    logger.info(f"    R²={r2_l:.4f}  alpha={alpha_l}")
+    logger.info(f"    held-out R²={r2_l:.4f}  alpha={alpha_l}")
     V_llm_total = 1.0 - vfrac(res_l)
     vfrac_res_l = vfrac(res_l)
 
-    logger.info("  [Ordering 2] Ridge: Kaldi → LLM residual...")
+    logger.info("  [Ordering 2] Regress LLM residual on Kaldi, subtract...")
     res_lk, r2_lk, alpha_lk = linear_deflation(res_l, X_kaldi, val_mask)
-    logger.info(f"    R²={r2_lk:.4f}  alpha={alpha_lk}")
+    logger.info(f"    held-out R²={r2_lk:.4f}  alpha={alpha_lk}")
     del res_l; gc.collect()
 
     V_kaldi_given_l = vfrac_res_l - vfrac(res_lk)
@@ -558,7 +601,7 @@ def build_llm_target(embeddings_dir: Path, granularity: str,
 
 def parse_args():
     p = argparse.ArgumentParser(
-        description="Whisper-Kaldi-LLM variance decomposition (INLP + nonlinear verification)"
+        description="Whisper-Kaldi-LLM variance decomposition (Whisper-on-target ridge + nonlinear verification)"
     )
     p.add_argument("--granularity", choices=["word", "phone"], required=True)
     p.add_argument("--embeddings_dir", type=Path, default=Path("/dpluth-data"),
@@ -581,6 +624,10 @@ def parse_args():
     p.add_argument("--patience", type=int, default=10)
     p.add_argument("--val_frac", type=float, default=0.2,
                    help="Fraction held out for R² evaluation")
+    p.add_argument("--null_check", action="store_true",
+                   help="Run one shuffled-target deflation per target on the first "
+                        "Whisper model to confirm the chance floor of removed "
+                        "held-out variance is ~0.")
     p.add_argument("--seed", type=int, default=42)
     return p.parse_args()
 
@@ -627,6 +674,7 @@ def main():
 
     X_llm = build_llm_target(args.embeddings_dir, args.granularity,
                               args.llm_models, args.llm_pca_dims, args.seed)
+    logger.info(f"  LLM target shape: {X_llm.shape}")
 
     N = len(X_kaldi)
     rng = np.random.default_rng(args.seed)
@@ -643,6 +691,7 @@ def main():
     # Run per Whisper model
     # ------------------------------------------------------------------
     all_results = {}
+    null_checked = False
 
     for whisper_name in args.whisper_models:
         logger.info("=" * 60)
@@ -657,6 +706,14 @@ def main():
 
         logger.info(f"  Whisper shape: {X_w.shape}")
         X_w -= X_w.mean(0)
+
+        if args.null_check and not null_checked:
+            logger.info("  [Null check] shuffled-target held-out removed variance (should be ~0)...")
+            nf_k, nfr2_k = null_floor(X_w, X_kaldi, val_mask, args.seed)
+            logger.info(f"    Kaldi(shuffled): removed_var={nf_k:.4f}  held-out R²={nfr2_k:.4f}")
+            nf_l, nfr2_l = null_floor(X_w, X_llm, val_mask, args.seed)
+            logger.info(f"    LLM(shuffled):   removed_var={nf_l:.4f}  held-out R²={nfr2_l:.4f}")
+            null_checked = True
 
         result = venn_decomposition(
             X_w, X_kaldi, X_llm, val_mask,
@@ -688,7 +745,7 @@ def main():
         "kaldi_model":  args.kaldi_model,
         "llm_models":   args.llm_models,
         "llm_pca_dims": args.llm_pca_dims,
-        "method":       "ridge_inlp_plus_mlp_verification",
+        "method":       "forward_ridge_whisper_on_target_heldout_plus_mlp",
         "ridge_alphas_tried": RIDGE_ALPHAS,
         "results":      all_results,
     }
