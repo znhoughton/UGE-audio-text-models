@@ -1,0 +1,13 @@
+model,modality,kaldi_only,llm_only,shared,neither,nlr2_kaldi,nlr2_llm,V_kaldi_total,V_llm_total
+whisper-base-enc,encoder,0.0956,0.23245,0.07582,0.59247,1.0,1.0,0.17142,0.31559
+whisper-small-enc,encoder,0.07569,0.26343,0.06558,0.59009,1.0,1.0,0.14127,0.33943
+whisper-medium-enc,encoder,0.06697,0.28533,0.06137,0.58065,1.0,1.0,0.12834,0.35805
+whisper-large-enc,encoder,0.06861,0.27865,0.06402,0.58257,1.0,1.0,0.13263,0.35497
+whisper-large-v2-enc,encoder,0.09024,0.20349,0.06991,0.63197,1.0,1.0,0.16015,0.28219
+whisper-large-v1-enc,encoder,0.0677,0.25573,0.06265,0.60863,1.0,1.0,0.13035,0.32894
+whisper-base-dec,decoder,0.00306,0.39778,0.05326,0.53306,1.0,1.0,0.05632,0.47672
+whisper-small-dec,decoder,0.00202,0.36513,0.05692,0.55995,1.0,1.0,0.05895,0.45401
+whisper-medium-dec,decoder,0.00318,0.29972,0.0222,0.66896,1.0,1.0,0.02538,0.33381
+whisper-large-dec,decoder,0.00412,0.21979,0.02248,0.74854,1.0,1.0,0.02661,0.2524
+whisper-large-v2-dec,decoder,0.00294,0.34323,0.03802,0.60575,1.0,1.0,0.04096,0.40138
+whisper-large-v1-dec,decoder,0.00338,0.27561,0.02809,0.68619,1.0,1.0,0.03146,0.31718

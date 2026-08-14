@@ -1,0 +1,4 @@
+01:02:39  INFO      Projection analysis — phone-level
+01:02:39  INFO      Arguments: {'granularity': 'phone', 'embeddings_dir': PosixPath('.'), 'output_dir': PosixPath('whisper_kaldi_llm_projection/phone'), 'whisper_models': ['whisper-large-v2-enc', 'whisper-large-v1-enc', 'whisper-base-dec', 'whisper-small-dec'], 'kaldi_model': 'kaldi-librispeech', 'llm_models': ['olmo-7b'], 'llm_pca_dims': 256, 'hidden_dim': 1024, 'n_layers': 3, 'dropout': 0.1, 'lr': 0.001, 'batch_size': 2048, 'max_epochs': 150, 'patience': 10, 'val_frac': 0.2, 'seed': 42}
+01:02:39  INFO      Device: cuda
+01:02:39  INFO      Loading Kaldi: kaldi-librispeech

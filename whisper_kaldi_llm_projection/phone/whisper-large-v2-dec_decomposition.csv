@@ -1,0 +1,9 @@
+component,value
+kaldi_only,0.00294
+llm_only,0.34323
+shared,0.03802
+neither,0.60575
+nlr2_kaldi,1.0
+nlr2_llm,1.0
+V_kaldi_total,0.04096
+V_llm_total,0.40138

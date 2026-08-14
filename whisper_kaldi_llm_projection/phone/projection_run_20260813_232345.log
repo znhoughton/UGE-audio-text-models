@@ -1,0 +1,369 @@
+23:23:45  INFO      Projection analysis — phone-level
+23:23:45  INFO      Arguments: {'granularity': 'phone', 'embeddings_dir': PosixPath('/dpluth-data'), 'output_dir': PosixPath('whisper_kaldi_llm_projection/phone'), 'whisper_models': ['whisper-base-enc', 'whisper-small-enc', 'whisper-medium-enc', 'whisper-large-enc', 'whisper-large-v2-enc', 'whisper-large-v1-enc', 'whisper-base-dec', 'whisper-small-dec', 'whisper-medium-dec', 'whisper-large-dec', 'whisper-large-v2-dec', 'whisper-large-v1-dec'], 'kaldi_model': 'kaldi-librispeech', 'llm_models': ['olmo-7b'], 'llm_pca_dims': 256, 'hidden_dim': 1024, 'n_layers': 3, 'dropout': 0.1, 'lr': 0.001, 'batch_size': 2048, 'max_epochs': 150, 'patience': 10, 'val_frac': 0.2, 'null_check': False, 'seed': 42}
+23:23:45  INFO      Device: cuda
+23:23:45  INFO      Loading Kaldi: kaldi-librispeech
+23:23:45  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_kaldi-librispeech.pkl
+23:23:50  INFO        Kaldi shape: (885881, 256)
+23:23:50  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_olmo-7b.pkl
+23:25:04  INFO        LLM target shape: (885881, 4096)
+23:25:04  INFO      N=885,881  train=708,753  val=177,128
+23:25:04  INFO      ============================================================
+23:25:04  INFO      Whisper model: whisper-base-enc
+23:25:04  INFO      ============================================================
+23:25:04  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-base-enc.pkl
+23:25:07  INFO        Whisper shape: (885881, 512)
+23:25:13  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+23:25:41  INFO          held-out R²=0.1714  alpha=100.0
+23:25:42  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+23:29:07  INFO          held-out R²=0.2805  alpha=10000.0
+23:29:08  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:32:28  INFO          held-out R²=0.3156  alpha=10000.0
+23:32:29  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:32:59  INFO          held-out R²=0.1397  alpha=100.0
+23:33:08  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:34:14  DEBUG         Early stop at epoch 56
+23:34:17  INFO          nonlinear R²(Kaldi)=1.0000
+23:34:17  INFO        [Verification] MLP probe: LLM → neither residual...
+23:36:15  DEBUG         Early stop at epoch 90
+23:36:22  INFO          nonlinear R²(LLM)=1.0000
+23:36:22  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+23:36:22  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+23:36:22  INFO        --- whisper-base-enc summary ---
+23:36:22  INFO        Kaldi-only   : 0.0956
+23:36:22  INFO        LLM-only     : 0.2324
+23:36:22  INFO        Shared       : 0.0758
+23:36:22  INFO        Neither      : 0.5925
+23:36:22  INFO        (sum=0.9963)
+23:36:22  INFO        nlr2 Kaldi   : 1.0000
+23:36:22  INFO        nlr2 LLM     : 1.0000
+23:36:22  INFO      ============================================================
+23:36:22  INFO      Whisper model: whisper-small-enc
+23:36:22  INFO      ============================================================
+23:36:22  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-small-enc.pkl
+23:36:26  INFO        Whisper shape: (885881, 768)
+23:36:34  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+23:37:09  INFO          held-out R²=0.1413  alpha=100.0
+23:37:10  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+23:40:53  INFO          held-out R²=0.3068  alpha=10000.0
+23:40:55  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:44:27  INFO          held-out R²=0.3394  alpha=10000.0
+23:44:29  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:45:03  INFO          held-out R²=0.1146  alpha=10.0
+23:45:16  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:46:02  DEBUG         Early stop at epoch 40
+23:46:06  INFO          nonlinear R²(Kaldi)=1.0000
+23:46:06  INFO        [Verification] MLP probe: LLM → neither residual...
+23:47:58  DEBUG         Early stop at epoch 85
+23:48:05  INFO          nonlinear R²(LLM)=1.0000
+23:48:06  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+23:48:06  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+23:48:06  INFO        --- whisper-small-enc summary ---
+23:48:06  INFO        Kaldi-only   : 0.0757
+23:48:06  INFO        LLM-only     : 0.2634
+23:48:06  INFO        Shared       : 0.0656
+23:48:06  INFO        Neither      : 0.5901
+23:48:06  INFO        (sum=0.9948)
+23:48:06  INFO        nlr2 Kaldi   : 1.0000
+23:48:06  INFO        nlr2 LLM     : 1.0000
+23:48:06  INFO      ============================================================
+23:48:06  INFO      Whisper model: whisper-medium-enc
+23:48:06  INFO      ============================================================
+23:48:06  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-medium-enc.pkl
+23:48:10  INFO        Whisper shape: (885881, 1024)
+23:48:22  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+23:49:03  INFO          held-out R²=0.1283  alpha=100.0
+23:49:05  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+23:52:52  INFO          held-out R²=0.3273  alpha=10000.0
+23:52:54  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:56:45  INFO          held-out R²=0.3580  alpha=10000.0
+23:56:47  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:57:29  INFO          held-out R²=0.1043  alpha=1.0
+23:57:45  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:58:55  DEBUG         Early stop at epoch 61
+23:59:01  INFO          nonlinear R²(Kaldi)=1.0000
+23:59:01  INFO        [Verification] MLP probe: LLM → neither residual...
+00:01:23  DEBUG         Early stop at epoch 115
+00:01:33  INFO          nonlinear R²(LLM)=1.0000
+00:01:33  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+00:01:33  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+00:01:33  INFO        --- whisper-medium-enc summary ---
+00:01:33  INFO        Kaldi-only   : 0.0670
+00:01:33  INFO        LLM-only     : 0.2853
+00:01:33  INFO        Shared       : 0.0614
+00:01:33  INFO        Neither      : 0.5806
+00:01:33  INFO        (sum=0.9943)
+00:01:33  INFO        nlr2 Kaldi   : 1.0000
+00:01:33  INFO        nlr2 LLM     : 1.0000
+00:01:33  INFO      ============================================================
+00:01:33  INFO      Whisper model: whisper-large-enc
+00:01:33  INFO      ============================================================
+00:01:33  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-enc.pkl
+00:01:39  INFO        Whisper shape: (885881, 1280)
+00:01:56  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+00:02:44  INFO          held-out R²=0.1326  alpha=100.0
+00:02:47  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+00:07:02  INFO          held-out R²=0.3213  alpha=10000.0
+00:07:04  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+00:11:09  INFO          held-out R²=0.3550  alpha=10000.0
+00:11:11  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+00:12:00  INFO          held-out R²=0.1064  alpha=10.0
+00:12:20  INFO        [Verification] MLP probe: Kaldi → neither residual...
+00:15:07  DEBUG         Early stop at epoch 149
+00:15:14  INFO          nonlinear R²(Kaldi)=1.0000
+00:15:14  INFO        [Verification] MLP probe: LLM → neither residual...
+00:18:32  INFO          nonlinear R²(LLM)=1.0000
+00:18:32  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+00:18:32  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+00:18:32  INFO        --- whisper-large-enc summary ---
+00:18:32  INFO        Kaldi-only   : 0.0686
+00:18:32  INFO        LLM-only     : 0.2787
+00:18:32  INFO        Shared       : 0.0640
+00:18:32  INFO        Neither      : 0.5826
+00:18:32  INFO        (sum=0.9939)
+00:18:32  INFO        nlr2 Kaldi   : 1.0000
+00:18:32  INFO        nlr2 LLM     : 1.0000
+00:18:32  INFO      ============================================================
+00:18:32  INFO      Whisper model: whisper-large-v2-enc
+00:18:32  INFO      ============================================================
+00:18:32  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-v2-enc.pkl
+00:18:38  INFO        Whisper shape: (885881, 1280)
+00:18:53  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+00:19:39  INFO          held-out R²=0.1601  alpha=100.0
+00:19:41  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+00:23:55  INFO          held-out R²=0.2423  alpha=10000.0
+00:23:58  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+00:28:05  INFO          held-out R²=0.2822  alpha=10000.0
+00:28:08  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+00:28:54  INFO          held-out R²=0.1257  alpha=10.0
+00:29:14  INFO        [Verification] MLP probe: Kaldi → neither residual...
+00:32:07  INFO          nonlinear R²(Kaldi)=1.0000
+00:32:07  INFO        [Verification] MLP probe: LLM → neither residual...
+00:35:23  INFO          nonlinear R²(LLM)=1.0000
+00:35:23  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+00:35:23  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+00:35:23  INFO        --- whisper-large-v2-enc summary ---
+00:35:23  INFO        Kaldi-only   : 0.0902
+00:35:23  INFO        LLM-only     : 0.2035
+00:35:23  INFO        Shared       : 0.0699
+00:35:23  INFO        Neither      : 0.6320
+00:35:23  INFO        (sum=0.9956)
+00:35:23  INFO        nlr2 Kaldi   : 1.0000
+00:35:23  INFO        nlr2 LLM     : 1.0000
+00:35:23  INFO      ============================================================
+00:35:23  INFO      Whisper model: whisper-large-v1-enc
+00:35:23  INFO      ============================================================
+00:35:23  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-v1-enc.pkl
+00:35:30  INFO        Whisper shape: (885881, 1280)
+00:35:45  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+00:36:34  INFO          held-out R²=0.1303  alpha=100.0
+00:36:37  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+00:40:48  INFO          held-out R²=0.2941  alpha=10000.0
+00:40:51  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+00:44:56  INFO          held-out R²=0.3289  alpha=10000.0
+00:44:58  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+00:45:50  INFO          held-out R²=0.1009  alpha=100.0
+00:46:11  INFO        [Verification] MLP probe: Kaldi → neither residual...
+00:47:39  DEBUG         Early stop at epoch 74
+00:47:46  INFO          nonlinear R²(Kaldi)=1.0000
+00:47:46  INFO        [Verification] MLP probe: LLM → neither residual...
+00:50:19  DEBUG         Early stop at epoch 104
+00:50:29  INFO          nonlinear R²(LLM)=1.0000
+00:50:29  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+00:50:29  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+00:50:29  INFO        --- whisper-large-v1-enc summary ---
+00:50:29  INFO        Kaldi-only   : 0.0677
+00:50:29  INFO        LLM-only     : 0.2557
+00:50:29  INFO        Shared       : 0.0626
+00:50:29  INFO        Neither      : 0.6086
+00:50:29  INFO        (sum=0.9947)
+00:50:29  INFO        nlr2 Kaldi   : 1.0000
+00:50:29  INFO        nlr2 LLM     : 1.0000
+00:50:29  INFO      ============================================================
+00:50:29  INFO      Whisper model: whisper-base-dec
+00:50:29  INFO      ============================================================
+00:50:29  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-base-dec.pkl
+00:50:33  INFO        Whisper shape: (885881, 512)
+00:50:40  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+00:51:06  INFO          held-out R²=0.0563  alpha=1000.0
+00:51:07  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+00:54:34  INFO          held-out R²=0.4215  alpha=10000.0
+00:54:36  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+00:57:52  INFO          held-out R²=0.4767  alpha=10000.0
+00:57:53  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+00:58:19  INFO          held-out R²=0.0058  alpha=1000.0
+00:58:20  WARNING     Shared inconsistency: 0.0533 vs 0.0789
+00:58:20  WARNING     Neither inconsistency: ord1=0.5459 ord2=0.5202
+00:58:28  INFO        [Verification] MLP probe: Kaldi → neither residual...
+00:58:56  DEBUG         Early stop at epoch 23
+00:58:59  INFO          nonlinear R²(Kaldi)=1.0000
+00:58:59  INFO        [Verification] MLP probe: LLM → neither residual...
+01:02:23  INFO          nonlinear R²(LLM)=1.0000
+01:02:23  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+01:02:23  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+01:02:23  INFO        --- whisper-base-dec summary ---
+01:02:23  INFO        Kaldi-only   : 0.0031
+01:02:23  INFO        LLM-only     : 0.3978
+01:02:23  INFO        Shared       : 0.0533
+01:02:23  INFO        Neither      : 0.5331
+01:02:23  INFO        (sum=0.9872)
+01:02:23  INFO        nlr2 Kaldi   : 1.0000
+01:02:23  INFO        nlr2 LLM     : 1.0000
+01:02:23  INFO      ============================================================
+01:02:23  INFO      Whisper model: whisper-small-dec
+01:02:23  INFO      ============================================================
+01:02:23  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-small-dec.pkl
+01:02:29  INFO        Whisper shape: (885881, 768)
+01:02:38  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+01:03:09  INFO          held-out R²=0.0589  alpha=100.0
+01:03:11  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+01:06:48  INFO          held-out R²=0.3880  alpha=10000.0
+01:06:50  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+01:10:37  INFO          held-out R²=0.4540  alpha=10000.0
+01:10:38  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+01:11:11  INFO          held-out R²=0.0037  alpha=10000.0
+01:11:13  WARNING     Shared inconsistency: 0.0569 vs 0.0889
+01:11:13  WARNING     Neither inconsistency: ord1=0.5759 ord2=0.5440
+01:11:24  INFO        [Verification] MLP probe: Kaldi → neither residual...
+01:11:51  DEBUG         Early stop at epoch 21
+01:11:55  INFO          nonlinear R²(Kaldi)=1.0000
+01:11:55  INFO        [Verification] MLP probe: LLM → neither residual...
+01:15:20  INFO          nonlinear R²(LLM)=1.0000
+01:15:20  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+01:15:20  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+01:15:20  INFO        --- whisper-small-dec summary ---
+01:15:20  INFO        Kaldi-only   : 0.0020
+01:15:20  INFO        LLM-only     : 0.3651
+01:15:20  INFO        Shared       : 0.0569
+01:15:20  INFO        Neither      : 0.5599
+01:15:20  INFO        (sum=0.9840)
+01:15:20  INFO        nlr2 Kaldi   : 1.0000
+01:15:20  INFO        nlr2 LLM     : 1.0000
+01:15:20  INFO      ============================================================
+01:15:20  INFO      Whisper model: whisper-medium-dec
+01:15:20  INFO      ============================================================
+01:15:20  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-medium-dec.pkl
+01:15:28  INFO        Whisper shape: (885881, 1024)
+01:15:40  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+01:16:18  INFO          held-out R²=0.0254  alpha=1000.0
+01:16:20  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+01:20:25  INFO          held-out R²=0.3075  alpha=10000.0
+01:20:27  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+01:24:24  INFO          held-out R²=0.3338  alpha=10000.0
+01:24:26  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+01:25:08  INFO          held-out R²=0.0048  alpha=10000.0
+01:25:25  INFO        [Verification] MLP probe: Kaldi → neither residual...
+01:25:50  DEBUG         Early stop at epoch 18
+01:25:56  INFO          nonlinear R²(Kaldi)=1.0000
+01:25:56  INFO        [Verification] MLP probe: LLM → neither residual...
+01:29:23  INFO          nonlinear R²(LLM)=1.0000
+01:29:23  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+01:29:23  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+01:29:23  INFO        --- whisper-medium-dec summary ---
+01:29:23  INFO        Kaldi-only   : 0.0032
+01:29:23  INFO        LLM-only     : 0.2997
+01:29:23  INFO        Shared       : 0.0222
+01:29:23  INFO        Neither      : 0.6690
+01:29:23  INFO        (sum=0.9941)
+01:29:23  INFO        nlr2 Kaldi   : 1.0000
+01:29:23  INFO        nlr2 LLM     : 1.0000
+01:29:23  INFO      ============================================================
+01:29:23  INFO      Whisper model: whisper-large-dec
+01:29:23  INFO      ============================================================
+01:29:23  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-dec.pkl
+01:29:33  INFO        Whisper shape: (885881, 1280)
+01:29:48  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+01:30:34  INFO          held-out R²=0.0266  alpha=1000.0
+01:30:37  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+01:34:52  INFO          held-out R²=0.2258  alpha=10000.0
+01:34:54  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+01:39:11  INFO          held-out R²=0.2524  alpha=10000.0
+01:39:13  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+01:40:03  INFO          held-out R²=0.0055  alpha=1000.0
+01:40:23  INFO        [Verification] MLP probe: Kaldi → neither residual...
+01:41:14  DEBUG         Early stop at epoch 40
+01:41:21  INFO          nonlinear R²(Kaldi)=1.0000
+01:41:21  INFO        [Verification] MLP probe: LLM → neither residual...
+01:44:50  INFO          nonlinear R²(LLM)=1.0000
+01:44:50  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+01:44:50  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+01:44:50  INFO        --- whisper-large-dec summary ---
+01:44:50  INFO        Kaldi-only   : 0.0041
+01:44:50  INFO        LLM-only     : 0.2198
+01:44:50  INFO        Shared       : 0.0225
+01:44:50  INFO        Neither      : 0.7485
+01:44:50  INFO        (sum=0.9949)
+01:44:50  INFO        nlr2 Kaldi   : 1.0000
+01:44:50  INFO        nlr2 LLM     : 1.0000
+01:44:50  INFO      ============================================================
+01:44:50  INFO      Whisper model: whisper-large-v2-dec
+01:44:50  INFO      ============================================================
+01:44:50  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-v2-dec.pkl
+01:44:59  INFO        Whisper shape: (885881, 1280)
+01:45:14  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+01:45:59  INFO          held-out R²=0.0410  alpha=1000.0
+01:46:01  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+01:49:55  INFO          held-out R²=0.3579  alpha=10000.0
+01:49:57  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+01:53:45  INFO          held-out R²=0.4014  alpha=10000.0
+01:53:48  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+01:54:36  INFO          held-out R²=0.0049  alpha=10000.0
+01:54:39  WARNING     Shared inconsistency: 0.0380 vs 0.0581
+01:54:39  WARNING     Neither inconsistency: ord1=0.6158 ord2=0.5957
+01:54:57  INFO        [Verification] MLP probe: Kaldi → neither residual...
+01:55:27  DEBUG         Early stop at epoch 22
+01:55:34  INFO          nonlinear R²(Kaldi)=1.0000
+01:55:34  INFO        [Verification] MLP probe: LLM → neither residual...
+01:59:01  INFO          nonlinear R²(LLM)=1.0000
+01:59:01  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+01:59:01  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+01:59:01  INFO        --- whisper-large-v2-dec summary ---
+01:59:01  INFO        Kaldi-only   : 0.0029
+01:59:01  INFO        LLM-only     : 0.3432
+01:59:01  INFO        Shared       : 0.0380
+01:59:01  INFO        Neither      : 0.6058
+01:59:01  INFO        (sum=0.9899)
+01:59:01  INFO        nlr2 Kaldi   : 1.0000
+01:59:01  INFO        nlr2 LLM     : 1.0000
+01:59:01  INFO      ============================================================
+01:59:01  INFO      Whisper model: whisper-large-v1-dec
+01:59:01  INFO      ============================================================
+01:59:01  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-v1-dec.pkl
+01:59:11  INFO        Whisper shape: (885881, 1280)
+01:59:26  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+02:00:10  INFO          held-out R²=0.0315  alpha=1000.0
+02:00:12  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+02:04:03  INFO          held-out R²=0.2846  alpha=10000.0
+02:04:05  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+02:07:53  INFO          held-out R²=0.3172  alpha=10000.0
+02:07:56  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+02:08:42  INFO          held-out R²=0.0049  alpha=10000.0
+02:09:02  INFO        [Verification] MLP probe: Kaldi → neither residual...
+02:09:32  DEBUG         Early stop at epoch 22
+02:09:39  INFO          nonlinear R²(Kaldi)=1.0000
+02:09:39  INFO        [Verification] MLP probe: LLM → neither residual...
+02:13:12  INFO          nonlinear R²(LLM)=1.0000
+02:13:12  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+02:13:12  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+02:13:12  INFO        --- whisper-large-v1-dec summary ---
+02:13:12  INFO        Kaldi-only   : 0.0034
+02:13:12  INFO        LLM-only     : 0.2756
+02:13:12  INFO        Shared       : 0.0281
+02:13:12  INFO        Neither      : 0.6862
+02:13:12  INFO        (sum=0.9933)
+02:13:12  INFO        nlr2 Kaldi   : 1.0000
+02:13:12  INFO        nlr2 LLM     : 1.0000
+02:13:13  INFO      Results JSON → whisper_kaldi_llm_projection/phone/projection_results.json
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-base-enc_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-small-enc_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-medium-enc_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-large-enc_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-large-v2-enc_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-large-v1-enc_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-base-dec_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-small-dec_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-medium-dec_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-large-dec_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-large-v2-dec_decomposition.csv
+02:13:13  INFO      CSV → whisper_kaldi_llm_projection/phone/whisper-large-v1-dec_decomposition.csv
+02:13:13  INFO      Summary CSV → whisper_kaldi_llm_projection/phone/decomposition_summary.csv
+02:13:13  INFO      Done.

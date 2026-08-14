@@ -1,0 +1,390 @@
+22:29:22  INFO      Projection analysis — word-level
+22:29:22  INFO      Arguments: {'granularity': 'word', 'embeddings_dir': PosixPath('.'), 'output_dir': PosixPath('whisper_kaldi_llm_projection/word'), 'whisper_models': ['whisper-base-enc', 'whisper-small-enc', 'whisper-medium-enc', 'whisper-large-enc', 'whisper-large-v2-enc', 'whisper-large-v1-enc', 'whisper-base-dec', 'whisper-small-dec', 'whisper-medium-dec', 'whisper-large-dec', 'whisper-large-v2-dec', 'whisper-large-v1-dec'], 'kaldi_model': 'kaldi-librispeech', 'llm_models': ['olmo-7b'], 'llm_pca_dims': 256, 'hidden_dim': 1024, 'n_layers': 3, 'dropout': 0.1, 'lr': 0.001, 'batch_size': 2048, 'max_epochs': 150, 'patience': 10, 'val_frac': 0.2, 'null_check': False, 'seed': 42}
+22:29:22  INFO      Device: cuda
+22:29:22  INFO      Loading Kaldi: kaldi-librispeech
+22:29:22  INFO        Loading WordData/word_embeddings_kaldi-librispeech.pkl
+22:29:26  INFO        Kaldi shape: (219043, 256)
+22:29:26  INFO        Loading WordData/word_embeddings_olmo-7b.pkl
+22:30:59  INFO        LLM target shape: (219043, 4096)
+22:30:59  INFO      N=219,043  train=175,311  val=43,732
+22:30:59  INFO      ============================================================
+22:30:59  INFO      Whisper model: whisper-base-enc
+22:30:59  INFO      ============================================================
+22:30:59  INFO        Loading WordData/word_embeddings_whisper-base-enc.pkl
+22:31:10  INFO        Whisper shape: (219043, 512)
+22:31:12  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+22:31:20  INFO          held-out R²=0.2110  alpha=100.0
+22:31:20  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+22:32:42  INFO          held-out R²=0.3747  alpha=10000.0
+22:32:43  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+22:34:05  INFO          held-out R²=0.4983  alpha=10000.0
+22:34:05  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+22:34:15  INFO          held-out R²=0.0714  alpha=100.0
+22:34:16  WARNING     Shared inconsistency: 0.1752 vs 0.2027
+22:34:16  WARNING     Neither inconsistency: ord1=0.4933 ord2=0.4658
+22:34:17  INFO        [Verification] MLP probe: Kaldi → neither residual...
+22:34:32  DEBUG         Early stop at epoch 21
+22:34:33  INFO          nonlinear R²(Kaldi)=1.0000
+22:34:33  INFO        [Verification] MLP probe: LLM → neither residual...
+22:34:49  DEBUG         Early stop at epoch 42
+22:34:50  INFO          nonlinear R²(LLM)=1.0000
+22:34:50  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+22:34:50  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+22:34:50  INFO        --- whisper-base-enc summary ---
+22:34:50  INFO        Kaldi-only   : 0.0358
+22:34:50  INFO        LLM-only     : 0.2957
+22:34:50  INFO        Shared       : 0.1752
+22:34:50  INFO        Neither      : 0.4796
+22:34:50  INFO        (sum=0.9862)
+22:34:50  INFO        nlr2 Kaldi   : 1.0000
+22:34:50  INFO        nlr2 LLM     : 1.0000
+22:34:51  INFO      ============================================================
+22:34:51  INFO      Whisper model: whisper-small-enc
+22:34:51  INFO      ============================================================
+22:34:51  INFO        Loading WordData/word_embeddings_whisper-small-enc.pkl
+22:35:03  INFO        Whisper shape: (219043, 768)
+22:35:05  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+22:35:18  INFO          held-out R²=0.1787  alpha=100.0
+22:35:18  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+22:36:38  INFO          held-out R²=0.3998  alpha=10000.0
+22:36:39  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+22:38:01  INFO          held-out R²=0.5121  alpha=10000.0
+22:38:01  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+22:38:11  INFO          held-out R²=0.0524  alpha=100.0
+22:38:12  WARNING     Shared inconsistency: 0.1531 vs 0.1837
+22:38:12  WARNING     Neither inconsistency: ord1=0.4930 ord2=0.4623
+22:38:14  INFO        [Verification] MLP probe: Kaldi → neither residual...
+22:38:21  DEBUG         Early stop at epoch 20
+22:38:22  INFO          nonlinear R²(Kaldi)=1.0000
+22:38:22  INFO        [Verification] MLP probe: LLM → neither residual...
+22:38:40  DEBUG         Early stop at epoch 46
+22:38:42  INFO          nonlinear R²(LLM)=1.0000
+22:38:42  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+22:38:42  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+22:38:42  INFO        --- whisper-small-enc summary ---
+22:38:42  INFO        Kaldi-only   : 0.0256
+22:38:42  INFO        LLM-only     : 0.3283
+22:38:42  INFO        Shared       : 0.1531
+22:38:42  INFO        Neither      : 0.4776
+22:38:42  INFO        (sum=0.9847)
+22:38:42  INFO        nlr2 Kaldi   : 1.0000
+22:38:42  INFO        nlr2 LLM     : 1.0000
+22:38:42  INFO      ============================================================
+22:38:42  INFO      Whisper model: whisper-medium-enc
+22:38:42  INFO      ============================================================
+22:38:42  INFO        Loading WordData/word_embeddings_whisper-medium-enc.pkl
+22:38:59  INFO        Whisper shape: (219043, 1024)
+22:39:02  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+22:39:15  INFO          held-out R²=0.1736  alpha=100.0
+22:39:15  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+22:40:49  INFO          held-out R²=0.4359  alpha=10000.0
+22:40:50  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+22:42:19  INFO          held-out R²=0.5429  alpha=10000.0
+22:42:19  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+22:42:33  INFO          held-out R²=0.0516  alpha=100.0
+22:42:34  WARNING     Shared inconsistency: 0.1500 vs 0.1826
+22:42:34  WARNING     Neither inconsistency: ord1=0.4661 ord2=0.4335
+22:42:37  INFO        [Verification] MLP probe: Kaldi → neither residual...
+22:42:45  DEBUG         Early stop at epoch 22
+22:42:47  INFO          nonlinear R²(Kaldi)=1.0000
+22:42:47  INFO        [Verification] MLP probe: LLM → neither residual...
+22:43:05  DEBUG         Early stop at epoch 46
+22:43:08  INFO          nonlinear R²(LLM)=1.0000
+22:43:08  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+22:43:08  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+22:43:08  INFO        --- whisper-medium-enc summary ---
+22:43:08  INFO        Kaldi-only   : 0.0236
+22:43:08  INFO        LLM-only     : 0.3603
+22:43:08  INFO        Shared       : 0.1500
+22:43:08  INFO        Neither      : 0.4498
+22:43:08  INFO        (sum=0.9837)
+22:43:08  INFO        nlr2 Kaldi   : 1.0000
+22:43:08  INFO        nlr2 LLM     : 1.0000
+22:43:08  INFO      ============================================================
+22:43:08  INFO      Whisper model: whisper-large-enc
+22:43:08  INFO      ============================================================
+22:43:08  INFO        Loading WordData/word_embeddings_whisper-large-enc.pkl
+22:43:31  INFO        Whisper shape: (219043, 1280)
+22:43:34  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+22:43:48  INFO          held-out R²=0.1926  alpha=100.0
+22:43:49  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+22:45:22  INFO          held-out R²=0.4441  alpha=10000.0
+22:45:22  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+22:46:53  INFO          held-out R²=0.5573  alpha=10000.0
+22:46:54  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+22:47:08  INFO          held-out R²=0.0632  alpha=100.0
+22:47:09  WARNING     Shared inconsistency: 0.1646 vs 0.1987
+22:47:09  WARNING     Neither inconsistency: ord1=0.4488 ord2=0.4147
+22:47:13  INFO        [Verification] MLP probe: Kaldi → neither residual...
+22:47:26  DEBUG         Early stop at epoch 34
+22:47:28  INFO          nonlinear R²(Kaldi)=1.0000
+22:47:28  INFO        [Verification] MLP probe: LLM → neither residual...
+22:47:42  DEBUG         Early stop at epoch 27
+22:47:44  INFO          nonlinear R²(LLM)=1.0000
+22:47:44  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+22:47:44  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+22:47:44  INFO        --- whisper-large-enc summary ---
+22:47:44  INFO        Kaldi-only   : 0.0280
+22:47:44  INFO        LLM-only     : 0.3586
+22:47:44  INFO        Shared       : 0.1646
+22:47:44  INFO        Neither      : 0.4318
+22:47:44  INFO        (sum=0.9830)
+22:47:44  INFO        nlr2 Kaldi   : 1.0000
+22:47:44  INFO        nlr2 LLM     : 1.0000
+22:47:45  INFO      ============================================================
+22:47:45  INFO      Whisper model: whisper-large-v2-enc
+22:47:45  INFO      ============================================================
+22:47:45  INFO        Loading WordData/word_embeddings_whisper-large-v2-enc.pkl
+22:48:09  INFO        Whisper shape: (219043, 1280)
+22:48:13  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+22:48:26  INFO          held-out R²=0.2320  alpha=100.0
+22:48:26  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+22:49:49  INFO          held-out R²=0.3779  alpha=10000.0
+22:49:50  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+22:51:27  INFO          held-out R²=0.5193  alpha=10000.0
+22:51:28  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+22:51:42  INFO          held-out R²=0.0764  alpha=100.0
+22:51:43  WARNING     Shared inconsistency: 0.1952 vs 0.2291
+22:51:43  WARNING     Neither inconsistency: ord1=0.4778 ord2=0.4439
+22:51:48  INFO        [Verification] MLP probe: Kaldi → neither residual...
+22:52:04  DEBUG         Early stop at epoch 48
+22:52:06  INFO          nonlinear R²(Kaldi)=1.0000
+22:52:06  INFO        [Verification] MLP probe: LLM → neither residual...
+22:52:19  DEBUG         Early stop at epoch 24
+22:52:21  INFO          nonlinear R²(LLM)=1.0000
+22:52:21  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+22:52:21  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+22:52:21  INFO        --- whisper-large-v2-enc summary ---
+22:52:21  INFO        Kaldi-only   : 0.0367
+22:52:21  INFO        LLM-only     : 0.2902
+22:52:21  INFO        Shared       : 0.1953
+22:52:21  INFO        Neither      : 0.4608
+22:52:21  INFO        (sum=0.9831)
+22:52:21  INFO        nlr2 Kaldi   : 1.0000
+22:52:21  INFO        nlr2 LLM     : 1.0000
+22:52:22  INFO      ============================================================
+22:52:22  INFO      Whisper model: whisper-large-v1-enc
+22:52:22  INFO      ============================================================
+22:52:22  INFO        Loading WordData/word_embeddings_whisper-large-v1-enc.pkl
+22:52:42  INFO        Whisper shape: (219043, 1280)
+22:52:46  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+22:52:59  INFO          held-out R²=0.1851  alpha=100.0
+22:53:00  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+22:54:27  INFO          held-out R²=0.4090  alpha=10000.0
+22:54:28  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+22:56:12  INFO          held-out R²=0.5233  alpha=10000.0
+22:56:13  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+22:56:27  INFO          held-out R²=0.0562  alpha=100.0
+22:56:28  WARNING     Shared inconsistency: 0.1583 vs 0.1900
+22:56:31  WARNING     Neither inconsistency: ord1=0.4816 ord2=0.4499
+22:56:36  INFO        [Verification] MLP probe: Kaldi → neither residual...
+22:56:44  DEBUG         Early stop at epoch 22
+22:56:46  INFO          nonlinear R²(Kaldi)=1.0000
+22:56:46  INFO        [Verification] MLP probe: LLM → neither residual...
+22:57:01  DEBUG         Early stop at epoch 31
+22:57:04  INFO          nonlinear R²(LLM)=1.0000
+22:57:04  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+22:57:04  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+22:57:04  INFO        --- whisper-large-v1-enc summary ---
+22:57:04  INFO        Kaldi-only   : 0.0268
+22:57:04  INFO        LLM-only     : 0.3333
+22:57:04  INFO        Shared       : 0.1583
+22:57:04  INFO        Neither      : 0.4657
+22:57:04  INFO        (sum=0.9841)
+22:57:04  INFO        nlr2 Kaldi   : 1.0000
+22:57:04  INFO        nlr2 LLM     : 1.0000
+22:57:05  INFO      ============================================================
+22:57:05  INFO      Whisper model: whisper-base-dec
+22:57:05  INFO      ============================================================
+22:57:05  INFO        Loading WordData/word_embeddings_whisper-base-dec.pkl
+22:57:13  INFO        Whisper shape: (219043, 512)
+22:57:16  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+22:57:26  INFO          held-out R²=0.1206  alpha=100.0
+22:57:27  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+22:59:02  INFO          held-out R²=0.3641  alpha=10000.0
+22:59:02  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:00:27  INFO          held-out R²=0.4701  alpha=10000.0
+23:00:27  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:00:35  INFO          held-out R²=0.0134  alpha=1000.0
+23:00:35  WARNING     Shared inconsistency: 0.1135 vs 0.1499
+23:00:35  WARNING     Neither inconsistency: ord1=0.5592 ord2=0.5228
+23:00:37  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:00:48  DEBUG         Early stop at epoch 22
+23:00:49  INFO          nonlinear R²(Kaldi)=1.0000
+23:00:49  INFO        [Verification] MLP probe: LLM → neither residual...
+23:01:01  DEBUG         Early stop at epoch 22
+23:01:02  INFO          nonlinear R²(LLM)=1.0000
+23:01:02  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+23:01:02  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+23:01:02  INFO        --- whisper-base-dec summary ---
+23:01:02  INFO        Kaldi-only   : 0.0071
+23:01:02  INFO        LLM-only     : 0.3202
+23:01:02  INFO        Shared       : 0.1135
+23:01:02  INFO        Neither      : 0.5410
+23:01:02  INFO        (sum=0.9818)
+23:01:02  INFO        nlr2 Kaldi   : 1.0000
+23:01:02  INFO        nlr2 LLM     : 1.0000
+23:01:03  INFO      ============================================================
+23:01:03  INFO      Whisper model: whisper-small-dec
+23:01:03  INFO      ============================================================
+23:01:03  INFO        Loading WordData/word_embeddings_whisper-small-dec.pkl
+23:01:16  INFO        Whisper shape: (219043, 768)
+23:01:19  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+23:01:31  INFO          held-out R²=0.1238  alpha=100.0
+23:01:31  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+23:03:01  INFO          held-out R²=0.3236  alpha=10000.0
+23:03:01  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:04:11  INFO          held-out R²=0.4410  alpha=10000.0
+23:04:12  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:04:23  INFO          held-out R²=0.0107  alpha=1000.0
+23:04:23  WARNING     Shared inconsistency: 0.1179 vs 0.1575
+23:04:23  WARNING     Neither inconsistency: ord1=0.5927 ord2=0.5530
+23:04:26  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:04:34  DEBUG         Early stop at epoch 21
+23:04:35  INFO          nonlinear R²(Kaldi)=1.0000
+23:04:35  INFO        [Verification] MLP probe: LLM → neither residual...
+23:04:47  DEBUG         Early stop at epoch 23
+23:04:48  INFO          nonlinear R²(LLM)=1.0000
+23:04:49  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+23:04:49  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+23:04:49  INFO        --- whisper-small-dec summary ---
+23:04:49  INFO        Kaldi-only   : 0.0060
+23:04:49  INFO        LLM-only     : 0.2835
+23:04:49  INFO        Shared       : 0.1179
+23:04:49  INFO        Neither      : 0.5728
+23:04:49  INFO        (sum=0.9802)
+23:04:49  INFO        nlr2 Kaldi   : 1.0000
+23:04:49  INFO        nlr2 LLM     : 1.0000
+23:04:49  INFO      ============================================================
+23:04:49  INFO      Whisper model: whisper-medium-dec
+23:04:49  INFO      ============================================================
+23:04:49  INFO        Loading WordData/word_embeddings_whisper-medium-dec.pkl
+23:05:15  INFO        Whisper shape: (219043, 1024)
+23:05:18  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+23:05:29  INFO          held-out R²=0.0623  alpha=100.0
+23:05:30  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+23:07:03  INFO          held-out R²=0.2521  alpha=10000.0
+23:07:03  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:08:34  INFO          held-out R²=0.3060  alpha=10000.0
+23:08:34  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:08:48  INFO          held-out R²=0.0140  alpha=1000.0
+23:08:53  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:08:59  DEBUG         Early stop at epoch 18
+23:09:00  INFO          nonlinear R²(Kaldi)=1.0000
+23:09:00  INFO        [Verification] MLP probe: LLM → neither residual...
+23:09:10  DEBUG         Early stop at epoch 15
+23:09:13  INFO          nonlinear R²(LLM)=1.0000
+23:09:13  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+23:09:13  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+23:09:13  INFO        --- whisper-medium-dec summary ---
+23:09:13  INFO        Kaldi-only   : 0.0097
+23:09:13  INFO        LLM-only     : 0.2364
+23:09:13  INFO        Shared       : 0.0526
+23:09:13  INFO        Neither      : 0.6928
+23:09:13  INFO        (sum=0.9915)
+23:09:13  INFO        nlr2 Kaldi   : 1.0000
+23:09:13  INFO        nlr2 LLM     : 1.0000
+23:09:13  INFO      ============================================================
+23:09:13  INFO      Whisper model: whisper-large-dec
+23:09:13  INFO      ============================================================
+23:09:13  INFO        Loading WordData/word_embeddings_whisper-large-dec.pkl
+23:09:35  INFO        Whisper shape: (219043, 1280)
+23:09:39  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+23:09:52  INFO          held-out R²=0.0629  alpha=100.0
+23:09:53  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+23:11:32  INFO          held-out R²=0.1707  alpha=10000.0
+23:11:32  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:13:18  INFO          held-out R²=0.2209  alpha=10000.0
+23:13:19  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:13:34  INFO          held-out R²=0.0183  alpha=100.0
+23:13:39  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:13:49  DEBUG         Early stop at epoch 29
+23:13:51  INFO          nonlinear R²(Kaldi)=1.0000
+23:13:51  INFO        [Verification] MLP probe: LLM → neither residual...
+23:14:01  DEBUG         Early stop at epoch 16
+23:14:04  INFO          nonlinear R²(LLM)=1.0000
+23:14:04  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+23:14:04  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+23:14:04  INFO        --- whisper-large-dec summary ---
+23:14:04  INFO        Kaldi-only   : 0.0143
+23:14:04  INFO        LLM-only     : 0.1599
+23:14:04  INFO        Shared       : 0.0487
+23:14:04  INFO        Neither      : 0.7710
+23:14:04  INFO        (sum=0.9938)
+23:14:04  INFO        nlr2 Kaldi   : 1.0000
+23:14:04  INFO        nlr2 LLM     : 1.0000
+23:14:04  INFO      ============================================================
+23:14:04  INFO      Whisper model: whisper-large-v2-dec
+23:14:04  INFO      ============================================================
+23:14:04  INFO        Loading WordData/word_embeddings_whisper-large-v2-dec.pkl
+23:14:25  INFO        Whisper shape: (219043, 1280)
+23:14:29  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+23:14:44  INFO          held-out R²=0.0876  alpha=100.0
+23:14:45  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+23:16:29  INFO          held-out R²=0.3026  alpha=10000.0
+23:16:30  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:18:09  INFO          held-out R²=0.3822  alpha=10000.0
+23:18:09  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:18:24  INFO          held-out R²=0.0131  alpha=1000.0
+23:18:24  WARNING     Shared inconsistency: 0.0795 vs 0.1061
+23:18:24  WARNING     Neither inconsistency: ord1=0.6363 ord2=0.6096
+23:18:29  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:18:37  DEBUG         Early stop at epoch 23
+23:18:39  INFO          nonlinear R²(Kaldi)=1.0000
+23:18:39  INFO        [Verification] MLP probe: LLM → neither residual...
+23:18:49  DEBUG         Early stop at epoch 15
+23:18:52  INFO          nonlinear R²(LLM)=1.0000
+23:18:52  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+23:18:52  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+23:18:52  INFO        --- whisper-large-v2-dec summary ---
+23:18:52  INFO        Kaldi-only   : 0.0081
+23:18:52  INFO        LLM-only     : 0.2761
+23:18:52  INFO        Shared       : 0.0795
+23:18:52  INFO        Neither      : 0.6230
+23:18:52  INFO        (sum=0.9867)
+23:18:52  INFO        nlr2 Kaldi   : 1.0000
+23:18:52  INFO        nlr2 LLM     : 1.0000
+23:18:52  INFO      ============================================================
+23:18:52  INFO      Whisper model: whisper-large-v1-dec
+23:18:52  INFO      ============================================================
+23:18:52  INFO        Loading WordData/word_embeddings_whisper-large-v1-dec.pkl
+23:19:16  INFO        Whisper shape: (219043, 1280)
+23:19:20  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+23:19:32  INFO          held-out R²=0.0708  alpha=100.0
+23:19:33  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+23:21:06  INFO          held-out R²=0.2283  alpha=10000.0
+23:21:07  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+23:22:47  INFO          held-out R²=0.2918  alpha=10000.0
+23:22:48  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+23:23:04  INFO          held-out R²=0.0140  alpha=1000.0
+23:23:09  INFO        [Verification] MLP probe: Kaldi → neither residual...
+23:23:17  DEBUG         Early stop at epoch 21
+23:23:19  INFO          nonlinear R²(Kaldi)=1.0000
+23:23:19  INFO        [Verification] MLP probe: LLM → neither residual...
+23:23:29  DEBUG         Early stop at epoch 15
+23:23:32  INFO          nonlinear R²(LLM)=1.0000
+23:23:32  WARNING     Nonlinear Kaldi structure remains in neither residual: R²=1.0000
+23:23:32  WARNING     Nonlinear LLM structure remains in neither residual: R²=1.0000
+23:23:32  INFO        --- whisper-large-v1-dec summary ---
+23:23:32  INFO        Kaldi-only   : 0.0099
+23:23:32  INFO        LLM-only     : 0.2121
+23:23:32  INFO        Shared       : 0.0609
+23:23:32  INFO        Neither      : 0.7077
+23:23:32  INFO        (sum=0.9906)
+23:23:32  INFO        nlr2 Kaldi   : 1.0000
+23:23:32  INFO        nlr2 LLM     : 1.0000
+23:23:32  INFO      Results JSON → whisper_kaldi_llm_projection/word/projection_results.json
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-base-enc_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-small-enc_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-medium-enc_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-large-enc_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-large-v2-enc_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-large-v1-enc_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-base-dec_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-small-dec_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-medium-dec_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-large-dec_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-large-v2-dec_decomposition.csv
+23:23:32  INFO      CSV → whisper_kaldi_llm_projection/word/whisper-large-v1-dec_decomposition.csv
+23:23:32  INFO      Summary CSV → whisper_kaldi_llm_projection/word/decomposition_summary.csv
+23:23:32  INFO      Done.
