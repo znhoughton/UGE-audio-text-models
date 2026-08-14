@@ -596,6 +596,60 @@ def build_llm_target(embeddings_dir: Path, granularity: str,
 
 
 # ---------------------------------------------------------------------------
+# Grouped train/val split (prevents leakage from repeated items)
+# ---------------------------------------------------------------------------
+
+def load_group_ids(embeddings_dir: Path, granularity: str, group_by: str,
+                   expected_n: int, records_path: Path = None) -> np.ndarray:
+    """Load one group label per embedding row from the *_records.json file.
+
+    Records are row-aligned with the embeddings (embedding[i] ↔ records[i]).
+    Grouping by e.g. utt_id keeps every utterance entirely in train or val, so
+    the same item cannot leak across the split (which lets a high-capacity MLP
+    memorize a lookup table and report a spurious R²≈1).
+    """
+    subdir = "WordData" if granularity == "word" else "PhoneData"
+    prefix = "word"      if granularity == "word" else "phone"
+    path = records_path or (embeddings_dir / subdir / f"{prefix}_records.json")
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Records file for grouped split not found: {path}. "
+            f"Pass --records_path, or --group_by none for a random split."
+        )
+    logger.info(f"  Loading group ids from {path} (group_by='{group_by}')")
+    with open(path) as f:
+        records = json.load(f)
+    if len(records) != expected_n:
+        raise ValueError(
+            f"Records length {len(records):,} != embedding rows {expected_n:,}; "
+            f"cannot align a grouped split. Check that records and embeddings match."
+        )
+    if group_by not in records[0]:
+        raise KeyError(
+            f"group_by='{group_by}' not in record fields {list(records[0].keys())}"
+        )
+    return np.array([str(rec[group_by]) for rec in records])
+
+
+def grouped_val_mask(groups: np.ndarray, val_frac: float, seed: int) -> np.ndarray:
+    """Assign whole groups to val until ~val_frac of ROWS are held out.
+
+    Deterministic given seed. No group spans train and val.
+    """
+    rng = np.random.default_rng(seed)
+    uniq, cnts = np.unique(groups, return_counts=True)
+    order = rng.permutation(len(uniq))
+    target = val_frac * len(groups)
+    val_groups, acc = set(), 0
+    for i in order:
+        if acc >= target:
+            break
+        val_groups.add(uniq[i])
+        acc += cnts[i]
+    return np.isin(groups, np.fromiter(val_groups, dtype=uniq.dtype))
+
+
+# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 
@@ -624,6 +678,12 @@ def parse_args():
     p.add_argument("--patience", type=int, default=10)
     p.add_argument("--val_frac", type=float, default=0.2,
                    help="Fraction held out for R² evaluation")
+    p.add_argument("--group_by", default="utt_id",
+                   help="Record field to group the train/val split by so the same "
+                        "item can't leak across the split (utt_id, word, phone, "
+                        "sentence, ...). Use 'none' for a plain random split.")
+    p.add_argument("--records_path", type=Path, default=None,
+                   help="Override path to the *_records.json used for the grouped split.")
     p.add_argument("--null_check", action="store_true",
                    help="Run one shuffled-target deflation per target on the first "
                         "Whisper model to confirm the chance floor of removed "
@@ -677,8 +737,18 @@ def main():
     logger.info(f"  LLM target shape: {X_llm.shape}")
 
     N = len(X_kaldi)
-    rng = np.random.default_rng(args.seed)
-    val_mask = rng.random(N) < args.val_frac
+    if args.group_by and args.group_by.lower() != "none":
+        groups = load_group_ids(args.embeddings_dir, args.granularity,
+                                args.group_by, N, args.records_path)
+        val_mask = grouped_val_mask(groups, args.val_frac, args.seed)
+        n_groups   = len(np.unique(groups))
+        n_val_grp  = len(np.unique(groups[val_mask]))
+        logger.info(f"Grouped split by '{args.group_by}': {n_groups:,} groups "
+                    f"({n_val_grp:,} in val) — no item spans train/val")
+    else:
+        rng = np.random.default_rng(args.seed)
+        val_mask = rng.random(N) < args.val_frac
+        logger.warning("Ungrouped random split — train/val leakage possible if rows repeat")
     logger.info(f"N={N:,}  train={int((~val_mask).sum()):,}  val={int(val_mask.sum()):,}")
 
     probe_kwargs = dict(
@@ -746,6 +816,7 @@ def main():
         "llm_models":   args.llm_models,
         "llm_pca_dims": args.llm_pca_dims,
         "method":       "forward_ridge_whisper_on_target_heldout_plus_mlp",
+        "group_by":     args.group_by,
         "ridge_alphas_tried": RIDGE_ALPHAS,
         "results":      all_results,
     }
