@@ -219,9 +219,13 @@ def linear_deflation(
       - Gram/cross accumulated in float64 chunks; residual stored as float16.
 
     Returns:
-        residual (np.ndarray, float16): X_whisper − X_target · W
-        r2_val   (float): held-out R² of the Whisper ≈ Xt·W fit
-        alpha    (float): Ridge alpha selected by val-split CV
+        residual  (np.ndarray, float16): X_whisper − X_target · W
+        r2_val    (float): held-out R² of the Whisper ≈ Xt·W fit (variance removed)
+        alpha     (float): Ridge alpha selected by val-split CV
+        r2_train  (float): in-sample R² of the SAME fit. The gap r2_train−r2_val
+                           is the collateral estimate — variance wrongly subtracted
+                           from non-target Whisper dims (~rank(target)/n, →0 out of
+                           sample). No re-fit: reuses the chosen coefficients.
     """
     train_mask = ~val_mask
     d_t = X_target.shape[1]
@@ -238,12 +242,14 @@ def linear_deflation(
     del G, C
     gc.collect()
 
-    residual = _predict_subtract_chunked(best_W.astype(np.float32),
-                                         X_target, X_whisper_residual)
-    del best_W
+    Wf = best_W.astype(np.float32)
+    # In-sample R² reuses the chosen coefficients — one extra eval, no re-fit.
+    r2_train = _val_r2_chunked(Wf, X_target, X_whisper_residual, train_mask)
+    residual = _predict_subtract_chunked(Wf, X_target, X_whisper_residual)
+    del best_W, Wf
     gc.collect()
 
-    return residual, float(best_r2), float(best_alpha)
+    return residual, float(best_r2), float(best_alpha), float(r2_train)
 
 
 def null_floor(X_whisper, X_target, val_mask, seed=0):
@@ -254,7 +260,7 @@ def null_floor(X_whisper, X_target, val_mask, seed=0):
     """
     rng = np.random.default_rng(seed)
     perm = rng.permutation(len(X_target))
-    res, r2, _ = linear_deflation(X_whisper, X_target[perm], val_mask)
+    res, r2, _, _ = linear_deflation(X_whisper, X_target[perm], val_mask)
     val_idx = val_mask
     total = float((X_whisper[val_idx].astype(np.float32) ** 2).sum())
     removed = 1.0 - float((res[val_idx].astype(np.float32) ** 2).sum() / total)
@@ -432,16 +438,20 @@ def venn_decomposition(
     def vfrac(arr):
         return float((arr[val_idx].astype(np.float32) ** 2).sum() / total_var)
 
+    def _log_fit(tag, r2_val, r2_tr, alpha):
+        logger.info(f"    {tag}: held-out R²={r2_val:.4f}  in-sample R²={r2_tr:.4f}  "
+                    f"collateral gap={r2_tr - r2_val:+.4f}  alpha={alpha}")
+
     # ---- Ordering 1: Kaldi → LLM ----------------------------------------
     logger.info("  [Ordering 1] Regress Whisper on Kaldi, subtract...")
-    res_k, r2_k, alpha_k = linear_deflation(X_whisper, X_kaldi, val_mask)
-    logger.info(f"    held-out R²={r2_k:.4f}  alpha={alpha_k}")
+    res_k, r2_k, alpha_k, insr2_k = linear_deflation(X_whisper, X_kaldi, val_mask)
+    _log_fit("Kaldi", r2_k, insr2_k, alpha_k)
     V_kaldi_total = 1.0 - vfrac(res_k)
     vfrac_res_k   = vfrac(res_k)
 
     logger.info("  [Ordering 1] Regress Kaldi residual on LLM, subtract...")
-    res_kl, r2_kl, alpha_kl = linear_deflation(res_k, X_llm, val_mask)
-    logger.info(f"    held-out R²={r2_kl:.4f}  alpha={alpha_kl}")
+    res_kl, r2_kl, alpha_kl, insr2_kl = linear_deflation(res_k, X_llm, val_mask)
+    _log_fit("LLM|Kaldi", r2_kl, insr2_kl, alpha_kl)
     del res_k; gc.collect()
 
     V_llm_given_k  = vfrac_res_k - vfrac(res_kl)
@@ -449,14 +459,14 @@ def venn_decomposition(
 
     # ---- Ordering 2: LLM → Kaldi ----------------------------------------
     logger.info("  [Ordering 2] Regress Whisper on LLM, subtract...")
-    res_l, r2_l, alpha_l = linear_deflation(X_whisper, X_llm, val_mask)
-    logger.info(f"    held-out R²={r2_l:.4f}  alpha={alpha_l}")
+    res_l, r2_l, alpha_l, insr2_l = linear_deflation(X_whisper, X_llm, val_mask)
+    _log_fit("LLM", r2_l, insr2_l, alpha_l)
     V_llm_total = 1.0 - vfrac(res_l)
     vfrac_res_l = vfrac(res_l)
 
     logger.info("  [Ordering 2] Regress LLM residual on Kaldi, subtract...")
-    res_lk, r2_lk, alpha_lk = linear_deflation(res_l, X_kaldi, val_mask)
-    logger.info(f"    held-out R²={r2_lk:.4f}  alpha={alpha_lk}")
+    res_lk, r2_lk, alpha_lk, insr2_lk = linear_deflation(res_l, X_kaldi, val_mask)
+    _log_fit("Kaldi|LLM", r2_lk, insr2_lk, alpha_lk)
     del res_l; gc.collect()
 
     V_kaldi_given_l = vfrac_res_l - vfrac(res_lk)
@@ -521,6 +531,21 @@ def venn_decomposition(
             "ord1_llm_given_k": alpha_kl,
             "ord2_llm":        alpha_l,
             "ord2_kaldi_given_l": alpha_lk,
+        },
+        # In-sample R² of each fit (reported alongside held-out linear_r2)
+        "insample_r2": {
+            "ord1_kaldi":      round(insr2_k, 5),
+            "ord1_llm_given_k": round(insr2_kl, 5),
+            "ord2_llm":        round(insr2_l, 5),
+            "ord2_kaldi_given_l": round(insr2_lk, 5),
+        },
+        # Collateral estimate = in-sample − held-out (variance wrongly subtracted
+        # from non-target Whisper dims; ~rank(target)/n, →0 out of sample)
+        "collateral_gap": {
+            "ord1_kaldi":      round(insr2_k - r2_k, 5),
+            "ord1_llm_given_k": round(insr2_kl - r2_kl, 5),
+            "ord2_llm":        round(insr2_l - r2_l, 5),
+            "ord2_kaldi_given_l": round(insr2_lk - r2_lk, 5),
         },
     }
 
