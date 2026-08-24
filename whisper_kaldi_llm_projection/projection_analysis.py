@@ -48,11 +48,15 @@ Method (regress Whisper ON the target — target is the predictor):
     shared     = V_kaldi_total - kaldi_only  (== V_llm_total - llm_only)
     neither    = 1 - kaldi_only - llm_only - shared
 
-  Nonlinear verification:
-    MLP probes are trained on the "neither" residual to test whether any
-    nonlinear Kaldi or LLM structure survived the linear deflation.
-    Low R² (<0.05) confirms the linear subspace captured essentially all
-    shared structure; high R² is reported and discussed.
+  Separability hierarchy (separable f(a)+g(b) vs nonseparable F(a,b)):
+    Three reconstructors of the full Whisper embedding from a=Kaldi, b=LLM,
+    scored by pooled held-out R²:
+      1. linear-additive     W ≈ Lₐ(a) + L_b(b)     (ridge on [a,b])
+      2. nonlinear-separable  W ≈ f(a) + g(b)        (two towers, summed)
+      3. nonlinear-joint      W ≈ F([a;b])           (concat-input MLP)
+    (2)−(1) = nonlinear separable structure; (3)−(2) = nonseparable interaction
+    (the effect size). A positive interaction gap means Whisper is NOT a simple
+    (even nonlinear) combination of the two modalities — it fuses them.
 
 Usage (word-level):
   python projection_analysis.py --granularity word \\
@@ -268,99 +272,6 @@ def null_floor(X_whisper, X_target, val_mask, seed=0):
     return removed, float(r2)
 
 
-# ---------------------------------------------------------------------------
-# MLP probe (used only for nonlinear verification)
-# ---------------------------------------------------------------------------
-
-class MLPProbe(nn.Module):
-    def __init__(self, input_dim: int, output_dim: int,
-                 hidden_dim: int = 1024, n_layers: int = 3, dropout: float = 0.1):
-        super().__init__()
-        layers = []
-        in_d = input_dim
-        for _ in range(n_layers):
-            layers += [nn.Linear(in_d, hidden_dim), nn.LayerNorm(hidden_dim),
-                       nn.GELU(), nn.Dropout(dropout)]
-            in_d = hidden_dim
-        layers.append(nn.Linear(in_d, output_dim))
-        self.net = nn.Sequential(*layers)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.net(x)
-
-
-def train_probe(
-    X_in_tr: np.ndarray, X_out_tr: np.ndarray,
-    X_in_val: np.ndarray, X_out_val: np.ndarray,
-    hidden_dim: int = 1024, n_layers: int = 3, dropout: float = 0.1,
-    lr: float = 1e-3, batch_size: int = 2048,
-    max_epochs: int = 150, patience: int = 10,
-    device: str = "cuda",
-) -> MLPProbe:
-    """Train MLP with early stopping on validation MSE.
-
-    Full dataset is GPU-resident for the duration of training; shuffling uses
-    torch.randperm on the GPU. bfloat16 AMP gives ~2x throughput on A100/H100.
-    """
-    probe = MLPProbe(X_in_tr.shape[1], X_out_tr.shape[1],
-                     hidden_dim, n_layers, dropout).to(device)
-    opt   = torch.optim.Adam(probe.parameters(), lr=lr, weight_decay=1e-5)
-    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=5, factor=0.5)
-    use_amp = device == "cuda" and torch.cuda.is_bf16_supported()
-    scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
-
-    t_in  = torch.from_numpy(X_in_tr.astype(np.float32)).to(device)
-    t_out = torch.from_numpy(X_out_tr.astype(np.float32)).to(device)
-    v_in  = torch.from_numpy(X_in_val.astype(np.float32)).to(device)
-    v_out = torch.from_numpy(X_out_val.astype(np.float32)).to(device)
-    N_tr  = t_in.shape[0]
-
-    best_val, best_state, no_improve = float("inf"), None, 0
-    probe.train()
-    for epoch in range(max_epochs):
-        perm = torch.randperm(N_tr, device=device)
-        for start in range(0, N_tr, batch_size):
-            idx = perm[start:start + batch_size]
-            xb, yb = t_in[idx], t_out[idx]
-            opt.zero_grad()
-            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
-                loss = nn.functional.mse_loss(probe(xb), yb)
-            scaler.scale(loss).backward()
-            scaler.step(opt)
-            scaler.update()
-
-        probe.eval()
-        with torch.no_grad(), torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
-            val_loss = nn.functional.mse_loss(probe(v_in), v_out).item()
-        probe.train()
-
-        sched.step(val_loss)
-        if val_loss < best_val - 1e-6:
-            best_val   = val_loss
-            best_state = {k: v.cpu().clone() for k, v in probe.state_dict().items()}
-            no_improve = 0
-        else:
-            no_improve += 1
-        if no_improve >= patience:
-            logger.debug(f"    Early stop at epoch {epoch + 1}")
-            break
-
-    probe.load_state_dict({k: v.to(device) for k, v in best_state.items()})
-    probe.eval()
-    return probe
-
-
-def predict_batched(probe: MLPProbe, X: np.ndarray,
-                    batch_size: int = 4096, device: str = "cuda") -> np.ndarray:
-    probe.eval()
-    chunks = []
-    with torch.no_grad():
-        for i in range(0, len(X), batch_size):
-            xb = torch.from_numpy(X[i:i + batch_size].astype(np.float32)).to(device)
-            chunks.append(probe(xb).cpu().numpy())
-    return np.concatenate(chunks, axis=0)
-
-
 def r2_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     """R² across all output dimensions pooled."""
     ss_res = float(((y_true - y_pred) ** 2).sum())
@@ -368,35 +279,220 @@ def r2_score(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return 0.0 if ss_tot < 1e-12 else 1.0 - ss_res / ss_tot
 
 
-def nonlinear_verification(
-    X_residual: np.ndarray,
-    X_target: np.ndarray,
-    val_mask: np.ndarray,
-    device: str = "cuda",
-    **probe_kwargs,
-) -> float:
-    """
-    Train an MLP (X_target → X_residual) and return R² on the validation split.
+# ---------------------------------------------------------------------------
+# Separability hierarchy — is Whisper a SEPARABLE f(a)+g(b) or a NONSEPARABLE
+# F(a,b) function of acoustic (a=Kaldi) and language (b=LLM) representations?
+#
+#   1. linear-additive     W ≈ Lₐ(a) + L_b(b)          (ridge on [a,b])
+#   2. nonlinear-separable  W ≈ f(a) + g(b)             (two towers, summed)
+#   3. nonlinear-joint      W ≈ F([a;b])                (concat-input MLP)
+#
+#   (2)−(1) = nonlinear separable structure (the f(a)+g(b) to rule out)
+#   (3)−(2) = nonseparable interaction     (the F(a,b) to keep) — effect size
+# All scored by pooled held-out R² on the full Whisper embedding.
+# ---------------------------------------------------------------------------
 
-    Intended to be called on the "neither" residual after linear deflation.
-    Low R² confirms the linear subspace captured all shared structure.
-    High R² indicates surviving nonlinear structure and should be reported.
-    """
+def _joint_gram_cross(X_a, X_b, X_w, mask, chunk_size=RIDGE_CHUNK):
+    """Accumulate the blocks of the joint Gram/cross for regressing W on [a,b],
+    without ever materializing the concatenation. Blocks are small (d_a/d_b²)."""
+    da, db, dw = X_a.shape[1], X_b.shape[1], X_w.shape[1]
+    Gaa = np.zeros((da, da)); Gab = np.zeros((da, db)); Gbb = np.zeros((db, db))
+    Ca  = np.zeros((da, dw)); Cb  = np.zeros((db, dw))
+    for start in range(0, len(X_a), chunk_size):
+        end = min(start + chunk_size, len(X_a))
+        m = mask[start:end]
+        if not m.any():
+            continue
+        A = X_a[start:end][m].astype(np.float64)
+        B = X_b[start:end][m].astype(np.float64)
+        W = X_w[start:end][m].astype(np.float64)
+        Gaa += A.T @ A; Gab += A.T @ B; Gbb += B.T @ B
+        Ca  += A.T @ W; Cb  += B.T @ W
+        del A, B, W
+    gc.collect()
+    return Gaa, Gab, Gbb, Ca, Cb
+
+
+def _joint_val_r2(Wa, Wb, X_a, X_b, X_w, val_mask, chunk_size=RIDGE_CHUNK):
+    preds, trues = [], []
+    for start in range(0, len(X_a), chunk_size):
+        end = min(start + chunk_size, len(X_a))
+        m = val_mask[start:end]
+        if not m.any():
+            continue
+        preds.append(X_a[start:end][m].astype(np.float32) @ Wa
+                     + X_b[start:end][m].astype(np.float32) @ Wb)
+        trues.append(X_w[start:end][m].astype(np.float32))
+    if not preds:
+        return 0.0
+    return r2_score(np.concatenate(trues), np.concatenate(preds))
+
+
+def linear_joint_r2(X_whisper, X_a, X_b, val_mask):
+    """Held-out R² of the linear-additive model W ≈ Lₐ(a) + L_b(b) (alpha by CV)."""
     train_mask = ~val_mask
-    probe = train_probe(
-        X_target[train_mask], X_residual[train_mask],
-        X_target[val_mask],   X_residual[val_mask],
-        device=device, **probe_kwargs,
-    )
-    pred_val = predict_batched(probe, X_target[val_mask], device=device)
-    r2 = r2_score(X_residual[val_mask], pred_val)
+    da, db = X_a.shape[1], X_b.shape[1]
+    Gaa, Gab, Gbb, Ca, Cb = _joint_gram_cross(X_a, X_b, X_whisper, train_mask)
+    G = np.block([[Gaa, Gab], [Gab.T, Gbb]])
+    C = np.concatenate([Ca, Cb], axis=0)
+    eye = np.eye(da + db)
+    best_r2 = -np.inf
+    for alpha in RIDGE_ALPHAS:
+        coef = np.linalg.solve(G + alpha * eye, C)
+        r2 = _joint_val_r2(coef[:da].astype(np.float32), coef[da:].astype(np.float32),
+                           X_a, X_b, X_whisper, val_mask)
+        best_r2 = max(best_r2, r2)
+        del coef
+    del G, C, Gaa, Gab, Gbb, Ca, Cb
+    gc.collect()
+    return float(best_r2)
 
-    del probe, pred_val
+
+def _build_mlp(in_dim, out_dim, hidden_dim, n_layers, dropout):
+    layers, d = [], in_dim
+    for _ in range(n_layers):
+        layers += [nn.Linear(d, hidden_dim), nn.LayerNorm(hidden_dim),
+                   nn.GELU(), nn.Dropout(dropout)]
+        d = hidden_dim
+    layers.append(nn.Linear(d, out_dim))
+    return nn.Sequential(*layers)
+
+
+class TwoTowerAdditive(nn.Module):
+    """Separable model: independent towers f(a), g(b), summed at the output."""
+    def __init__(self, da, db, dout, hidden_dim=1024, n_layers=3, dropout=0.1):
+        super().__init__()
+        self.tower_a = _build_mlp(da, dout, hidden_dim, n_layers, dropout)
+        self.tower_b = _build_mlp(db, dout, hidden_dim, n_layers, dropout)
+
+    def forward(self, xa, xb):
+        return self.tower_a(xa) + self.tower_b(xb)
+
+
+class JointReconstructor(nn.Module):
+    """Joint model: single MLP over concat([a, b]). With the same hidden_dim /
+    n_layers as each tower it has FEWER params than the two towers combined, so a
+    positive (3)−(2) gap cannot be attributed to extra capacity."""
+    def __init__(self, da, db, dout, hidden_dim=1024, n_layers=3, dropout=0.1):
+        super().__init__()
+        self.net = _build_mlp(da + db, dout, hidden_dim, n_layers, dropout)
+
+    def forward(self, xa, xb):
+        return self.net(torch.cat([xa, xb], dim=1))
+
+
+def train_reconstructor(model, Xa_tr, Xb_tr, Y_tr, Xa_val, Xb_val, Y_val,
+                        lr=1e-3, batch_size=2048, max_epochs=150, patience=10,
+                        device="cuda"):
+    """Train a two-input reconstructor (a, b → W) with early stopping on val MSE;
+    return pooled held-out R². Full dataset is GPU-resident (same footprint as the
+    previous single-target MLP: ~one LLM-sized tensor)."""
+    model = model.to(device)
+    opt   = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
+    sched = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, patience=5, factor=0.5)
+    use_amp = device == "cuda" and torch.cuda.is_bf16_supported()
+    scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
+
+    ta = torch.from_numpy(Xa_tr.astype(np.float32)).to(device)
+    tb = torch.from_numpy(Xb_tr.astype(np.float32)).to(device)
+    ty = torch.from_numpy(Y_tr.astype(np.float32)).to(device)
+    va = torch.from_numpy(Xa_val.astype(np.float32)).to(device)
+    vb = torch.from_numpy(Xb_val.astype(np.float32)).to(device)
+    vy = torch.from_numpy(Y_val.astype(np.float32)).to(device)
+    N = ta.shape[0]
+
+    best_val, best_state, no_improve = float("inf"), None, 0
+    model.train()
+    for epoch in range(max_epochs):
+        perm = torch.randperm(N, device=device)
+        for start in range(0, N, batch_size):
+            idx = perm[start:start + batch_size]
+            opt.zero_grad()
+            with torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
+                loss = nn.functional.mse_loss(model(ta[idx], tb[idx]), ty[idx])
+            scaler.scale(loss).backward()
+            scaler.step(opt)
+            scaler.update()
+
+        model.eval()
+        with torch.no_grad(), torch.amp.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=use_amp):
+            val_loss = nn.functional.mse_loss(model(va, vb), vy).item()
+        model.train()
+
+        sched.step(val_loss)
+        if val_loss < best_val - 1e-6:
+            best_val   = val_loss
+            best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+            no_improve = 0
+        else:
+            no_improve += 1
+        if no_improve >= patience:
+            logger.debug(f"    Early stop at epoch {epoch + 1}")
+            break
+
+    model.load_state_dict({k: v.to(device) for k, v in best_state.items()})
+    model.eval()
+    with torch.no_grad():                         # full-precision R² on val
+        pred = model(va, vb)
+        ss_res = float(((vy - pred) ** 2).sum().item())
+        ss_tot = float(((vy - vy.mean(0, keepdim=True)) ** 2).sum().item())
+    r2 = 0.0 if ss_tot < 1e-12 else 1.0 - ss_res / ss_tot
+
+    del ta, tb, ty, va, vb, vy, pred, model
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
-
     return float(r2)
+
+
+def separability_analysis(X_whisper, X_kaldi, X_llm, val_mask, device="cuda",
+                          **probe_kwargs):
+    """Fit the three-model hierarchy and return held-out R²s and the two gaps."""
+    train_mask = ~val_mask
+    da, db, dw = X_kaldi.shape[1], X_llm.shape[1], X_whisper.shape[1]
+    mk = dict(hidden_dim=probe_kwargs.get("hidden_dim", 1024),
+              n_layers=probe_kwargs.get("n_layers", 3),
+              dropout=probe_kwargs.get("dropout", 0.1))
+    tk = dict(lr=probe_kwargs.get("lr", 1e-3),
+              batch_size=probe_kwargs.get("batch_size", 2048),
+              max_epochs=probe_kwargs.get("max_epochs", 150),
+              patience=probe_kwargs.get("patience", 10),
+              device=device)
+
+    logger.info("  [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...")
+    r2_lin = linear_joint_r2(X_whisper, X_kaldi, X_llm, val_mask)
+    logger.info(f"    linear-additive held-out R²={r2_lin:.4f}")
+
+    Xa_tr, Xb_tr, Y_tr = X_kaldi[train_mask], X_llm[train_mask], X_whisper[train_mask]
+    Xa_va, Xb_va, Y_va = X_kaldi[val_mask],   X_llm[val_mask],   X_whisper[val_mask]
+
+    logger.info("  [Separability] Model 2: nonlinear-separable f(a)+g(b)...")
+    r2_sep = train_reconstructor(TwoTowerAdditive(da, db, dw, **mk),
+                                 Xa_tr, Xb_tr, Y_tr, Xa_va, Xb_va, Y_va, **tk)
+    logger.info(f"    nonlinear-separable held-out R²={r2_sep:.4f}")
+
+    logger.info("  [Separability] Model 3: nonlinear-joint F([a,b])...")
+    r2_joint = train_reconstructor(JointReconstructor(da, db, dw, **mk),
+                                   Xa_tr, Xb_tr, Y_tr, Xa_va, Xb_va, Y_va, **tk)
+    logger.info(f"    nonlinear-joint held-out R²={r2_joint:.4f}")
+
+    del Xa_tr, Xb_tr, Y_tr, Xa_va, Xb_va, Y_va
+    gc.collect()
+
+    gap_sep = r2_sep - r2_lin
+    gap_int = r2_joint - r2_sep
+    logger.info(f"    → nonlinear-separable gain (2−1)={gap_sep:+.4f}   "
+                f"nonseparable interaction (3−2)={gap_int:+.4f}")
+    if gap_int > 0.02:
+        logger.info(f"    Nonseparable interaction detected ({gap_int:+.4f}) — "
+                    f"supports 'not a simple combination'")
+    return {
+        "r2_linear_additive":     round(r2_lin, 5),
+        "r2_nonlinear_separable": round(r2_sep, 5),
+        "r2_nonlinear_joint":     round(r2_joint, 5),
+        "gap_nonlinear_separable": round(gap_sep, 5),
+        "gap_interaction":         round(gap_int, 5),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -484,34 +580,23 @@ def venn_decomposition(
     if abs(V_neither_ord1 - V_neither_ord2) > 0.02:
         logger.warning(f"  Neither inconsistency: ord1={V_neither_ord1:.4f} ord2={V_neither_ord2:.4f}")
 
-    # ---- Nonlinear verification on neither residual ----------------------
-    neither_residual = (res_kl + res_lk) / 2.0
     del res_kl, res_lk; gc.collect()
 
-    logger.info("  [Verification] MLP probe: Kaldi → neither residual...")
-    nlr2_kaldi = nonlinear_verification(neither_residual, X_kaldi, val_mask,
-                                        device=device, **probe_kwargs)
-    logger.info(f"    nonlinear R²(Kaldi)={nlr2_kaldi:.4f}")
-
-    logger.info("  [Verification] MLP probe: LLM → neither residual...")
-    nlr2_llm = nonlinear_verification(neither_residual, X_llm, val_mask,
-                                      device=device, **probe_kwargs)
-    logger.info(f"    nonlinear R²(LLM)={nlr2_llm:.4f}")
-    del neither_residual; gc.collect()
-
-    if nlr2_kaldi > 0.05:
-        logger.warning(f"  Nonlinear Kaldi structure remains in neither residual: R²={nlr2_kaldi:.4f}")
-    if nlr2_llm > 0.05:
-        logger.warning(f"  Nonlinear LLM structure remains in neither residual: R²={nlr2_llm:.4f}")
+    # ---- Separability hierarchy on full Whisper (f(a)+g(b) vs F(a,b)) -----
+    sep = separability_analysis(X_whisper, X_kaldi, X_llm, val_mask,
+                                device=device, **probe_kwargs)
 
     return {
         "kaldi_only": round(kaldi_only, 5),
         "llm_only":   round(llm_only, 5),
         "shared":     round(shared, 5),
         "neither":    round(neither, 5),
-        # Nonlinear verification
-        "nlr2_kaldi": round(nlr2_kaldi, 5),
-        "nlr2_llm":   round(nlr2_llm, 5),
+        # Separability hierarchy (held-out R²; gap_interaction = nonseparability)
+        "r2_linear_additive":     sep["r2_linear_additive"],
+        "r2_nonlinear_separable": sep["r2_nonlinear_separable"],
+        "r2_nonlinear_joint":     sep["r2_nonlinear_joint"],
+        "gap_nonlinear_separable": sep["gap_nonlinear_separable"],
+        "gap_interaction":         sep["gap_interaction"],
         # Raw quantities for transparency / debugging
         "V_kaldi_total":     round(V_kaldi_total, 5),
         "V_llm_total":       round(V_llm_total, 5),
@@ -821,8 +906,10 @@ def main():
         logger.info(f"  Shared       : {result['shared']:.4f}")
         logger.info(f"  Neither      : {result['neither']:.4f}")
         logger.info(f"  (sum={result['kaldi_only']+result['llm_only']+result['shared']+result['neither']:.4f})")
-        logger.info(f"  nlr2 Kaldi   : {result['nlr2_kaldi']:.4f}")
-        logger.info(f"  nlr2 LLM     : {result['nlr2_llm']:.4f}")
+        logger.info(f"  R² linear-additive     : {result['r2_linear_additive']:.4f}")
+        logger.info(f"  R² nonlinear-separable : {result['r2_nonlinear_separable']:.4f}")
+        logger.info(f"  R² nonlinear-joint     : {result['r2_nonlinear_joint']:.4f}")
+        logger.info(f"  interaction (joint−sep): {result['gap_interaction']:+.4f}")
 
         all_results[whisper_name] = result
 
@@ -840,7 +927,7 @@ def main():
         "kaldi_model":  args.kaldi_model,
         "llm_models":   args.llm_models,
         "llm_pca_dims": args.llm_pca_dims,
-        "method":       "forward_ridge_whisper_on_target_heldout_plus_mlp",
+        "method":       "forward_ridge_heldout_plus_separability_hierarchy",
         "group_by":     args.group_by,
         "ridge_alphas_tried": RIDGE_ALPHAS,
         "results":      all_results,
@@ -853,7 +940,8 @@ def main():
     # Save per-model CSVs + summary CSV
     # ------------------------------------------------------------------
     COMPONENTS = ["kaldi_only", "llm_only", "shared", "neither",
-                  "nlr2_kaldi", "nlr2_llm",
+                  "r2_linear_additive", "r2_nonlinear_separable",
+                  "r2_nonlinear_joint", "gap_nonlinear_separable", "gap_interaction",
                   "V_kaldi_total", "V_llm_total"]
 
     for whisper_name, result in all_results.items():

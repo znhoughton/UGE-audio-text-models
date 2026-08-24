@@ -2,8 +2,10 @@
 
 _Last updated: 2026-08-14_
 
-**Status:** grouped-split + collateral-diagnostic code pushed to `main`
-(`f963dd7`, `6a758b1`); leak-free re-run of both levels pending on the server.
+**Status:** grouped split, collateral diagnostic, and the separability hierarchy
+(replacing the old MLP verification) are pushed to `main`; leak-free re-run of
+both levels pending on the server. Hierarchy validated on synthetic data
+(separable target → interaction gap ≈ 0; joint target → gap ≈ +0.22).
 
 ## Research question / claim
 
@@ -106,10 +108,13 @@ rows** — the MLP memorized a lookup table. Fixed with the grouped split.
 - Linear numbers are robust to this (ridge can't memorize), but will be
   re-confirmed leak-free.
 
-### 2. MLP verification conflates `f(a)+g(b)` and `F(a,b)` — REDESIGN NEEDED
+### 2. MLP verification conflates `f(a)+g(b)` and `F(a,b)` — IMPLEMENTED
 A single MLP is a universal approximator: it captures separable and nonseparable
-structure indistinguishably, so it cannot support the core claim. **Proposed fix
-— a model hierarchy, scored by grouped held-out R²:**
+structure indistinguishably, so it could not support the core claim. Replaced
+with a model hierarchy (`separability_analysis`), scored by grouped held-out R².
+Output columns: `r2_linear_additive`, `r2_nonlinear_separable`,
+`r2_nonlinear_joint`, `gap_nonlinear_separable`, `gap_interaction` (replacing
+the old `nlr2_kaldi` / `nlr2_llm`).
 
 | model | form | captures |
 |---|---|---|
