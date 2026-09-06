@@ -1,0 +1,70 @@
+{
+  "models": [
+    "kaldi-librispeech",
+    "wav2vec2-base",
+    "parakeet-ctc-0.6b",
+    "whisper-base-enc",
+    "whisper-large-v2-enc",
+    "whisper-base-dec",
+    "whisper-large-v2-dec",
+    "olmo-7b",
+    "pythia-6.9b"
+  ],
+  "n_types": 1500,
+  "results": {
+    "kaldi-librispeech": {
+      "phonetic": -0.05990434744593724,
+      "orthographic": -0.05873118265326264,
+      "length": 0.005878836691300539,
+      "logfreq": -0.011227341113018605
+    },
+    "wav2vec2-base": {
+      "phonetic": -0.10355553376225506,
+      "orthographic": -0.09776676552574945,
+      "length": 0.005955336054010845,
+      "logfreq": -0.021286450389057833
+    },
+    "parakeet-ctc-0.6b": {
+      "phonetic": -0.12952407771741808,
+      "orthographic": -0.07939143981732144,
+      "length": -0.06247231414006268,
+      "logfreq": -0.08263529497437236
+    },
+    "whisper-base-enc": {
+      "phonetic": -0.08453281590430646,
+      "orthographic": -0.07111012427263415,
+      "length": 0.06585718790239674,
+      "logfreq": 0.007495583691722725
+    },
+    "whisper-large-v2-enc": {
+      "phonetic": -0.1775618667866299,
+      "orthographic": -0.14710499136950134,
+      "length": 0.12288624997891107,
+      "logfreq": 0.03066996769820468
+    },
+    "whisper-base-dec": {
+      "phonetic": 0.07294189318251998,
+      "orthographic": 0.10272116038059124,
+      "length": 0.035406579158176216,
+      "logfreq": -0.10150873946054612
+    },
+    "whisper-large-v2-dec": {
+      "phonetic": 0.04963178870677115,
+      "orthographic": 0.058599701286436094,
+      "length": -0.0067765612207081865,
+      "logfreq": -0.14117741398329814
+    },
+    "olmo-7b": {
+      "phonetic": 0.02503277027761139,
+      "orthographic": 0.028099937051695938,
+      "length": -0.0009307313623341045,
+      "logfreq": -0.08444916941871661
+    },
+    "pythia-6.9b": {
+      "phonetic": 0.001663534449568063,
+      "orthographic": 0.014003148897531719,
+      "length": -0.0091119759065936,
+      "logfreq": -0.09499136352025499
+    }
+  }
+}

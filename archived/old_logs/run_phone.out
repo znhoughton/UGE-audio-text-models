@@ -1,0 +1,402 @@
+nohup: ignoring input
+05:09:30  INFO      Projection analysis — phone-level
+05:09:30  INFO      Arguments: {'granularity': 'phone', 'embeddings_dir': PosixPath('/dpluth-data'), 'output_dir': PosixPath('whisper_kaldi_llm_projection/phone'), 'whisper_models': ['whisper-base-enc', 'whisper-small-enc', 'whisper-medium-enc', 'whisper-large-enc', 'whisper-large-v2-enc', 'whisper-large-v1-enc', 'whisper-base-dec', 'whisper-small-dec', 'whisper-medium-dec', 'whisper-large-dec', 'whisper-large-v2-dec', 'whisper-large-v1-dec'], 'kaldi_model': 'kaldi-librispeech', 'llm_models': ['olmo-7b'], 'llm_pca_dims': 256, 'hidden_dim': 1024, 'n_layers': 3, 'dropout': 0.1, 'lr': 0.001, 'batch_size': 2048, 'max_epochs': 150, 'patience': 10, 'val_frac': 0.2, 'group_by': 'utt_id', 'records_path': None, 'null_check': False, 'seed': 42}
+05:09:30  INFO      Device: cuda
+05:09:30  INFO      Loading Kaldi: kaldi-librispeech
+05:09:30  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_kaldi-librispeech.pkl
+05:09:36  INFO        Kaldi shape: (885881, 256)
+05:09:36  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_olmo-7b.pkl
+05:11:05  INFO        LLM target shape: (885881, 4096)
+05:11:05  INFO        Loading group ids from /dpluth-data/PhoneData/phone_records.json (group_by='utt_id')
+05:11:10  INFO      Grouped split by 'utt_id': 13,100 groups (2,614 in val) — no item spans train/val
+05:11:10  INFO      N=885,881  train=708,679  val=177,202
+05:11:10  WARNING     Existing results use method='forward_ridge_whisper_on_target_heldout_plus_mlp' but this code produces 'forward_ridge_heldout_plus_separability_hierarchy' — ignoring old results, recomputing all models.
+05:11:10  INFO      ============================================================
+05:11:10  INFO      Whisper model: whisper-base-enc
+05:11:10  INFO      ============================================================
+05:11:10  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-base-enc.pkl
+05:11:14  INFO        Whisper shape: (885881, 512)
+05:11:20  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+05:11:55  INFO          Kaldi: held-out R²=0.1714  in-sample R²=0.1720  collateral gap=+0.0007  alpha=100.0
+05:11:56  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+05:16:08  INFO          LLM|Kaldi: held-out R²=0.2665  in-sample R²=0.2903  collateral gap=+0.0238  alpha=10000.0
+05:16:09  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+05:19:53  INFO          LLM: held-out R²=0.3044  in-sample R²=0.3245  collateral gap=+0.0201  alpha=10000.0
+05:19:56  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+05:20:31  INFO          Kaldi|LLM: held-out R²=0.1363  in-sample R²=0.1406  collateral gap=+0.0043  alpha=100.0
+05:20:32  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+05:23:25  INFO          linear-additive held-out R²=0.4089
+05:23:28  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+/opt/modeling/zhoughton/misc/UGE-audio-text-models/whisper_kaldi_llm_projection/projection_analysis.py:394: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
+05:26:47  INFO          nonlinear-separable held-out R²=0.6098
+05:26:47  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+05:28:13  INFO          nonlinear-joint held-out R²=0.6376
+05:28:13  INFO          → nonlinear-separable gain (2−1)=+0.2009   nonseparable interaction (3−2)=+0.0278
+05:28:13  INFO          Nonseparable interaction detected (+0.0278) — supports 'not a simple combination'
+05:28:13  INFO        --- whisper-base-enc summary ---
+05:28:13  INFO        Kaldi-only   : 0.0948
+05:28:13  INFO        LLM-only     : 0.2209
+05:28:13  INFO        Shared       : 0.0765
+05:28:13  INFO        Neither      : 0.6043
+05:28:13  INFO        (sum=0.9965)
+05:28:13  INFO        R² linear-additive     : 0.4089
+05:28:13  INFO        R² nonlinear-separable : 0.6098
+05:28:13  INFO        R² nonlinear-joint     : 0.6376
+05:28:13  INFO        interaction (joint−sep): +0.0278
+05:28:20  INFO        Checkpointed 1 model(s) → whisper_kaldi_llm_projection/phone
+05:28:21  INFO      ============================================================
+05:28:21  INFO      Whisper model: whisper-small-enc
+05:28:21  INFO      ============================================================
+05:28:21  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-small-enc.pkl
+05:28:26  INFO        Whisper shape: (885881, 768)
+05:28:35  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+05:29:15  INFO          Kaldi: held-out R²=0.1411  in-sample R²=0.1419  collateral gap=+0.0009  alpha=100.0
+05:29:16  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+05:33:41  INFO          LLM|Kaldi: held-out R²=0.2924  in-sample R²=0.3161  collateral gap=+0.0238  alpha=10000.0
+05:33:42  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+05:38:11  INFO          LLM: held-out R²=0.3276  in-sample R²=0.3480  collateral gap=+0.0204  alpha=10000.0
+05:38:13  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+05:38:57  INFO          Kaldi|LLM: held-out R²=0.1115  in-sample R²=0.1156  collateral gap=+0.0040  alpha=1000.0
+05:38:59  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+05:42:15  INFO          linear-additive held-out R²=0.4097
+05:42:16  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+05:44:40  INFO          nonlinear-separable held-out R²=0.5989
+05:44:40  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+05:46:06  INFO          nonlinear-joint held-out R²=0.6314
+05:46:07  INFO          → nonlinear-separable gain (2−1)=+0.1892   nonseparable interaction (3−2)=+0.0325
+05:46:07  INFO          Nonseparable interaction detected (+0.0325) — supports 'not a simple combination'
+05:46:07  INFO        --- whisper-small-enc summary ---
+05:46:07  INFO        Kaldi-only   : 0.0750
+05:46:07  INFO        LLM-only     : 0.2511
+05:46:07  INFO        Shared       : 0.0661
+05:46:07  INFO        Neither      : 0.6026
+05:46:07  INFO        (sum=0.9948)
+05:46:07  INFO        R² linear-additive     : 0.4098
+05:46:07  INFO        R² nonlinear-separable : 0.5989
+05:46:07  INFO        R² nonlinear-joint     : 0.6314
+05:46:07  INFO        interaction (joint−sep): +0.0325
+05:46:07  INFO        Checkpointed 2 model(s) → whisper_kaldi_llm_projection/phone
+05:46:07  INFO      ============================================================
+05:46:07  INFO      Whisper model: whisper-medium-enc
+05:46:07  INFO      ============================================================
+05:46:07  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-medium-enc.pkl
+05:46:15  INFO        Whisper shape: (885881, 1024)
+05:46:27  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+05:47:25  INFO          Kaldi: held-out R²=0.1281  in-sample R²=0.1290  collateral gap=+0.0009  alpha=100.0
+05:47:27  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+05:52:40  INFO          LLM|Kaldi: held-out R²=0.3150  in-sample R²=0.3364  collateral gap=+0.0213  alpha=10000.0
+05:52:43  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+05:57:59  INFO          LLM: held-out R²=0.3478  in-sample R²=0.3663  collateral gap=+0.0185  alpha=10000.0
+05:58:01  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+05:59:03  INFO          Kaldi|LLM: held-out R²=0.1016  in-sample R²=0.1052  collateral gap=+0.0036  alpha=100.0
+05:59:05  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+06:02:49  INFO          linear-additive held-out R²=0.4204
+06:02:52  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+06:05:48  INFO          nonlinear-separable held-out R²=0.6013
+06:05:48  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+06:07:10  INFO          nonlinear-joint held-out R²=0.6323
+06:07:10  INFO          → nonlinear-separable gain (2−1)=+0.1808   nonseparable interaction (3−2)=+0.0311
+06:07:10  INFO          Nonseparable interaction detected (+0.0311) — supports 'not a simple combination'
+06:07:10  INFO        --- whisper-medium-enc summary ---
+06:07:10  INFO        Kaldi-only   : 0.0663
+06:07:10  INFO        LLM-only     : 0.2747
+06:07:10  INFO        Shared       : 0.0618
+06:07:10  INFO        Neither      : 0.5916
+06:07:10  INFO        (sum=0.9943)
+06:07:10  INFO        R² linear-additive     : 0.4204
+06:07:10  INFO        R² nonlinear-separable : 0.6013
+06:07:10  INFO        R² nonlinear-joint     : 0.6323
+06:07:10  INFO        interaction (joint−sep): +0.0311
+06:07:10  INFO        Checkpointed 3 model(s) → whisper_kaldi_llm_projection/phone
+06:07:10  INFO      ============================================================
+06:07:10  INFO      Whisper model: whisper-large-enc
+06:07:10  INFO      ============================================================
+06:07:10  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-enc.pkl
+06:07:20  INFO        Whisper shape: (885881, 1280)
+06:07:34  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+06:08:48  INFO          Kaldi: held-out R²=0.1325  in-sample R²=0.1332  collateral gap=+0.0008  alpha=100.0
+06:08:50  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+06:13:58  INFO          LLM|Kaldi: held-out R²=0.3107  in-sample R²=0.3300  collateral gap=+0.0193  alpha=10000.0
+06:14:01  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+06:19:08  INFO          LLM: held-out R²=0.3462  in-sample R²=0.3629  collateral gap=+0.0168  alpha=10000.0
+06:19:11  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+06:20:14  INFO          Kaldi|LLM: held-out R²=0.1039  in-sample R²=0.1072  collateral gap=+0.0033  alpha=100.0
+06:20:17  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+06:23:51  INFO          linear-additive held-out R²=0.4209
+06:23:53  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+06:26:36  INFO          nonlinear-separable held-out R²=0.5562
+06:26:36  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+06:28:42  INFO          nonlinear-joint held-out R²=0.6027
+06:28:42  INFO          → nonlinear-separable gain (2−1)=+0.1353   nonseparable interaction (3−2)=+0.0465
+06:28:42  INFO          Nonseparable interaction detected (+0.0465) — supports 'not a simple combination'
+06:28:42  INFO        --- whisper-large-enc summary ---
+06:28:42  INFO        Kaldi-only   : 0.0680
+06:28:42  INFO        LLM-only     : 0.2696
+06:28:42  INFO        Shared       : 0.0645
+06:28:42  INFO        Neither      : 0.5919
+06:28:42  INFO        (sum=0.9940)
+06:28:42  INFO        R² linear-additive     : 0.4209
+06:28:42  INFO        R² nonlinear-separable : 0.5562
+06:28:42  INFO        R² nonlinear-joint     : 0.6027
+06:28:42  INFO        interaction (joint−sep): +0.0465
+06:28:42  INFO        Checkpointed 4 model(s) → whisper_kaldi_llm_projection/phone
+06:28:42  INFO      ============================================================
+06:28:42  INFO      Whisper model: whisper-large-v2-enc
+06:28:42  INFO      ============================================================
+06:28:42  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-v2-enc.pkl
+06:28:52  INFO        Whisper shape: (885881, 1280)
+06:29:07  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+06:30:07  INFO          Kaldi: held-out R²=0.1599  in-sample R²=0.1607  collateral gap=+0.0008  alpha=100.0
+06:30:09  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+06:35:08  INFO          LLM|Kaldi: held-out R²=0.2347  in-sample R²=0.2516  collateral gap=+0.0170  alpha=10000.0
+06:35:11  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+06:40:12  INFO          LLM: held-out R²=0.2764  in-sample R²=0.2907  collateral gap=+0.0143  alpha=10000.0
+06:40:14  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+06:41:24  INFO          Kaldi|LLM: held-out R²=0.1235  in-sample R²=0.1265  collateral gap=+0.0029  alpha=100.0
+06:41:27  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+06:45:05  INFO          linear-additive held-out R²=0.3741
+06:45:07  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+06:47:43  INFO          nonlinear-separable held-out R²=0.5518
+06:47:43  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+06:49:08  INFO          nonlinear-joint held-out R²=0.6021
+06:49:08  INFO          → nonlinear-separable gain (2−1)=+0.1777   nonseparable interaction (3−2)=+0.0503
+06:49:08  INFO          Nonseparable interaction detected (+0.0503) — supports 'not a simple combination'
+06:49:08  INFO        --- whisper-large-v2-enc summary ---
+06:49:08  INFO        Kaldi-only   : 0.0894
+06:49:08  INFO        LLM-only     : 0.1971
+06:49:08  INFO        Shared       : 0.0705
+06:49:08  INFO        Neither      : 0.6386
+06:49:08  INFO        (sum=0.9956)
+06:49:08  INFO        R² linear-additive     : 0.3741
+06:49:08  INFO        R² nonlinear-separable : 0.5518
+06:49:08  INFO        R² nonlinear-joint     : 0.6021
+06:49:08  INFO        interaction (joint−sep): +0.0503
+06:49:09  INFO        Checkpointed 5 model(s) → whisper_kaldi_llm_projection/phone
+06:49:09  INFO      ============================================================
+06:49:09  INFO      Whisper model: whisper-large-v1-enc
+06:49:09  INFO      ============================================================
+06:49:09  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-v1-enc.pkl
+06:49:18  INFO        Whisper shape: (885881, 1280)
+06:49:33  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+06:50:41  INFO          Kaldi: held-out R²=0.1301  in-sample R²=0.1310  collateral gap=+0.0009  alpha=0.1
+06:50:43  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+06:55:55  INFO          LLM|Kaldi: held-out R²=0.2827  in-sample R²=0.3032  collateral gap=+0.0204  alpha=10000.0
+06:55:58  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+07:01:08  INFO          LLM: held-out R²=0.3196  in-sample R²=0.3374  collateral gap=+0.0178  alpha=10000.0
+07:01:10  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+07:02:15  INFO          Kaldi|LLM: held-out R²=0.0985  in-sample R²=0.1017  collateral gap=+0.0032  alpha=1000.0
+07:02:18  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+07:06:11  INFO          linear-additive held-out R²=0.3931
+07:06:13  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+07:08:27  INFO          nonlinear-separable held-out R²=0.5743
+07:08:27  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+07:09:50  INFO          nonlinear-joint held-out R²=0.6083
+07:09:50  INFO          → nonlinear-separable gain (2−1)=+0.1812   nonseparable interaction (3−2)=+0.0340
+07:09:50  INFO          Nonseparable interaction detected (+0.0340) — supports 'not a simple combination'
+07:09:50  INFO        --- whisper-large-v1-enc summary ---
+07:09:50  INFO        Kaldi-only   : 0.0670
+07:09:50  INFO        LLM-only     : 0.2460
+07:09:50  INFO        Shared       : 0.0631
+07:09:50  INFO        Neither      : 0.6187
+07:09:50  INFO        (sum=0.9947)
+07:09:50  INFO        R² linear-additive     : 0.3931
+07:09:50  INFO        R² nonlinear-separable : 0.5743
+07:09:50  INFO        R² nonlinear-joint     : 0.6083
+07:09:50  INFO        interaction (joint−sep): +0.0340
+07:09:52  INFO        Checkpointed 6 model(s) → whisper_kaldi_llm_projection/phone
+07:09:52  INFO      ============================================================
+07:09:52  INFO      Whisper model: whisper-base-dec
+07:09:52  INFO      ============================================================
+07:09:52  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-base-dec.pkl
+07:09:56  INFO        Whisper shape: (885881, 512)
+07:10:02  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+07:10:37  INFO          Kaldi: held-out R²=0.0566  in-sample R²=0.0569  collateral gap=+0.0003  alpha=1000.0
+07:10:38  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+07:14:48  INFO          LLM|Kaldi: held-out R²=0.3849  in-sample R²=0.4321  collateral gap=+0.0472  alpha=10000.0
+07:14:49  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+07:18:59  INFO          LLM: held-out R²=0.4421  in-sample R²=0.4862  collateral gap=+0.0441  alpha=10000.0
+07:19:00  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+07:19:35  INFO          Kaldi|LLM: held-out R²=0.0056  in-sample R²=0.0065  collateral gap=+0.0010  alpha=1000.0
+07:19:36  WARNING     Shared inconsistency: 0.0535 vs 0.0790
+07:19:36  WARNING     Neither inconsistency: ord1=0.5802 ord2=0.5547
+07:19:36  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+07:22:52  INFO          linear-additive held-out R²=0.4460
+07:22:54  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+07:23:48  INFO          nonlinear-separable held-out R²=0.4964
+07:23:48  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+07:24:25  INFO          nonlinear-joint held-out R²=0.4952
+07:24:25  INFO          → nonlinear-separable gain (2−1)=+0.0504   nonseparable interaction (3−2)=-0.0011
+07:24:25  INFO        --- whisper-base-dec summary ---
+07:24:25  INFO        Kaldi-only   : 0.0032
+07:24:25  INFO        LLM-only     : 0.3631
+07:24:25  INFO        Shared       : 0.0535
+07:24:25  INFO        Neither      : 0.5674
+07:24:25  INFO        (sum=0.9872)
+07:24:25  INFO        R² linear-additive     : 0.4460
+07:24:25  INFO        R² nonlinear-separable : 0.4964
+07:24:25  INFO        R² nonlinear-joint     : 0.4953
+07:24:25  INFO        interaction (joint−sep): -0.0011
+07:24:25  INFO        Checkpointed 7 model(s) → whisper_kaldi_llm_projection/phone
+07:24:26  INFO      ============================================================
+07:24:26  INFO      Whisper model: whisper-small-dec
+07:24:26  INFO      ============================================================
+07:24:26  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-small-dec.pkl
+07:24:31  INFO        Whisper shape: (885881, 768)
+07:24:40  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+07:25:23  INFO          Kaldi: held-out R²=0.0595  in-sample R²=0.0594  collateral gap=-0.0001  alpha=1000.0
+07:25:24  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+07:29:30  INFO          LLM|Kaldi: held-out R²=0.3486  in-sample R²=0.4004  collateral gap=+0.0517  alpha=10000.0
+07:29:31  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+07:33:37  INFO          LLM: held-out R²=0.4163  in-sample R²=0.4643  collateral gap=+0.0480  alpha=10000.0
+07:33:39  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+07:34:23  INFO          Kaldi|LLM: held-out R²=0.0034  in-sample R²=0.0043  collateral gap=+0.0009  alpha=10000.0
+07:34:25  WARNING     Shared inconsistency: 0.0575 vs 0.0884
+07:34:25  WARNING     Neither inconsistency: ord1=0.6125 ord2=0.5816
+07:34:25  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+07:37:25  INFO          linear-additive held-out R²=0.4188
+07:37:28  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+07:38:23  INFO          nonlinear-separable held-out R²=0.4319
+07:38:23  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+07:39:01  INFO          nonlinear-joint held-out R²=0.4283
+07:39:01  INFO          → nonlinear-separable gain (2−1)=+0.0131   nonseparable interaction (3−2)=-0.0036
+07:39:01  INFO        --- whisper-small-dec summary ---
+07:39:01  INFO        Kaldi-only   : 0.0021
+07:39:01  INFO        LLM-only     : 0.3279
+07:39:01  INFO        Shared       : 0.0575
+07:39:01  INFO        Neither      : 0.5971
+07:39:01  INFO        (sum=0.9846)
+07:39:01  INFO        R² linear-additive     : 0.4188
+07:39:01  INFO        R² nonlinear-separable : 0.4319
+07:39:01  INFO        R² nonlinear-joint     : 0.4283
+07:39:01  INFO        interaction (joint−sep): -0.0036
+07:39:03  INFO        Checkpointed 8 model(s) → whisper_kaldi_llm_projection/phone
+07:39:03  INFO      ============================================================
+07:39:03  INFO      Whisper model: whisper-medium-dec
+07:39:03  INFO      ============================================================
+07:39:03  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-medium-dec.pkl
+07:39:10  INFO        Whisper shape: (885881, 1024)
+07:39:22  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+07:40:16  INFO          Kaldi: held-out R²=0.0255  in-sample R²=0.0262  collateral gap=+0.0007  alpha=1000.0
+07:40:18  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+07:45:05  INFO          LLM|Kaldi: held-out R²=0.2717  in-sample R²=0.3193  collateral gap=+0.0477  alpha=10000.0
+07:45:07  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+07:49:50  INFO          LLM: held-out R²=0.2983  in-sample R²=0.3451  collateral gap=+0.0469  alpha=10000.0
+07:49:52  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+07:50:46  INFO          Kaldi|LLM: held-out R²=0.0047  in-sample R²=0.0054  collateral gap=+0.0007  alpha=1000.0
+07:50:48  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+07:54:15  INFO          linear-additive held-out R²=0.3023
+07:54:17  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+07:55:06  INFO          nonlinear-separable held-out R²=0.3142
+07:55:06  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+07:55:42  INFO          nonlinear-joint held-out R²=0.3124
+07:55:43  INFO          → nonlinear-separable gain (2−1)=+0.0120   nonseparable interaction (3−2)=-0.0019
+07:55:43  INFO        --- whisper-medium-dec summary ---
+07:55:43  INFO        Kaldi-only   : 0.0034
+07:55:43  INFO        LLM-only     : 0.2648
+07:55:43  INFO        Shared       : 0.0222
+07:55:43  INFO        Neither      : 0.7040
+07:55:43  INFO        (sum=0.9943)
+07:55:43  INFO        R² linear-additive     : 0.3023
+07:55:43  INFO        R² nonlinear-separable : 0.3142
+07:55:43  INFO        R² nonlinear-joint     : 0.3124
+07:55:43  INFO        interaction (joint−sep): -0.0019
+07:55:56  INFO        Checkpointed 9 model(s) → whisper_kaldi_llm_projection/phone
+07:55:56  INFO      ============================================================
+07:55:56  INFO      Whisper model: whisper-large-dec
+07:55:56  INFO      ============================================================
+07:55:56  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-dec.pkl
+07:56:06  INFO        Whisper shape: (885881, 1280)
+07:56:21  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+07:57:21  INFO          Kaldi: held-out R²=0.0264  in-sample R²=0.0272  collateral gap=+0.0007  alpha=1000.0
+07:57:24  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+08:02:26  INFO          LLM|Kaldi: held-out R²=0.1866  in-sample R²=0.2389  collateral gap=+0.0522  alpha=10000.0
+08:02:28  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+08:07:36  INFO          LLM: held-out R²=0.2137  in-sample R²=0.2650  collateral gap=+0.0513  alpha=10000.0
+08:07:38  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+08:08:41  INFO          Kaldi|LLM: held-out R²=0.0053  in-sample R²=0.0062  collateral gap=+0.0010  alpha=1000.0
+08:08:44  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+08:12:19  INFO          linear-additive held-out R²=0.2187
+08:12:21  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+08:13:09  INFO          nonlinear-separable held-out R²=0.2173
+08:13:09  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+08:13:46  INFO          nonlinear-joint held-out R²=0.2162
+08:13:46  INFO          → nonlinear-separable gain (2−1)=-0.0015   nonseparable interaction (3−2)=-0.0011
+08:13:46  INFO        --- whisper-large-dec summary ---
+08:13:46  INFO        Kaldi-only   : 0.0042
+08:13:46  INFO        LLM-only     : 0.1817
+08:13:46  INFO        Shared       : 0.0223
+08:13:46  INFO        Neither      : 0.7869
+08:13:46  INFO        (sum=0.9951)
+08:13:46  INFO        R² linear-additive     : 0.2187
+08:13:46  INFO        R² nonlinear-separable : 0.2173
+08:13:46  INFO        R² nonlinear-joint     : 0.2162
+08:13:46  INFO        interaction (joint−sep): -0.0011
+08:13:46  INFO        Checkpointed 10 model(s) → whisper_kaldi_llm_projection/phone
+08:13:46  INFO      ============================================================
+08:13:46  INFO      Whisper model: whisper-large-v2-dec
+08:13:46  INFO      ============================================================
+08:13:46  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-v2-dec.pkl
+08:13:56  INFO        Whisper shape: (885881, 1280)
+08:14:11  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+08:15:12  INFO          Kaldi: held-out R²=0.0414  in-sample R²=0.0414  collateral gap=-0.0000  alpha=0.01
+08:15:15  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+08:20:18  INFO          LLM|Kaldi: held-out R²=0.3259  in-sample R²=0.3681  collateral gap=+0.0422  alpha=10000.0
+08:20:21  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+08:25:18  INFO          LLM: held-out R²=0.3709  in-sample R²=0.4111  collateral gap=+0.0403  alpha=10000.0
+08:25:20  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+08:26:26  INFO          Kaldi|LLM: held-out R²=0.0046  in-sample R²=0.0053  collateral gap=+0.0007  alpha=10000.0
+08:26:29  WARNING     Shared inconsistency: 0.0385 vs 0.0585
+08:26:29  WARNING     Neither inconsistency: ord1=0.6462 ord2=0.6261
+08:26:29  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+08:30:18  INFO          linear-additive held-out R²=0.3745
+08:30:20  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+08:31:07  INFO          nonlinear-separable held-out R²=0.3862
+08:31:07  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+08:31:43  INFO          nonlinear-joint held-out R²=0.3861
+08:31:43  INFO          → nonlinear-separable gain (2−1)=+0.0117   nonseparable interaction (3−2)=-0.0002
+08:31:43  INFO        --- whisper-large-v2-dec summary ---
+08:31:43  INFO        Kaldi-only   : 0.0030
+08:31:43  INFO        LLM-only     : 0.3124
+08:31:43  INFO        Shared       : 0.0385
+08:31:43  INFO        Neither      : 0.6362
+08:31:43  INFO        (sum=0.9900)
+08:31:43  INFO        R² linear-additive     : 0.3745
+08:31:43  INFO        R² nonlinear-separable : 0.3862
+08:31:43  INFO        R² nonlinear-joint     : 0.3861
+08:31:43  INFO        interaction (joint−sep): -0.0001
+08:31:43  INFO        Checkpointed 11 model(s) → whisper_kaldi_llm_projection/phone
+08:31:43  INFO      ============================================================
+08:31:43  INFO      Whisper model: whisper-large-v1-dec
+08:31:43  INFO      ============================================================
+08:31:43  INFO        Loading /dpluth-data/PhoneData/phone_embeddings_whisper-large-v1-dec.pkl
+08:31:53  INFO        Whisper shape: (885881, 1280)
+08:32:08  INFO        [Ordering 1] Regress Whisper on Kaldi, subtract...
+08:33:10  INFO          Kaldi: held-out R²=0.0314  in-sample R²=0.0321  collateral gap=+0.0007  alpha=1000.0
+08:33:12  INFO        [Ordering 1] Regress Kaldi residual on LLM, subtract...
+08:38:26  INFO          LLM|Kaldi: held-out R²=0.2477  in-sample R²=0.2965  collateral gap=+0.0487  alpha=10000.0
+08:38:29  INFO        [Ordering 2] Regress Whisper on LLM, subtract...
+08:43:27  INFO          LLM: held-out R²=0.2811  in-sample R²=0.3286  collateral gap=+0.0475  alpha=10000.0
+08:43:30  INFO        [Ordering 2] Regress LLM residual on Kaldi, subtract...
+08:44:33  INFO          Kaldi|LLM: held-out R²=0.0047  in-sample R²=0.0055  collateral gap=+0.0008  alpha=10000.0
+08:44:36  INFO        [Separability] Model 1: linear-additive W ~ Lₐ(a)+L_b(b)...
+08:48:08  INFO          linear-additive held-out R²=0.2854
+08:48:10  INFO        [Separability] Model 2: nonlinear-separable f(a)+g(b)...
+08:49:04  INFO          nonlinear-separable held-out R²=0.2799
+08:49:04  INFO        [Separability] Model 3: nonlinear-joint F([a,b])...
+08:49:43  INFO          nonlinear-joint held-out R²=0.2740
+08:49:43  INFO          → nonlinear-separable gain (2−1)=-0.0055   nonseparable interaction (3−2)=-0.0059
+08:49:43  INFO        --- whisper-large-v1-dec summary ---
+08:49:43  INFO        Kaldi-only   : 0.0034
+08:49:43  INFO        LLM-only     : 0.2400
+08:49:43  INFO        Shared       : 0.0281
+08:49:43  INFO        Neither      : 0.7220
+08:49:43  INFO        (sum=0.9934)
+08:49:43  INFO        R² linear-additive     : 0.2854
+08:49:43  INFO        R² nonlinear-separable : 0.2799
+08:49:43  INFO        R² nonlinear-joint     : 0.2740
+08:49:43  INFO        interaction (joint−sep): -0.0059
+08:49:43  INFO        Checkpointed 12 model(s) → whisper_kaldi_llm_projection/phone
+08:49:43  INFO      Results JSON → whisper_kaldi_llm_projection/phone/projection_results.json
+08:49:43  INFO      Summary CSV → whisper_kaldi_llm_projection/phone/decomposition_summary.csv
+08:49:43  INFO      Done.

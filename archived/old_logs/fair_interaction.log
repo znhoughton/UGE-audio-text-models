@@ -1,0 +1,29 @@
+nohup: ignoring input
+[11:30:48] device=cuda
+[11:32:06] ======================================================================
+[11:32:06] Whisper: whisper-base-enc
+/opt/modeling/zhoughton/misc/UGE-audio-text-models/whisper_kaldi_llm_projection/projection_analysis.py:394: FutureWarning: `torch.cuda.amp.GradScaler(args...)` is deprecated. Please use `torch.amp.GradScaler('cuda', args...)` instead.
+  scaler  = torch.cuda.amp.GradScaler(enabled=use_amp)
+[11:37:20]   linear=0.4089  separable(2-tower,h1024,9.7M)=0.6105
+[11:38:34]   joint(h1024,7.1M,under): R²=0.6388  interaction gap(joint-sep)=+0.0282
+[11:39:58]   joint(h1536,12.2M,FAIR): R²=0.6578  interaction gap(joint-sep)=+0.0473
+[11:41:34]   joint(h2048,18.4M,FAIR): R²=0.6673  interaction gap(joint-sep)=+0.0568
+[11:41:34] ======================================================================
+[11:41:34] Whisper: whisper-large-v2-enc
+[11:47:27]   linear=0.3741  separable(2-tower,h1024,11.3M)=0.5523
+[11:48:39]   joint(h1024,7.9M,under): R²=0.6025  interaction gap(joint-sep)=+0.0502
+[11:50:01]   joint(h1536,13.4M,FAIR): R²=0.6186  interaction gap(joint-sep)=+0.0662
+[11:51:42]   joint(h2048,19.9M,FAIR): R²=0.6271  interaction gap(joint-sep)=+0.0747
+[11:51:42] ======================================================================
+[11:51:42] Whisper: whisper-base-dec
+[11:54:57]   linear=0.4460  separable(2-tower,h1024,9.7M)=0.4964
+[11:55:32]   joint(h1024,7.1M,under): R²=0.4952  interaction gap(joint-sep)=-0.0013
+[11:56:07]   joint(h1536,12.2M,FAIR): R²=0.5042  interaction gap(joint-sep)=+0.0078
+[11:56:46]   joint(h2048,18.4M,FAIR): R²=0.5065  interaction gap(joint-sep)=+0.0101
+[11:56:46] ======================================================================
+[11:56:46] Whisper: whisper-large-dec
+[12:00:49]   linear=0.2187  separable(2-tower,h1024,11.3M)=0.2161
+[12:01:26]   joint(h1024,7.9M,under): R²=0.2133  interaction gap(joint-sep)=-0.0028
+[12:02:03]   joint(h1536,13.4M,FAIR): R²=0.2157  interaction gap(joint-sep)=-0.0004
+[12:02:46]   joint(h2048,19.9M,FAIR): R²=0.2105  interaction gap(joint-sep)=-0.0056
+[12:02:46] DONE

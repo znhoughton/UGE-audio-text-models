@@ -1,0 +1,12 @@
+component,value
+kaldi_only,0.00988
+llm_only,0.22918
+shared,0.05318
+neither,0.69925
+r2_linear_additive,0.30905
+r2_nonlinear_separable,0.3468
+r2_nonlinear_joint,0.33184
+gap_nonlinear_separable,0.03776
+gap_interaction,-0.01496
+V_kaldi_total,0.06306
+V_llm_total,0.29938
