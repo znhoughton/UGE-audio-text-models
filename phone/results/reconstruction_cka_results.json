@@ -1,0 +1,55 @@
+{
+  "refs": [
+    "kaldi-librispeech",
+    "olmo-7b",
+    "wav2vec2-base",
+    "parakeet-ctc-0.6b"
+  ],
+  "n_val": 4485,
+  "results": {
+    "whisper-base-enc": {
+      "raw_cka": {
+        "kaldi-librispeech": 0.1184738501906395,
+        "olmo-7b": 0.19396424293518066,
+        "wav2vec2-base": 0.12011931836605072,
+        "parakeet-ctc-0.6b": 0.10778683423995972
+      },
+      "recon_cka": 0.5983881950378418,
+      "recon_r2": 0.3861604038236841,
+      "null_cka": 0.006863081362098455
+    },
+    "whisper-large-v2-enc": {
+      "raw_cka": {
+        "kaldi-librispeech": 0.16243566572666168,
+        "olmo-7b": 0.267440527677536,
+        "wav2vec2-base": 0.14350073039531708,
+        "parakeet-ctc-0.6b": 0.17667070031166077
+      },
+      "recon_cka": 0.6574493050575256,
+      "recon_r2": 0.3593015561090298,
+      "null_cka": 0.01623423956334591
+    },
+    "whisper-base-dec": {
+      "raw_cka": {
+        "kaldi-librispeech": 0.04417577013373375,
+        "olmo-7b": 0.25923946499824524,
+        "wav2vec2-base": 0.03444064408540726,
+        "parakeet-ctc-0.6b": 0.1252773553133011
+      },
+      "recon_cka": 0.6739740371704102,
+      "recon_r2": 0.4051116744331258,
+      "null_cka": 0.012132709845900536
+    },
+    "whisper-large-v2-dec": {
+      "raw_cka": {
+        "kaldi-librispeech": 0.016012119129300117,
+        "olmo-7b": 0.23857079446315765,
+        "wav2vec2-base": 0.04521505534648895,
+        "parakeet-ctc-0.6b": 0.04672980681061745
+      },
+      "recon_cka": 0.6289719343185425,
+      "recon_r2": 0.34476216082474975,
+      "null_cka": 0.003582346485927701
+    }
+  }
+}
